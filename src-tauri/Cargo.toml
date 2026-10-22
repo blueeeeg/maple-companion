@@ -1,6 +1,6 @@
 [package]
 name = "maple-companion"
-version = "0.1.2"
+version = "0.1.3"
 description = "메이플스토리 팬메이드 데스크톱 컴패니언"
 authors = ["blueeeeg"]
 edition = "2024"
