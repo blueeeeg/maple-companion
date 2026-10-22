@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use activity::{ActivityState, DEFAULT_SCALE_PERCENT, DisplayMode, Snapshot};
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, RunEvent, State, WebviewWindow, WindowEvent};
 use tauri_plugin_positioner::{Position, WindowExt};
 
@@ -26,6 +26,15 @@ const SCALE_PRESETS: [u32; 5] = [75, 100, 125, 150, 200];
 const SCALE_MENU_PREFIX: &str = "scale-";
 
 type SharedActivity = Arc<ActivityState>;
+
+/// 메뉴 맨 위 「창 열기/닫기」. 창이 보이는지에 따라 글자를 바꾸려고 핸들을 들고 있는다
+struct ToggleItem(MenuItem<tauri::Wry>);
+
+fn sync_toggle_label(app: &AppHandle, visible: bool) {
+    if let Some(item) = app.try_state::<ToggleItem>() {
+        let _ = item.0.set_text(if visible { "창 닫기" } else { "창 열기" });
+    }
+}
 
 #[tauri::command]
 fn activity_snapshot(state: State<'_, SharedActivity>) -> Snapshot {
@@ -81,11 +90,13 @@ fn show_window(app: &AppHandle, window: &WebviewWindow) {
     let _ = window.show();
     let _ = window.set_focus();
     let _ = app.emit("panel-visibility", true);
+    sync_toggle_label(app, true);
 }
 
 fn hide_window(app: &AppHandle, window: &WebviewWindow) {
     let _ = window.hide();
     let _ = app.emit("panel-visibility", false);
+    sync_toggle_label(app, false);
 }
 
 fn apply_mode(app: &AppHandle, mode: DisplayMode) {
@@ -145,7 +156,10 @@ fn set_scale(app: &AppHandle, percent: u32) {
 
 fn reveal_window(app: &AppHandle, window: &WebviewWindow) {
     if current_mode(app) == DisplayMode::Panel {
-        let _ = window.move_window(PANEL_POSITION);
+        // 트레이 위치는 아이콘 위로 마우스가 지나가야 알 수 있다. 아직 모르면 화면 오른쪽 위에 연다
+        if window.move_window(PANEL_POSITION).is_err() {
+            let _ = window.move_window(Position::TopRight);
+        }
     }
     show_window(app, window);
 }
@@ -173,6 +187,7 @@ fn open_settings(app: &AppHandle) {
 }
 
 fn build_tray(app: &AppHandle, scale_percent: u32) -> tauri::Result<()> {
+    let toggle = MenuItem::with_id(app, "toggle-window", "창 열기", true, None::<&str>)?;
     let pet = MenuItem::with_id(app, "mode-pet", "펫 모드", true, None::<&str>)?;
     let panel = MenuItem::with_id(app, "mode-panel", "메뉴바 모드", true, None::<&str>)?;
     let scale_items = SCALE_PRESETS
@@ -192,14 +207,18 @@ fn build_tray(app: &AppHandle, scale_percent: u32) -> tauri::Result<()> {
     let scale = Submenu::with_items(app, "크기", true, &scale_refs)?;
     let settings = MenuItem::with_id(app, "settings", "설정", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
+    let separator_top = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&pet, &panel, &scale, &settings, &separator, &quit])?;
+    let menu = Menu::with_items(app, &[&toggle, &separator_top, &pet, &panel, &scale, &settings, &separator, &quit])?;
+
+    app.manage(ToggleItem(toggle));
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(true)
         .tooltip("메이플 컴패니언")
         .on_menu_event(move |app, event| match event.id.as_ref() {
+            "toggle-window" => toggle_window(app),
             "mode-pet" => set_mode(app, DisplayMode::Pet),
             "mode-panel" => set_mode(app, DisplayMode::Panel),
             "settings" => open_settings(app),
@@ -220,14 +239,6 @@ fn build_tray(app: &AppHandle, scale_percent: u32) -> tauri::Result<()> {
         })
         .on_tray_icon_event(|tray, event| {
             tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                toggle_window(tray.app_handle());
-            }
         });
     if let Some(icon) = tray_icon::load_cached(app).or_else(|| app.default_window_icon().cloned()) {
         builder = builder.icon(icon);

@@ -14,7 +14,7 @@ macOS 전용이다(Apple Silicon·Intel 둘 다). 다른 운영체제용은 아�
 xattr -dr com.apple.quarantine "/Applications/Maple Companion.app"
 ```
 
-처음에는 화면 구석의 작은 창(펫 모드)으로 뜨고 Dock 에는 안 보인다. 메뉴바의 트레이 아이콘 메뉴에서 메뉴바 모드로 바꾸거나 「종료」로 끈다. 캐릭터·맵·소리는 실행 중에 [maplestory.io](https://maplestory.io) 에서 받아 오므로 인터넷이 필요하다.
+처음에는 화면 구석의 작은 창(펫 모드)으로 뜨고 Dock 에는 안 보인다. 메뉴바의 트레이 아이콘을 누르면(왼쪽·오른쪽 클릭 같음) 메뉴가 열린다. 「창 열기/닫기」로 창을 띄우거나 숨기고, 메뉴바 모드로 바꾸거나 「종료」로 끈다. 캐릭터·맵·소리는 실행 중에 [maplestory.io](https://maplestory.io) 에서 받아 오므로 인터넷이 필요하다.
 
 ## 기능
 
@@ -92,7 +92,7 @@ pnpm tauri build --target universal-apple-darwin   # 배포용 .app·.dmg (src-t
 
 배포는 `v*` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 유니버설 앱을 빌드해 Releases 에 `.dmg`·`.zip`·`.app.tar.gz` 를 올린다. 서명은 ad-hoc(`bundle.macOS.signingIdentity: "-"`)이고 공증은 하지 않는다. 버전은 `package.json`·`src-tauri/tauri.conf.json`·`src-tauri/Cargo.toml` 세 곳을 같이 올린다.
 
-Rust 가 필요하다(`rustup`). 트레이 아이콘 메뉴에서 펫 모드(화면 구석 창)와 메뉴바 모드(아이콘을 누르면 열리는 창)를 바꾼다.
+Rust 가 필요하다(`rustup`). 트레이 아이콘은 왼쪽·오른쪽 클릭 모두 같은 메뉴를 연다. 메뉴 맨 위 「창 열기/닫기」가 창을 띄우거나 숨기고(글자는 창 상태에 따라 바뀐다), 펫 모드(화면 구석 창)와 메뉴바 모드(메뉴바 아이콘 아래에 여는 창)를 바꾼다. 메뉴바 모드에서 아이콘 위치를 아직 모르면 화면 오른쪽 위에 연다.
 
 트레이 메뉴 「설정」은 창을 띄우고 설정 화면을 연다(맵 화면일 때만). 트레이 메뉴 「크기」에서 창 크기를 75%~200% 로 고른다. 캐릭터·맵·HUD 가 같이 커지고 고른 크기는 다음 실행에도 남는다. 브라우저로 볼 때는 `?scale=1.5` 를 붙인다.
 
