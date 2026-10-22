@@ -1,5 +1,6 @@
 mod activity;
 mod app_icon;
+mod bgm_cache;
 mod game_state;
 mod idle;
 mod tray_icon;
@@ -369,6 +370,9 @@ pub fn run() {
             save_game_state,
             set_tray_status,
             set_tray_icon,
+            bgm_cache::read_bgm,
+            bgm_cache::write_bgm,
+            bgm_cache::remove_bgm,
             updater::check_update
         ])
         .setup(|app| {
