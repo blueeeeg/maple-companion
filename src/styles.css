@@ -1,0 +1,2034 @@
+:root {
+  --hud-bg: rgba(20, 24, 38, 0.72);
+  --hud-text: #ffffff;
+  --exp-bg: #2a2a2a;
+  --exp-fill: linear-gradient(90deg, #f7e04a, #f0a020);
+  --sheet-bg: #fffaf0;
+  --sheet-text: #2b2b2b;
+  font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-size: 12px;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  margin: 0;
+  /* 내용 높이(230px)로 잡히면 #app 을 늘렸을 때 아래쪽이 body 에서 잘린다 */
+  height: 100%;
+  /* 펫 모드 창은 투명해서 모서리 바깥이 비쳐야 한다 */
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  position: relative;
+  width: 360px;
+  height: 230px;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  color: var(--hud-text);
+  /* 창 크기를 바꿔도 360x230 배치는 그대로 두고 통째로 늘린다. zoom 은 WebKit 에서 getBoundingClientRect 를
+     zoom 만큼 나눠 돌려줘서 캔버스 클릭 좌표가 어긋난다. 캔버스는 배율만큼 촘촘히 그려 흐려지지 않는다 */
+  transform: scale(var(--ui-scale, 1));
+  transform-origin: 0 0;
+}
+
+#stage,
+#stage canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  background: var(--hud-bg);
+  cursor: grab;
+}
+
+.hud-level {
+  font-weight: 800;
+  color: #ffd23f;
+}
+
+.hud-job {
+  font-weight: 600;
+}
+
+.hud-spacer {
+  flex: 1;
+  align-self: stretch;
+}
+
+.hud-meso {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.hud-meso img {
+  width: 14px;
+  height: 14px;
+  image-rendering: pixelated;
+}
+
+.hud-rest {
+  color: #b8c4ff;
+}
+
+.hud button {
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hud .hud-advance {
+  background: #ff7a1a;
+  font-weight: 800;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.exp {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14px;
+  background: var(--exp-bg);
+}
+
+.exp-fill {
+  height: 100%;
+  width: 0;
+  background: var(--exp-fill);
+  transition: width 0.6s ease;
+}
+
+.exp-text {
+  position: absolute;
+  inset: 0;
+  font-size: 9.5px;
+  line-height: 14px;
+  text-align: center;
+  font-weight: 700;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+
+.notice {
+  position: absolute;
+  left: 6px;
+  bottom: 18px;
+  max-width: calc(100% - 12px);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffe9a8;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+.select {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #2b3350, #151826);
+}
+
+/* 원작 캐릭터 선택 배경(1024×768)을 절반으로 줄여(부드럽게 축소) 위 선반 윗면이 발 높이(117px)에 오게 자른다 */
+.select.has-back-art {
+  background:
+    var(--leaves) -50px -54px / 512px 384px no-repeat,
+    var(--back) -50px -54px / 512px 384px no-repeat,
+    #7ec3ea;
+}
+
+.select[hidden],
+.create[hidden],
+.select-confirm[hidden] {
+  display: none;
+}
+
+/* 고른 캐릭터 뒤의 빛(z-index: -1)이 이 안에서만 쌓이게 해서 버튼·창 아래로 깔리게 한다 */
+.select-slots {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.select button,
+.create input {
+  font: inherit;
+  color: inherit;
+}
+
+/* left 와 top 이 발 위치. 발이 칸 안 (48, 80) 에 온다 */
+.select-slot {
+  position: absolute;
+  top: 117px;
+  width: 96px;
+  height: 106px;
+  margin: -80px 0 0 -48px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.select-slot:focus-visible {
+  outline: none;
+}
+
+/* 캐릭터·빛·실루엣은 원본 크기 그대로 그린다. 배율을 주면 픽셀이 고르지 않게 뭉개진다 */
+.select-feet {
+  position: absolute;
+  left: 48px;
+  top: 80px;
+}
+
+.select-feet > * {
+  position: absolute;
+  pointer-events: none;
+}
+
+.select-feet img {
+  image-rendering: pixelated;
+}
+
+.select-burst,
+.select-glow {
+  z-index: -1;
+  background-size: 100% 100%;
+}
+
+.has-ghost-art .select-ghost {
+  background: var(--ghost) 0 0 / 100% 100% no-repeat;
+  opacity: 0.75;
+}
+
+.select-name {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 82px;
+  width: fit-content;
+  max-width: 96px;
+  height: 23px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 23px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 원본 이름표(높이 23)를 양 끝 6px 조각과 1px 가운데 조각을 이어 붙여 그린다 */
+.has-tag-art .select-name {
+  border-radius: 0;
+  background:
+    var(--tag-left) left top no-repeat,
+    var(--tag-right) right top no-repeat,
+    var(--tag-middle) 0 0 repeat-x content-box;
+}
+
+.select-slot.is-selected .select-name {
+  color: #ffd23f;
+}
+
+.select-slot.is-empty .select-name {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 400;
+}
+
+.select-slot:hover .select-name {
+  color: #fff3b0;
+}
+
+.select-slot:focus-visible .select-name {
+  outline: 1px solid #ffd23f;
+}
+
+.select-page {
+  position: absolute;
+  top: 70px;
+  width: 24px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.select-page-previous {
+  left: 3px;
+}
+
+.select-page-next {
+  right: 3px;
+}
+
+/* 원작 넘김 버튼은 disabled 그림이 normal 과 거의 같아서 흐리게 해 둔다 */
+.select .select-page.art-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.select-page.has-art {
+  width: 21px;
+  height: 28.5px;
+}
+
+.select-create,
+.select-delete,
+.select-start {
+  position: absolute;
+}
+
+.select-create {
+  left: 3px;
+  top: 3px;
+}
+
+.select-delete {
+  right: 3px;
+  top: 3px;
+}
+
+.select-start {
+  left: 195px;
+  top: 146px;
+}
+
+.select-create,
+.select-delete,
+.select-start,
+.create-buttons button,
+.select-confirm-buttons button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 9px;
+  background: rgba(0, 0, 0, 0.5);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.select .select-start,
+.create .create-submit {
+  background: #ff7a1a;
+}
+
+.select-create:disabled,
+.select-delete:disabled,
+.select-start:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 원작 캐릭터 정보판(charInfo1, 194×271)에서 위 테두리·이름 칸·빈 바탕·아래 테두리 띠만 원본 크기로 잘라 쌓는다.
+   띠의 높이와 원본에서 자르는 세로 위치가 짝이다 */
+.select-info {
+  position: absolute;
+  left: 4px;
+  top: 143px;
+  width: 166px;
+  height: 85px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.select-info.has-art {
+  border-radius: 0;
+  background: none;
+}
+
+.select-info-band {
+  display: none;
+  position: absolute;
+  left: -14px;
+  width: 194px;
+}
+
+.select-info.has-art .select-info-band {
+  display: block;
+  background-image: var(--panel);
+  background-repeat: no-repeat;
+}
+
+.select-info-band.is-top {
+  top: 0;
+  height: 10px;
+  background-position: 0 -6px;
+}
+
+.select-info-band.is-name {
+  top: 10px;
+  height: 37px;
+  background-position: 0 -51px;
+}
+
+.select-info-band.is-detail {
+  top: 47px;
+  height: 24px;
+  background-position: 0 -192px;
+}
+
+.select-info-band.is-bottom {
+  top: 71px;
+  height: 14px;
+  background-position: 0 -240px;
+}
+
+/* 원본의 이름 칸은 x 28~166, y 54~85 다 */
+.select-info-name {
+  position: absolute;
+  left: 14px;
+  top: 13px;
+  width: 138px;
+  height: 31px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: 12px;
+  line-height: 31px;
+  text-align: center;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.select-info-detail {
+  position: absolute;
+  left: 16px;
+  top: 48px;
+  width: 136px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.select-info.is-empty .select-info-detail {
+  visibility: hidden;
+}
+
+.select-info-level {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  color: #ffd23f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* 직업 이름이 길면 잘라 내지 않고 두 줄로 내린다 */
+.select-info-job {
+  min-width: 0;
+  font-size: 10px;
+  line-height: 11px;
+  overflow-wrap: anywhere;
+  color: #f1e6d2;
+}
+
+.select-info.has-art .select-info-job {
+  color: #5b3a1a;
+}
+
+.select-page-number {
+  position: absolute;
+  left: 200px;
+  top: 201px;
+  width: 130px;
+  height: 26px;
+  font-size: 11px;
+  line-height: 26px;
+  text-align: center;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+}
+
+.select-page-number.has-art {
+  background: var(--base) no-repeat;
+}
+
+.select-page-number img {
+  position: absolute;
+}
+
+.create {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  background: linear-gradient(180deg, #2b3350, #151826);
+}
+
+.create-preview {
+  position: relative;
+  flex: 0 0 110px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--hud-bg);
+}
+
+/* 칸 폭은 짝수로 둬서 가운데가 정수 픽셀에 온다 */
+.create-preview img {
+  position: absolute;
+  left: calc(50% - var(--half-width, 0px));
+  top: calc(100% - 8px - var(--half-height, 0px));
+  image-rendering: pixelated;
+}
+
+.create-fields {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.create-name {
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.create-name:focus {
+  border-color: #ffd23f;
+}
+
+.create-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.create-part {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.create-part span {
+  flex: 1;
+  font-weight: 700;
+}
+
+.create-part button {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.create-part output {
+  width: 34px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.create-error {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  width: 104px;
+  margin: 0;
+  font-size: 10px;
+  color: #ff9b8a;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+  word-break: keep-all;
+}
+
+.create-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.create-band {
+  display: none;
+}
+
+/* 원작 캐릭터설정 판(NewChar/charSet, 201×320)을 원본 크기로 머리판·크림 바탕·아래 테두리·버튼판 띠로 잘라
+   오른쪽에 230px 높이로 쌓는다. 띠의 높이와 원본에서 자르는 세로 위치가 짝이다. 항목 네 줄이 들어가게
+   머리판 글자 아래 민무늬 나무(90~98행)와 버튼판 위 고리(262~264행)는 뺐다 */
+.create.has-art:not([hidden]) {
+  display: block;
+}
+
+.create.has-art {
+  padding: 0;
+  background: none;
+  color: #5b3a1a;
+}
+
+.select.is-creating > :not(.create, .select-confirm) {
+  visibility: hidden;
+}
+
+/* 발이 선택 화면의 선반 높이(117px)에 오게 칸 바닥을 맞춘다 */
+.create.has-art .create-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160px;
+  height: 125px;
+  border-radius: 0;
+  background: none;
+}
+
+.create.has-art .create-error {
+  left: 10px;
+  top: 146px;
+  bottom: auto;
+  width: 140px;
+  color: #ffd2c8;
+}
+
+.create.has-art .create-fields {
+  position: absolute;
+  left: 159px;
+  top: 0;
+  width: 201px;
+  height: 230px;
+  display: block;
+}
+
+.create.has-art .create-band {
+  display: block;
+  position: absolute;
+  left: 0;
+  width: 201px;
+  background-image: var(--board);
+  background-repeat: no-repeat;
+}
+
+.create-band.is-header {
+  top: 0;
+  height: 37px;
+  background-position: 0 -53px;
+}
+
+.create-band.is-paper {
+  top: 37px;
+  height: 109px;
+  background-position: 0 -98px;
+}
+
+.create-band.is-frame {
+  top: 146px;
+  height: 30px;
+  background-position: 0 -215px;
+}
+
+.create-band.is-plank {
+  top: 176px;
+  height: 54px;
+  background-position: 0 -264px;
+}
+
+/* 이름 칸은 원작 캐릭터이름 판(CustomizeChar/000/charName)의 입력 칸(x 41, y 102, 167×29)만 잘라 쓴다 */
+.create.has-art .create-name {
+  position: absolute;
+  left: 18px;
+  top: 40px;
+  width: 167px;
+  height: 29px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--field) -41px -102px no-repeat;
+  color: #3b2a14;
+  font-size: 12px;
+}
+
+.create.has-art .create-name::placeholder {
+  color: #a08868;
+}
+
+.create.has-art .create-parts {
+  position: absolute;
+  left: 20px;
+  top: 72px;
+  gap: 2px;
+}
+
+.create-part.has-art {
+  width: 162px;
+  height: 17px;
+  gap: 0;
+  background: var(--row) 0 0 no-repeat;
+}
+
+/* 항목 이름은 그림에 들어 있다 */
+.create-part.has-art span {
+  flex: 0 0 33px;
+  visibility: hidden;
+}
+
+.create-part.has-art output {
+  flex: 1;
+  width: auto;
+  font-size: 10.5px;
+  line-height: 17px;
+  color: #5b3a1a;
+}
+
+/* 원작 버튼판에 그려진 확인·취소 자리에 원작 버튼(NewChar/BtYes·BtNo, 81×41)을 픽셀 그대로 겹친다.
+   버튼 그림을 못 받아도 판에 그려진 버튼 위에 투명하게 놓인다 */
+.create.has-art .create-buttons {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.create.has-art .create-buttons button {
+  position: absolute;
+  width: 81px;
+  height: 41px;
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: transparent;
+  pointer-events: auto;
+}
+
+.create.has-art .create-buttons button:not(.has-art):hover {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.create.has-art .create-submit {
+  left: 28px;
+  top: 185px;
+}
+
+.create.has-art .create-cancel {
+  left: 101px;
+  top: 184px;
+}
+
+.select-confirm {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.select-confirm-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 280px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #23262f;
+  text-align: center;
+}
+
+.select-confirm-text {
+  margin: 0;
+  font-weight: 700;
+  word-break: keep-all;
+}
+
+.select-confirm-sheet small {
+  color: #a9adb8;
+  font-size: 10px;
+}
+
+.select-confirm-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.select-confirm-buttons .select-confirm-delete {
+  background: #d64541;
+}
+
+.select-confirm-sheet.has-art {
+  justify-content: center;
+  width: 249px;
+  height: 142px;
+  max-width: none;
+  box-sizing: border-box;
+  padding: 14px 20px;
+  border-radius: 0;
+  background: var(--paper) 0 0 / 100% 100% no-repeat;
+  color: #5b3a1a;
+}
+
+.select-confirm-sheet.has-art small {
+  color: #8a6a45;
+}
+
+/* 원작 버튼 그림. 글자는 그림에 들어 있어서 텍스트는 접근성 이름으로만 남긴다 */
+.art-button.has-art {
+  padding: 0;
+  border-radius: 0;
+  background: var(--normal) center / 100% 100% no-repeat;
+  color: transparent;
+}
+
+.art-button.has-art:hover:not(:disabled) {
+  background-image: var(--hover);
+}
+
+.art-button.has-art:active:not(:disabled) {
+  background-image: var(--pressed);
+}
+
+.art-button.has-art:disabled {
+  background-image: var(--disabled);
+  opacity: 1;
+}
+
+.art-button.has-art:focus-visible {
+  outline: 1px solid #ffd23f;
+}
+
+/* 버튼은 원본 크기. 넘김 버튼은 정확히 절반, 생성·삭제는 0.75배로 부드럽게 줄인다 */
+.select-start.has-art {
+  width: 140px;
+  height: 52px;
+}
+
+/* 원본(132×47)은 위 모서리에 두기엔 커서 0.75배로 부드럽게 줄인다. 0.5배는 버튼 글자가 6px 로 안 읽힌다 */
+.select-create.has-art,
+.select-delete.has-art {
+  width: 99px;
+  height: 35px;
+}
+
+.create-submit.has-art,
+.create-cancel.has-art {
+  width: 81px;
+  height: 41px;
+}
+
+.select-confirm-cancel.has-art {
+  width: 50px;
+  height: 23px;
+}
+
+.select-confirm-delete.has-art {
+  width: 140px;
+  height: 38px;
+}
+
+/* 화살표는 15×16 원본 크기로 두고 누르는 자리만 넓힌다. 바탕은 항목 칸의 크림색과 같다 */
+.create-part .art-button.has-art {
+  width: 19px;
+  height: 17px;
+  background-size: 15px 16px;
+}
+
+/* HUD 의 캐시샵 버튼. 원작 캐시 동전(13×13)을 원본 크기로 */
+.hud .hud-shop {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 19px;
+}
+
+.hud-shop img {
+  image-rendering: pixelated;
+}
+
+/* 캐시샵. 360×230 창 안에 왼쪽 부위 탭(78) · 가운데 미리보기(104) · 오른쪽 아이템 6칸(172)을 둔다.
+   원작 그림은 모두 원본 크기로 잘라 쓰고, 큰 버튼(EXIT)·빈 목록 그림만 정확히 절반으로 줄인다 */
+.shop {
+  position: absolute;
+  inset: 0;
+  background: #2a2a2c;
+  color: #f1f1f1;
+}
+
+/* 원작 캐시샵 바탕(1024×768)의 무늬 있는 어두운 판만 원본 크기로 */
+.shop.has-back-art {
+  background: var(--back) -140px -60px no-repeat, #2a2a2c;
+}
+
+.shop[hidden],
+.shop-confirm[hidden],
+.shop-status[hidden],
+.shop button[hidden] {
+  display: none;
+}
+
+.shop button,
+.shop input {
+  font: inherit;
+  color: inherit;
+}
+
+.shop-exit {
+  position: absolute;
+  left: 10px;
+  top: 2px;
+  width: 58px;
+  height: 17.5px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-tabs {
+  position: absolute;
+  left: 0;
+  top: 21px;
+  width: 78px;
+  height: 209px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* 원작 코디 탭 글자 그림(78×19). 고른 탭은 하늘색(Enable), 나머지는 흰색(Disable) */
+.shop-tab {
+  display: block;
+  width: 78px;
+  height: 19px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  cursor: pointer;
+}
+
+.shop-tab.has-art {
+  background: var(--off) 0 0 no-repeat;
+  color: transparent;
+}
+
+.shop-tab.is-active {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #7fe7ff;
+}
+
+.shop-tab.has-art.is-active {
+  background-image: var(--on);
+  color: transparent;
+}
+
+.shop-tab:hover:not(.is-active) {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.shop-tab:focus-visible {
+  outline: 1px solid #ffd23f;
+  outline-offset: -1px;
+}
+
+.shop-meso {
+  position: absolute;
+  left: 80px;
+  top: 2px;
+  width: 104px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: #ffd23f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* 메소 아이콘(23×24)은 정확히 절반으로 */
+.shop-meso-icon img {
+  display: block;
+  width: 11.5px;
+  height: 12px;
+}
+
+/* 미리보기 배경(Base/Preview/0)의 풀밭 윗면이 칸 바닥에서 22px 위에 오게 원본 크기로 자른다 */
+.shop-preview {
+  position: absolute;
+  left: 80px;
+  top: 22px;
+  width: 104px;
+  height: 138px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #8fc7e8, #d6efd0 80%, #6b8f4a 80%);
+}
+
+.shop-preview.has-art {
+  background: var(--stage) -131px -42px no-repeat;
+}
+
+/* 발이 그림 정중앙이라 반쪽 크기를 정수로 내려 칸 안 (52, 116) 에 발을 맞춘다 */
+.shop-preview img {
+  position: absolute;
+  left: calc(52px - var(--half-width, 0px));
+  top: calc(116px - var(--half-height, 0px));
+  image-rendering: pixelated;
+}
+
+/* 새 모습을 받는 동안 앞 모습을 흐리게 남겨 둔다. 금방 오는 그림에 깜빡이지 않게 조금 늦게 흐린다 */
+.shop-preview.is-loading img {
+  opacity: 0.55;
+  transition: opacity 0.15s 0.25s;
+}
+
+.shop-pick {
+  position: absolute;
+  left: 80px;
+  top: 161px;
+  width: 104px;
+  height: 15px;
+  margin: 0;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d9dce3;
+}
+
+.shop-pick.is-problem {
+  color: #ffb4a6;
+}
+
+.shop-buy,
+.shop-wear,
+.shop-reset {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* 원작 구입하기(101×24)·원래대로(70×26) 버튼 크기 그대로 */
+.shop-buy,
+.shop-wear {
+  left: 81px;
+  top: 177px;
+  width: 101px;
+  height: 24px;
+  background: #5aa02c;
+}
+
+.shop-wear {
+  background: #2f6fb5;
+}
+
+.shop-reset {
+  left: 97px;
+  top: 203px;
+  width: 70px;
+  height: 26px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.shop-buy:disabled,
+.shop-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.shop .art-button.has-art:disabled {
+  opacity: 1;
+}
+
+.shop-wear:hover,
+.shop-reset:not(.has-art):hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+/* 원작 보관함 검색 칸(118×18). 왼쪽 돋보기 자리를 비워 둔다 */
+.shop-search {
+  position: absolute;
+  left: 186px;
+  top: 2px;
+  width: 118px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.shop-search.has-art {
+  background: var(--field) 0 0 no-repeat;
+}
+
+.shop-search input {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 6px 0 20px;
+  border: 0;
+  outline: none;
+  background: none;
+  font-size: 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.shop-search input::placeholder {
+  color: #8d929c;
+}
+
+.shop-search:focus-within {
+  box-shadow: 0 0 0 1px #ffd23f;
+}
+
+.shop-count {
+  position: absolute;
+  left: 306px;
+  top: 2px;
+  width: 52px;
+  height: 18px;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: right;
+  color: #a9adb8;
+}
+
+.shop-grid,
+.shop-status {
+  position: absolute;
+  left: 186px;
+  top: 22px;
+  width: 172px;
+  height: 186px;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 85px);
+  grid-auto-rows: 60px;
+  gap: 2px;
+  align-content: start;
+}
+
+.shop-card {
+  position: relative;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  text-align: left;
+  cursor: pointer;
+}
+
+.shop-card:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.shop-card.is-selected {
+  border-color: #ffd23f;
+  background: rgba(255, 210, 63, 0.14);
+}
+
+.shop-card:focus-visible {
+  outline: 1px solid #ffd23f;
+}
+
+/* 아이템 아이콘은 원본 크기(대부분 32px 안팎)로 칸 가운데에 */
+.shop-card-icon {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f3f5f7, #d5dbe1);
+}
+
+.shop-card-icon img,
+.shop-confirm-icon img {
+  image-rendering: pixelated;
+}
+
+.shop-card-name {
+  position: absolute;
+  left: 41px;
+  top: 3px;
+  width: 41px;
+  height: 36px;
+  font-size: 10px;
+  line-height: 12px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.shop-card-price {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #ffd23f;
+}
+
+.shop-card.is-owned .shop-card-price {
+  color: #9be28c;
+}
+
+.shop-card.is-equipped .shop-card-price {
+  color: #7fe7ff;
+}
+
+.shop-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.shop-status p {
+  max-width: 150px;
+  margin: 0;
+  font-size: 11px;
+  text-align: center;
+  word-break: keep-all;
+  color: #c4c8d0;
+}
+
+.shop-status-art[hidden] {
+  display: none;
+}
+
+/* 빈 목록 그림(232×107, 글자 포함)은 정확히 절반으로. 그림을 받았으면 글자는 그림이 대신한다 */
+.shop-status-art {
+  display: none;
+  width: 116px;
+  height: 53.5px;
+}
+
+.shop-status-art.has-art:not([hidden]) {
+  display: block;
+  background: var(--empty) 0 0 / 100% 100% no-repeat;
+}
+
+.shop-status.is-empty-art:has(.shop-status-art.has-art:not([hidden])) p {
+  display: none;
+}
+
+.shop-pager {
+  position: absolute;
+  left: 186px;
+  top: 210px;
+  width: 172px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.shop-pager button {
+  width: 22px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 8px;
+  cursor: pointer;
+}
+
+/* 원작 넘김 버튼(18×13) 원본 크기 */
+.shop-pager .art-button.has-art {
+  width: 18px;
+  height: 13px;
+}
+
+.shop-pager button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.shop-page-number {
+  min-width: 44px;
+  font-size: 10px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: #d9dce3;
+}
+
+.shop-confirm {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.shop-confirm-sheet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 228px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #23262f;
+}
+
+.shop-confirm-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+}
+
+.shop-confirm-icon {
+  flex: 0 0 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f3f5f7, #d5dbe1);
+}
+
+.shop-confirm-body p {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+}
+
+.shop-confirm-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shop-confirm-price {
+  color: #ffd23f;
+}
+
+.shop-confirm-sheet small {
+  color: #a9adb8;
+  font-size: 10px;
+}
+
+.shop-confirm-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+/* 원작 확인·취소(83×26) 원본 크기 */
+.shop-confirm-buttons button {
+  width: 83px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: #5aa02c;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-confirm-buttons .shop-confirm-cancel:not(.has-art) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --sheet-bg: #23262f;
+    --sheet-text: #f1f1f1;
+  }
+}
+
+/* ── NPC 대화창 (ui/npcDialog.ts) ─────────────────────────────
+   원작 UtilDlgEx 띠(519 폭)를 원본 크기 그대로 잘라 이어 340 폭으로 만든다. 자르는 자리·높이 계산은 npcDialog.ts 에 있다.
+   그림을 못 받으면 같은 배치의 밋밋한 창으로 남는다 */
+.npc-dialog {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.npc-dialog[hidden] {
+  display: none;
+}
+
+/* 전직 축하는 게임을 막지 않는다. 화면을 어둡게 하지 않고 창 밖 클릭은 맵·HUD 로 간다 */
+.npc-dialog.is-passive {
+  background: none;
+  pointer-events: none;
+}
+
+.npc-dialog.is-passive .npc-window {
+  pointer-events: auto;
+}
+
+.npc-window {
+  position: absolute;
+  color: var(--sheet-text);
+  background: var(--sheet-bg);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  line-height: 15px;
+  outline: none;
+}
+
+.npc-window.has-art {
+  color: #000000;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.npc-frame {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.npc-window.has-art .npc-frame {
+  display: block;
+}
+
+.npc-piece {
+  position: absolute;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+.npc-piece.is-t {
+  top: 0;
+  height: 28px;
+  background-image: var(--t);
+}
+
+.npc-piece.is-c {
+  top: 28px;
+  bottom: 44px;
+  background-image: var(--c);
+  background-repeat: repeat-y;
+}
+
+.npc-piece.is-s {
+  bottom: 0;
+  height: 44px;
+  background-image: var(--s);
+}
+
+/* 왼쪽 회색 칸(x 11~124) 가운데에 발을 두고 이름표 바로 위에 세운다 */
+.npc-portrait {
+  position: absolute;
+  left: 67px;
+  bottom: 50px;
+}
+
+.npc-portrait img {
+  position: absolute;
+  bottom: 0;
+  image-rendering: pixelated;
+}
+
+/* 원작 이름표(bar, 109×19)는 파란 띠 위 2px 에 둔다 */
+.npc-name {
+  position: absolute;
+  left: 13px;
+  bottom: 30px;
+  width: 109px;
+  height: 19px;
+  border-radius: 4px;
+  background: rgba(40, 40, 40, 0.85);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.npc-name.has-art {
+  border-radius: 0;
+  background: var(--bar) no-repeat;
+}
+
+/* 오른쪽 흰 글 칸(x 129~326, 위 15 · 아래 35) 안쪽 */
+.npc-text {
+  position: absolute;
+  left: 135px;
+  right: 20px;
+  top: 19px;
+  bottom: 39px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.npc-color-blue {
+  color: #1f3dd6;
+}
+
+.npc-color-red {
+  color: #e01b1b;
+}
+
+.npc-options {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 4px;
+  white-space: normal;
+}
+
+.npc-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 0;
+  border: 0;
+  background: none;
+  color: #1f3dd6;
+  font: inherit;
+  cursor: pointer;
+}
+
+.npc-option:hover,
+.npc-option:focus-visible {
+  outline: none;
+  text-decoration: underline;
+}
+
+.npc-dot {
+  flex: none;
+  width: 6px;
+  height: 7px;
+}
+
+.has-dot-art .npc-dot {
+  background: var(--dot0) no-repeat;
+}
+
+.has-dot-art .npc-option:hover .npc-dot,
+.has-dot-art .npc-option:focus-visible .npc-dot {
+  background-image: var(--dot1);
+}
+
+/* 버튼은 아래 파란 띠 가운데(아래에서 7px). 「대화 그만하기」는 왼쪽, 나머지는 오른쪽 */
+.npc-buttons {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 7px;
+  height: 16px;
+  display: flex;
+  gap: 4px;
+}
+
+.npc-button {
+  height: 16px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(127, 127, 127, 0.2);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.npc-button[hidden] {
+  display: none;
+}
+
+.npc-button.is-close {
+  margin-right: auto;
+}
+
+.npc-button.has-art {
+  image-rendering: pixelated;
+}
+
+.npc-button.is-close.has-art {
+  width: 91px;
+}
+
+.npc-button.is-yes.has-art,
+.npc-button.is-no.has-art {
+  width: 57px;
+}
+
+.npc-button.is-next.has-art,
+.npc-button.is-ok.has-art {
+  width: 40px;
+}
+
+/* ── HUD 메뉴 (ui/hud.ts) ─────────────────────────────
+   소리·설정·캐릭터 선택을 ⚙ 버튼 하나의 메뉴로 묶었다. HUD 와 같은 어두운 바탕 */
+/* 긴 직업 이름(아크메이지(불,독) · 5차)에 휴식 중·억 단위 메소가 겹쳐도 두 줄로 꺾이지 않게 직업 이름을 말줄임한다 */
+.hud-job {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-rest,
+.hud-meso {
+  flex: none;
+  white-space: nowrap;
+}
+
+.hud .hud-menu-button {
+  min-width: 26px;
+  height: 19px;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.hud .hud-menu-button[aria-expanded='true'] {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.hud-menu {
+  position: absolute;
+  top: 28px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px;
+  border-radius: 6px;
+  background: var(--hud-bg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.hud-menu[hidden] {
+  display: none;
+}
+
+.hud-menu button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--hud-text);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hud-menu button:hover,
+.hud-menu button:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+/* ── 설정 (ui/settings.ts) ─────────────────────────────
+   원작 시스템 옵션 창(UIWindow2.img/SysOpt/backgrnd, 283×354)을 원본 크기로 쓰되 230 높이에 맞게 위 198px 띠와
+   아래 32px 띠만 잘라 잇는다. 창 몸통은 원래 반투명이라 멈춘 맵이 어둡게 비친다. 안쪽 회색 판·항목 칸은 원작 옵션 창
+   (SysOpt/backgrnd2)의 색을 CSS 로 옮겼다. 그림을 못 받으면 같은 배치의 어두운 창으로 남는다 */
+.settings {
+  position: absolute;
+  inset: 0;
+  /* 창 그림이 반투명이라 뒤 HUD 글자가 제목 띠에 비치지 않을 만큼 어둡게 깐다 */
+  background: rgba(0, 0, 0, 0.55);
+  color: #333333;
+}
+
+.settings[hidden] {
+  display: none;
+}
+
+.settings-window {
+  position: absolute;
+  z-index: 0;
+  left: 38px;
+  top: 0;
+  width: 283px;
+  height: 230px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.73);
+  box-shadow: inset 0 0 0 1px #cccccc;
+}
+
+.settings-window.has-frame-art {
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.settings-window.has-frame-art::before,
+.settings-window.has-frame-art::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  width: 283px;
+  background: var(--frame) no-repeat;
+}
+
+.settings-window.has-frame-art::before {
+  top: 0;
+  height: 198px;
+  background-position: 0 0;
+}
+
+.settings-window.has-frame-art::after {
+  bottom: 0;
+  height: 32px;
+  background-position: 0 100%;
+}
+
+.settings-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 17px;
+  margin: 0;
+  color: #ffd23f;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+}
+
+/* 원작 창 그림에 「SYSTEM OPTION」 제목이 들어 있다 */
+.settings-window.has-frame-art .settings-title {
+  color: transparent;
+}
+
+.settings-body {
+  position: absolute;
+  left: 6px;
+  top: 20px;
+  width: 271px;
+  height: 176px;
+  box-sizing: border-box;
+  padding: 3px;
+  border-radius: 3px;
+  background: #c8c8c8;
+}
+
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.settings-row {
+  display: flex;
+  gap: 2px;
+  height: 17px;
+}
+
+.settings-label {
+  flex: none;
+  width: 52px;
+  border-radius: 3px;
+  background: linear-gradient(#a3a3a3, #747474);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.settings-control {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #ffffff;
+  font-size: 10px;
+}
+
+.settings-segments {
+  display: flex;
+  gap: 2px;
+}
+
+.settings button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-segment {
+  height: 13px;
+  padding: 0 4px;
+  border: 1px solid #b4b4b4;
+  border-radius: 3px;
+  background: linear-gradient(#ffffff, #e4e4e4);
+  color: #555555;
+  font-size: 10px;
+  line-height: 11px;
+}
+
+.settings-segment:hover:not(:disabled) {
+  border-color: #6aa9d8;
+}
+
+/* 원작 확인 버튼의 하늘색 */
+.settings-segment.is-selected {
+  border-color: #1b7cc8;
+  background: linear-gradient(#63ccff, #1f90e2);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.settings-segment:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.settings-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #555555;
+  cursor: pointer;
+}
+
+.settings-check input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.settings-check-box {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1px solid #999999;
+  border-radius: 2px;
+  background: #ffffff;
+}
+
+.settings-check input:checked + .settings-check-box {
+  border-color: #1b7cc8;
+  background: #1f90e2;
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* 원작 체크 상자(11×11) 원본 크기 */
+.settings-check.has-art .settings-check-box,
+.settings-check.has-art input:checked + .settings-check-box {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 0;
+  background: var(--off) no-repeat;
+  box-shadow: none;
+}
+
+.settings-check.has-art input:checked + .settings-check-box {
+  background-image: var(--on);
+}
+
+.settings-check input:focus-visible + .settings-check-box {
+  outline: 1px solid #1f90e2;
+}
+
+.settings-stepper {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-step {
+  width: 15px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid #b4b4b4;
+  border-radius: 3px;
+  background: linear-gradient(#ffffff, #e4e4e4);
+  color: #666666;
+  font-size: 7px;
+  line-height: 11px;
+}
+
+.settings-step-value {
+  flex: 1;
+  color: #333333;
+  font-weight: 700;
+  text-align: center;
+}
+
+.settings-slider {
+  width: 112px;
+  height: 11px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.settings-slider::-webkit-slider-runnable-track {
+  height: 11px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #1f90e2 var(--fill, 0%), #d6d6d6 var(--fill, 0%));
+}
+
+.settings-slider::-webkit-slider-thumb {
+  width: 28px;
+  height: 11px;
+  border: 1px solid #8a8a8a;
+  border-radius: 3px;
+  background: linear-gradient(#ffffff, #cfcfcf);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 원작 가로 스크롤(HScr8)을 원본 크기로. 가운데 띠는 가로로 같은 그림이라 늘려도 픽셀이 그대로다 */
+.settings-slider.has-art::-webkit-slider-runnable-track {
+  border-radius: 0;
+  background:
+    var(--track-start) 0 0 no-repeat,
+    var(--track-end) 100% 0 no-repeat,
+    var(--track-middle) 6px 0 / calc(100% - 12px) 11px no-repeat;
+}
+
+.settings-slider.has-art::-webkit-slider-thumb {
+  border: 0;
+  border-radius: 0;
+  background: var(--thumb) no-repeat;
+}
+
+.settings-slider.has-art:hover::-webkit-slider-thumb {
+  background-image: var(--thumb-hover);
+}
+
+.settings-slider:focus-visible {
+  outline: 1px solid #1f90e2;
+}
+
+.settings-volume {
+  width: 16px;
+  color: #333333;
+  font-weight: 700;
+  text-align: right;
+}
+
+.settings-hint {
+  height: 24px;
+  margin: 2px 2px 0;
+  overflow: hidden;
+  color: #3a3a3a;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+/* 원작 확인·취소 자리(창 왼쪽에서 99·144, 아래 띠 안) */
+.settings-buttons {
+  position: absolute;
+  left: 99px;
+  top: 205px;
+  display: flex;
+  gap: 5px;
+}
+
+.settings-buttons button {
+  width: 40px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: #1f90e2;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.settings-buttons .settings-cancel:not(.has-art) {
+  background: #6cbf1c;
+}
+
+/* 그림을 못 받은 창은 어두운 테마 바탕(--sheet-bg)을 따르니 파란 글자를 밝힌다 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .npc-window:not(.has-art) .npc-color-blue,
+  :root:not([data-theme='light']) .npc-window:not(.has-art) .npc-option {
+    color: #8fa6ff;
+  }
+}
