@@ -2,6 +2,22 @@
 
 컴퓨터를 쓴 시간만큼 메이플스토리 캐릭터가 자라는 데스크톱 컴패니언. 비공식·비상업 팬메이드이며 메이플스토리 관련 권리는 NEXON 에 있다.
 
+## 설치
+
+macOS 전용이다(Apple Silicon·Intel 둘 다). 다른 운영체제용은 아직 없다.
+
+1. [Releases 최신 버전](https://github.com/blueeeeg/maple-companion/releases/latest)에서 `.dmg` 를 받는다. `.zip` 을 받아도 된다
+2. `.dmg` 를 열고 `Maple Companion` 을 응용 프로그램 폴더로 끌어 놓는다. `.zip` 이면 풀어서 나온 앱을 응용 프로그램 폴더로 옮긴다
+3. 처음 열 때 「확인되지 않은 개발자」 경고가 뜬다. Apple 공증(notarization)을 받지 않은 앱이라서다. 응용 프로그램 폴더에서 앱을 우클릭 → 「열기」 → 「열기」를 누르면 다음부터는 그냥 열린다. 그래도 안 열리면 터미널에서 아래를 한 번 실행한다
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Maple Companion.app"
+```
+
+처음에는 화면 구석의 작은 창(펫 모드)으로 뜨고 Dock 에는 안 보인다. 메뉴바의 트레이 아이콘 메뉴에서 메뉴바 모드로 바꾸거나 「종료」로 끈다. 캐릭터·맵·소리는 실행 중에 [maplestory.io](https://maplestory.io) 에서 받아 오므로 인터넷이 필요하다.
+
+## 기능
+
 - 키보드·마우스 입력이 있는 동안(기본 2분 넘게 입력이 없으면 멈춤) 경험치가 쌓인다
 - 초보자에서 6차 전직(Lv.260)까지. Lv.10 이 되면 원작 NPC 대화창이 뜬다. 메이플 아일랜드의 마이가 길을 묻고, 고른 직업의 전직관(주먹펴고 일어서·하인즈·헬레나·다크로드·카이린)이 「예」를 받으면 전직한다. 대화를 그만둬도 HUD 의 「전직 가능!」 버튼으로 다시 연다
 - 2차부터 6차 전직은 레벨이 되면 저절로 되고, 같은 전직관이 축하 대화를 띄운다. 축하 창은 화면을 어둡게 하지 않고 게임도 멈추지 않는다. 대화가 겹치면 앞 대화가 끝난 뒤에 연다
@@ -62,7 +78,7 @@ NPC 대화창은 `UI/UIWindow2.img/UtilDlgEx` 다. 폭 519 의 위(`t`)·가운�
 
 맵 렌더 이미지에는 원점 정보가 없어서, 처음 들어가는 마을은 발판 좌표를 이미지의 땅 경계에 맞추는 계산을 한 번 하고 결과를 저장해 둔다(`src/maple/ground.ts`).
 
-## 실행
+## 개발
 
 ```bash
 pnpm install
@@ -71,7 +87,10 @@ MAPLE_SPEED=60 pnpm tauri dev  # 60배속으로 경험치 확인
 pnpm dev                       # 브라우저로 화면만 (http://localhost:1420/?speed=60)
                                # ?boss=8860000 이면 그 보스(?boss=1 이면 레벨에 맞는 보스)와 바로 싸운다. 개발 서버에서만
 pnpm test                      # 단위 테스트
+pnpm tauri build --target universal-apple-darwin   # 배포용 .app·.dmg (src-tauri/target/universal-apple-darwin/release/bundle)
 ```
+
+배포는 `v*` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 유니버설 앱을 빌드해 Releases 에 `.dmg`·`.zip`·`.app.tar.gz` 를 올린다. 서명은 ad-hoc(`bundle.macOS.signingIdentity: "-"`)이고 공증은 하지 않는다. 버전은 `package.json`·`src-tauri/tauri.conf.json`·`src-tauri/Cargo.toml` 세 곳을 같이 올린다.
 
 Rust 가 필요하다(`rustup`). 트레이 아이콘 메뉴에서 펫 모드(화면 구석 창)와 메뉴바 모드(아이콘을 누르면 열리는 창)를 바꾼다.
 

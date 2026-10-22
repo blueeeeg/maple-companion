@@ -2,7 +2,7 @@
 name = "maple-companion"
 version = "0.1.0"
 description = "메이플스토리 팬메이드 데스크톱 컴패니언"
-authors = ["you"]
+authors = ["blueeeeg"]
 edition = "2024"
 
 [lib]

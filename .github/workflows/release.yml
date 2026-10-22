@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    env:
+      APP_NAME: Maple Companion
+      BUNDLE_DIR: src-tauri/target/universal-apple-darwin/release/bundle
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Maple Companion ${{ github.ref_name }}
+          releaseBody: |
+            macOS 용 유니버설 앱(Apple Silicon·Intel)이다.
+
+            1. 아래 `.dmg` 를 받아 열고 Maple Companion 을 응용 프로그램 폴더로 끌어 놓는다. `.zip` 을 받았다면 풀어서 나온 앱을 옮긴다
+            2. 공증(notarization)을 받지 않은 앱이라 처음 열 때 경고가 뜬다. 앱을 우클릭 → 「열기」를 누르거나 터미널에서 아래를 한 번 실행한다
+
+            ```bash
+            xattr -dr com.apple.quarantine "/Applications/Maple Companion.app"
+            ```
+
+            캐릭터·맵·소리는 실행 중에 maplestory.io 에서 받아 오므로 인터넷이 필요하다.
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin
+
+      - name: Upload zipped .app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ZIP="Maple.Companion_${GITHUB_REF_NAME#v}_universal.app.zip"
+          ditto -c -k --keepParent "$BUNDLE_DIR/macos/$APP_NAME.app" "$ZIP"
+          gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
