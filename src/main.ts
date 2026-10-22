@@ -41,9 +41,12 @@ import {
   pinnedTown,
   townRotateMs,
 } from './game/settings';
+import { fieldMoveDue, fieldMoves, pickFieldMove, townFields } from './game/routes';
+import type { RouteField } from './game/routeCuration';
 import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
+import { warmMaps } from './maple/portal';
 import { createActivitySource } from './platform/activity';
 import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
 import { createNotifier } from './platform/notification';
@@ -79,6 +82,13 @@ let screen: 'map' | 'select' | 'shop' | 'settings' = selectedCharacter(roster) ?
 let town: Town | null = null;
 let townLoading = false;
 let townChangedAt = Date.now();
+/** 마을에서 포털로 걸어 들어간 사냥터. 마을 맵에 있으면 null */
+let field: RouteField | null = null;
+/** 지금 맵(마을·사냥터)에 들어온 시각과 거기서 잡은 몬스터 수. 사냥터로 옮길 때를 정한다 */
+let arrivedAt = Date.now();
+let huntsHere = 0;
+/** 이번 마을에서 맵을 못 받아 온 사냥터. 다른 마을로 가면 다시 시도한다 */
+const skippedFields = new Set<number>();
 let lastLevel: { characterId: string; level: number } | null = null;
 let lastTrayStatus = '';
 /** 트레이 메뉴에서 받을 수 있는 새 버전 */
@@ -266,6 +276,7 @@ function handleKill(monster: MonsterSpec): number {
   character.killXp += xp;
   character.meso += meso;
   character.monsterBook[monster.name] = (character.monsterBook[monster.name] ?? 0) + 1;
+  huntsHere += 1;
   writeRoster(roster);
   void tick();
   return meso;
@@ -299,7 +310,9 @@ function fightBoss(boss: BossSpec, encounterNumber: number | null): void {
       },
       onDefeat: () => handleBossKill(boss, encounterNumber !== null),
       onReturn: () => {
-        if (town) bgm.setTown(town);
+        // 사냥터에서 부른 보스는 그 사냥터로 돌아온다
+        if (field) bgm.setMap(field.mapId);
+        else if (town) bgm.setTown(town);
       },
     })
     .catch(() => {
@@ -322,9 +335,38 @@ function moveTo(next: Town): void {
     .setTown(next)
     .then(() => {
       town = next;
+      field = null;
+      arrivedAt = Date.now();
+      huntsHere = 0;
+      skippedFields.clear();
       bgm.setTown(next);
+      warmMaps(townFields(next).map((each) => each.mapId));
     })
     .catch(() => hud.notify(`${next.name} 맵을 불러오지 못했어요`))
+    .finally(() => (townLoading = false));
+}
+
+/** 마을 맵과 그 마을 사냥터 사이를 포털로 걸어서 옮긴다. 마을 자동 이동·고정은 마을 단위라 사냥터에 있어도 그대로 돈다 */
+function travelField(current: Town): void {
+  const moves = fieldMoves(current.mapId, townFields(current), field?.mapId ?? current.mapId);
+  const move = pickFieldMove(moves, skippedFields);
+  // 갈 곳이 없거나 못 갔어도 다음 차례까지 다시 고르지 않는다
+  arrivedAt = Date.now();
+  huntsHere = 0;
+  if (!move) return;
+  townLoading = true;
+  scene
+    .travel(move.toMapId, move.field?.name ?? current.name, move.exitX, move.arrivalX)
+    .then(() => {
+      field = move.field;
+      arrivedAt = Date.now();
+      if (field) bgm.setMap(field.mapId);
+      else bgm.setTown(current);
+    })
+    .catch(() => {
+      // 돌아가는 길은 이미 다녀온 맵이라 막지 않는다
+      if (move.field && move.field.fromMapId === (field?.mapId ?? current.mapId)) skippedFields.add(move.toMapId);
+    })
     .finally(() => (townLoading = false));
 }
 
@@ -392,7 +434,8 @@ async function tick(): Promise<void> {
   if (!character) return;
   const info = levelInfo(characterXp(character));
   // 마을이 열리거나 캐릭터를 바꾸면 목록이 바뀐다. 같은 목록이면 bgm 이 무시한다
-  bgm.prefetch(likelyBgmMaps(info.level));
+  // 지금 마을의 사냥터는 몇 분 안에 들어가서 먼저 받는다
+  bgm.prefetch([...(town ? townFields(town).map((each) => each.mapId) : []), ...likelyBgmMaps(info.level)]);
 
   const job = characterJob(character, info.level);
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
@@ -445,6 +488,10 @@ async function tick(): Promise<void> {
     }
   }
 
+  if (!scene.inEncounter && !townLoading && fieldMoveDue({ hunts: huntsHere, sinceArrivalMs: Date.now() - arrivedAt })) {
+    travelField(town);
+  }
+
   if (forcedBoss && !scene.inEncounter && !townLoading) {
     const wanted = forcedBoss;
     forcedBoss = null;
@@ -461,7 +508,11 @@ async function tick(): Promise<void> {
     const next = character.encountersResolved + 1;
     const boss = bossDue(character, pace) && next !== bossSkippedAt ? pickBoss(info.level) : null;
     if (boss) fightBoss(boss, next);
-    else scene.startEncounter(pickMonster(town), 3 + Math.floor(Math.random() * 3));
+    else {
+      // 사냥터에서는 그 맵의 실제 몬스터가 나온다. 보상은 마을 기준 그대로다
+      const monster = pickMonster(field ? { ...town, monsters: field.monsters } : town);
+      scene.startEncounter(monster, 3 + Math.floor(Math.random() * 3));
+    }
   }
 }
 

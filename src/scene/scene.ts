@@ -35,6 +35,7 @@ import { type Calibration, type GroundPath, calibrateFootholds, groundY, mainGro
 import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
 import { type EffectLayer, type Skill, loadSkill } from '../maple/skills';
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture } from '../maple/textures';
+import { loadPortalFrames } from '../maple/portal';
 import { createBossGauge } from './bossGauge';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
@@ -103,6 +104,10 @@ const BOSS_COIN_SPREAD = 70;
 const BOSS_COIN_STAGGER_MS = 70;
 /** 대미지 숫자가 HUD·HP 게이지(화면 위 약 70px)에 가리지 않게 보스 머리가 화면 밖이면 숫자를 내려 띄운다 */
 const BOSS_DAMAGE_CEILING = 110;
+/** 포털까지 걷다가 이보다 오래 걸리면(바닥 끝에 막히는 등) 그 자리에서 들어간다 */
+const PORTAL_WALK_LIMIT_MS = 60_000;
+/** 옮겨 간 맵에서 나온 포털이 남아 있다가 사라지는 시간 */
+const PORTAL_LINGER_MS = 1800;
 
 export interface BossFightEvents {
   /** 보스 맵으로 바뀌어 화면이 밝아지기 직전 */
@@ -140,6 +145,11 @@ export interface Scene {
   setDisplayScale(scale: number): void;
   /** 캐릭터 발밑 이름표. 비어 있으면 이름표를 숨긴다 */
   setName(name: string): void;
+  /**
+   * 지금 맵의 포털(exitX)까지 걸어가 들어가고, 옮겨 간 맵의 포털(arrivalX)에서 나온다. 좌표는 맵 월드 좌표.
+   * 맵을 다 받은 뒤에 걷기 시작한다. 못 받아 오면 지금 맵에 남고 실패한다. 보스를 잡으면 이 맵으로 돌아온다
+   */
+  travel(mapId: number, label: string, exitX: number, arrivalX: number): Promise<void>;
 }
 
 type HeroAction = 'stand' | 'walk' | 'attack';
@@ -901,6 +911,42 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     paintSky(colors);
   }
 
+  /** 캐릭터 뒤에 원작 포털을 띄운다. lifeMs 가 지나거나 close 하면 사라진다 */
+  function showPortal(frames: EffectLayer, x: number, lifeMs: number): { close(): void } {
+    const sprite = new Sprite(frames[0].texture);
+    const y = ground ? groundY(ground, x) : hero.y;
+    const delays = frames.map((frame) => frame.delay);
+    let elapsedMs = 0;
+    let closed = false;
+    const update = (dtMs: number) => {
+      elapsedMs += dtMs;
+      const index = frameAt(delays, elapsedMs, true);
+      sprite.texture = frames[index].texture;
+      sprite.pivot.set(frames[index].origin.x, frames[index].origin.y);
+      sprite.position.set(x, y);
+      sprite.alpha = Math.max(0, Math.min(1, elapsedMs / 300, (lifeMs - elapsedMs) / 300));
+      return !closed && elapsedMs < lifeMs;
+    };
+    update(0);
+    addEffect(sprite, actors, update);
+    actors.setChildIndex(sprite, actors.getChildIndex(hero));
+    return { close: () => (closed = true) };
+  }
+
+  /** 캐릭터를 x 까지 걷게 하고 닿으면 끝난다. 화면이 멈춘 동안은 기다린다 */
+  function walkTo(x: number): Promise<void> {
+    behavior = { kind: 'wander', targetX: x, pauseMs: 0 };
+    let walkedMs = 0;
+    return new Promise((resolve) => {
+      addEffect(new Container(), worldEffects, (dtMs) => {
+        walkedMs += dtMs;
+        if (Math.abs(hero.x - x) >= 3 && walkedMs < PORTAL_WALK_LIMIT_MS) return true;
+        resolve();
+        return false;
+      });
+    });
+  }
+
   /** 보스를 잡고 메소를 다 주운 뒤 마을로 돌아간다 */
   async function leaveBoss(): Promise<void> {
     await fadeTo(1);
@@ -1165,6 +1211,27 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       nameLabel = label;
       if (label) drawNameTag(label);
       placeNameTag();
+    },
+    async travel(mapId, label, exitX, arrivalX) {
+      if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 맵을 옮길 수 없음');
+      const from = home;
+      const stage = await prepareStage(mapId, label);
+      // 포털 그림을 못 받아도 걸어가서 옮긴다
+      const frames = await loadPortalFrames().catch(() => null);
+      const exitAt = clampToGround(exitX + from.stage.calibration.dx);
+      const exitPortal = frames ? showPortal(frames, exitAt, Infinity) : null;
+      await walkTo(exitAt);
+      await fadeTo(1);
+      exitPortal?.close();
+      home = { stage, town: from.town };
+      enterStage(stage, from.town);
+      hero.x = clampToGround(arrivalX + stage.calibration.dx);
+      hero.y = groundY(stage.ground, hero.x);
+      behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1500 };
+      if (frames) showPortal(frames, hero.x, PORTAL_LINGER_MS);
+      updateCamera(1);
+      await fadeTo(0);
+      showBanner(stage.name);
     },
   };
 }

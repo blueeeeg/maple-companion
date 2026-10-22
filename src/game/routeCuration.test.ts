@@ -1,0 +1,141 @@
+import { describe, expect, it } from 'vitest';
+import type { Foothold } from '../maple/api';
+import {
+  type CandidateField,
+  type Link,
+  type MobDetail,
+  fieldLevel,
+  fieldMonsters,
+  levelBand,
+  portalOnGround,
+  selectRoute,
+} from './routeCuration';
+
+const foothold = (id: number, prev: number, next: number, x1: number, y1: number, x2: number, y2: number): Foothold => ({
+  id,
+  prev,
+  next,
+  x1,
+  y1,
+  x2,
+  y2,
+  layerId: 0,
+});
+
+describe('포털에 걸어서 닿는지', () => {
+  const footholds = [
+    // 바닥: x -1000~1000, y 0. 가운데 언덕
+    foothold(1, 0, 2, -1000, 0, 0, 0),
+    foothold(2, 1, 3, 0, 0, 200, -40),
+    foothold(3, 2, 0, 200, -40, 1000, -40),
+    // 바닥 위 오른쪽 윗층 발판
+    foothold(10, 0, 11, 400, -200, 700, -200),
+    foothold(11, 10, 0, 700, -200, 800, -200),
+    // 바닥 바로 위 낮은 단
+    foothold(20, 0, 0, -800, -35, -600, -35),
+  ];
+
+  it('바닥 바로 위 포털은 닿는다', () => {
+    expect(portalOnGround(footholds, { x: -900, y: -5 })).toBe(true);
+    expect(portalOnGround(footholds, { x: 900, y: -45 })).toBe(true);
+  });
+
+  it('경사 위 포털도 그 높이로 본다', () => {
+    expect(portalOnGround(footholds, { x: 100, y: -22 })).toBe(true);
+  });
+
+  it('윗층 발판에 놓인 포털은 못 닿는다', () => {
+    expect(portalOnGround(footholds, { x: 600, y: -205 })).toBe(false);
+  });
+
+  it('바닥 바로 위 낮은 단에 놓인 포털은 그 단 위에 있어 못 닿는다', () => {
+    expect(portalOnGround(footholds, { x: -700, y: -40 })).toBe(false);
+  });
+
+  it('바닥에서 높이 떠 있는 포털은 못 닿는다', () => {
+    expect(portalOnGround(footholds, { x: -500, y: -150 })).toBe(false);
+  });
+
+  it('바닥 가로 범위 밖 포털은 못 닿는다', () => {
+    expect(portalOnGround(footholds, { x: 1200, y: -45 })).toBe(false);
+  });
+
+  it('바닥보다 살짝 높은 턱 위 포털은 걸어서 닿는다', () => {
+    expect(portalOnGround([...footholds, foothold(30, 0, 0, -300, -6, -200, -6)], { x: -250, y: -8 })).toBe(true);
+  });
+
+  it('발판보다 몇 px 아래에 찍힌 포털도 닿는다', () => {
+    expect(portalOnGround(footholds, { x: -500, y: 4 })).toBe(true);
+  });
+});
+
+describe('사냥터 몬스터', () => {
+  const details = new Map<number, MobDetail>([
+    [1, { id: 1, name: '주황버섯', level: 8, framebooks: { move: 3, hit1: 1, die1: 3 } }],
+    [2, { id: 2, name: '초록버섯', level: 15, framebooks: { move: 3 } }],
+    [3, { id: 3, name: '', level: 20, framebooks: { move: 3 } }],
+    [4, { id: 4, name: '그림 없음', level: 20, framebooks: { die1: 2 } }],
+    [5, { id: 5, name: '박쥐', level: 30, framebooks: { fly: 4 } }],
+  ]);
+
+  it('스폰 자리가 많은 몹부터 중복 없이 고르고 쓸 수 없는 몹은 뺀다', () => {
+    const mobs = [1, 2, 2, 2, 3, 4, 5, 5, 1, 1, 1].map((id) => ({ id }));
+    expect(fieldMonsters(mobs, details)).toEqual([
+      { id: 1, name: '주황버섯', level: 8 },
+      { id: 2, name: '초록버섯', level: 15 },
+      { id: 5, name: '박쥐', level: 30 },
+    ]);
+  });
+
+  it('정보를 못 받은 몹은 뺀다', () => {
+    expect(fieldMonsters([{ id: 99 }], details)).toEqual([]);
+  });
+
+  it('사냥터 레벨은 몹 레벨 가운데값이다', () => {
+    expect(fieldLevel([{ level: 8 }, { level: 30 }, { level: 15 }])).toBe(15);
+    expect(fieldLevel([{ level: 10 }, { level: 20 }])).toBe(15);
+    expect(fieldLevel([])).toBe(0);
+  });
+});
+
+describe('사냥터 고르기', () => {
+  const field = (mapId: number, level: number, isTown = false): CandidateField => ({
+    mapId,
+    name: `맵${mapId}`,
+    isTown,
+    monsters: level > 0 ? [{ id: mapId, name: `몹${mapId}`, level }] : [],
+  });
+  const link = (from: number, to: number): Link => ({ from, to, exitX: from + to, arrivalX: to - from });
+
+  it('마을에서 가까운 사냥터부터 셋까지 나무 모양으로 고른다', () => {
+    const fields = new Map([10, 11, 20, 30].map((id) => [id, field(id, 10)]));
+    const links = [link(1, 10), link(1, 11), link(10, 20), link(20, 30)];
+    const route = selectRoute(1, links, fields, [1, 20]);
+    expect(route.map((each) => [each.mapId, each.fromMapId])).toEqual([
+      [10, 1],
+      [11, 1],
+      [20, 10],
+    ]);
+    expect(route[2]).toMatchObject({ entryX: 30, arrivalX: 10, level: 10, monsters: [{ id: 20, name: '몹20' }] });
+  });
+
+  it('레벨이 안 맞거나 몹이 없는 맵, 다른 마을은 고르지 않고 그 너머로도 가지 않는다', () => {
+    const fields = new Map([field(10, 50), field(11, 0), field(12, 10, true), field(20, 10)].map((each) => [each.mapId, each]));
+    const links = [link(1, 10), link(1, 11), link(1, 12), link(10, 20), link(11, 20), link(12, 20)];
+    expect(selectRoute(1, links, fields, [1, 20])).toEqual([]);
+  });
+
+  it('한 사냥터를 두 길로 갈 수 있으면 먼저 닿은 길만 쓴다', () => {
+    const fields = new Map([10, 11, 20].map((id) => [id, field(id, 10)]));
+    const links = [link(1, 10), link(1, 11), link(10, 20), link(11, 20)];
+    const route = selectRoute(1, links, fields, [1, 20], 5);
+    expect(route.filter((each) => each.mapId === 20)).toHaveLength(1);
+    expect(route.find((each) => each.mapId === 20)!.fromMapId).toBe(10);
+  });
+
+  it('다음 마을 레벨을 넘어 조금 더까지 사냥터로 본다', () => {
+    expect(levelBand(20, 30)).toEqual([10, 45]);
+    expect(levelBand(1, 5)).toEqual([1, 26]);
+    expect(levelBand(260, null)).toEqual([250, 300]);
+  });
+});

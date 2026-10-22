@@ -48,6 +48,10 @@ Windows 에서는 아래 설명의 「메뉴바」를 작업표시줄 오른쪽 
 - 2차부터 6차 전직은 레벨이 되면 저절로 되고, 같은 전직관이 축하 대화를 띄운다. 축하 창은 화면을 어둡게 하지 않고 게임도 멈추지 않는다. 대화가 겹치면 앞 대화가 끝난 뒤에 연다
 - 직업 고르기(Lv.10)와 2차 이상 전직은 창이 숨어 있거나 다른 앱을 보고 있으면 OS 알림으로 알린다. 같은 일은 한 번만 알리고, 레벨업·보스는 알리지 않는다. 알림을 누르면 창이 열리고 직업 고르기 대화가 닫혀 있었으면 다시 연다. 직업을 아직 안 골랐으면 메뉴바 글자가 「Lv.10 · 전직 가능!」 이 된다(Windows 는 트레이 툴팁)
 - 캐릭터가 실제 마을 맵의 발판 위를 돌아다니고 마을 BGM 이 나온다. 기본 8분마다 다른 마을로 옮긴다
+- 마을마다 원작 포털로 이어진 사냥터가 최대 세 곳 있다(`src/game/routeData.ts`). 한 맵에서 몬스터를 2마리 잡거나 4분이 지나면(도착하고 1분은 그대로) 캐릭터가 맵 끝 포털까지 걸어가 원작 포털 그림 앞에서 사라지고, 이어진 맵의 포털에서 나온다. 사냥터에서는 왔던 포털로 돌아가거나 더 안쪽 사냥터로 간다. 사냥터 몬스터는 그 맵에 실제로 나오는 몬스터이고 경험치·메소는 마을 기준 그대로다. 사냥터 BGM 은 그 맵 곡이다
+  - 사냥 중·보스전 중에는 옮기지 않는다. 사냥터에서 보스를 만나면 보스를 잡고 그 사냥터로 돌아온다
+  - 「마을 고정」이면 그 마을과 그 마을 사냥터 안에서만 오간다. 「마을 이동」 시간이 되면 사냥터에 있어도 지금처럼 바로 다음 마을 맵으로 옮긴다
+  - 사냥터 맵을 못 받아 오면 그 사냥터는 다른 마을로 갈 때까지 건너뛴다. 마을에 들어가면 그 마을 사냥터 맵을 뒤에서 하나씩 미리 받아 둔다
 - 원작처럼 캐릭터 발밑에 이름표(반투명 검은 상자에 흰 글자)가 따라다닌다. 원작 기본 이름표는 그림이 아니라 클라이언트가 그려서 같은 모양으로 그린다. 앞 레이어보다 위, 대미지 숫자보다 아래에 보이고 경험치 바와 겹치지 않는다
 - 기본 활동 3분마다 그 마을 몬스터가 나와 자동으로 사냥한다. 몬스터를 누르면 추가 타격
 - 기본 20번째 사냥마다(활동 약 1시간) 보스가 나온다. 레벨에 맞는 보스 중 가장 높은 두 마리에서 고르고, 그 보스를 잡는 원작 맵으로 옮겨 20~40초 싸운 뒤 마을로 돌아온다. 기본 설정이면 경험치는 보통 몬스터의 20배, 메소는 10배. 창을 닫아 둔 사이 돌아온 보스 차례는 애니메이션 없이 정산한다
@@ -150,6 +154,10 @@ NPC 대화창은 `UI/UIWindow2.img/UtilDlgEx` 다. 폭 519 의 위(`t`)·가운�
 - 코드 서명: `codesign --verify` 는 그대로 통과한다. `--strict` 는 번들 폴더의 FinderInfo 때문에 실패한다. 실행 파일 서명은 바뀌지 않고, 업데이트는 받은 압축 파일의 서명만 확인하므로 영향이 없다
 - Windows 시작 메뉴·작업표시줄 아이콘은 exe 안의 리소스라 실행 중에 바꿀 수 없다. 창 아이콘(Alt+Tab)만 같은 그림으로 바꾼다
 
+사냥터 연결은 `scripts/curate-routes.ts` 가 미리 골라 `src/game/routeData.ts` 에 적어 둔다(아래 「개발」). 맵 정보 API(`/map/{ID}`)의 `portals` 는 스크립트가 붙은 포털(마을 밖으로 나가는 `east00`·`west00` 등)을 `null` 로 내려서, 포털은 WZ 노드 `Map/Map/Map{앞자리}/{9자리 ID}.img/portal/{n}` 의 `pn`·`tm`·`tn`·`x`·`y` 로 읽는다. 캐릭터는 가장 긴 발판 묶음(`mainGround`) 위만 걷기 때문에, 나가는 포털과 건너편 맵의 도착 포털이 모두 그 바닥 바로 위(60px 안)에 있고 사이에 윗층 발판이 끼지 않은 연결만 쓴다. 사다리·로프·점프로 가는 포털은 뺀다. 몬스터는 맵 정보의 `mobs` 에서 스폰 자리가 많은 순으로 넷까지, 레벨(`/mob/{ID}` 의 `meta.level`) 가운데값이 마을 레벨 ~ 다음 마을 레벨 +15 안인 사냥터만 고른다.
+
+포털 그림은 `Map/MapHelper.img/portal/game/pv/default` 8프레임을 `_Canvas` 로 받는다. 0번은 `_outlink` 가 `portal/editor/pv` 를 가리킨다. 원점은 코드에 적어 두었고 딜레이는 WZ 기본 100ms 다. 못 받으면 포털 없이 걸어가서 옮긴다.
+
 맵 렌더 이미지에는 원점 정보가 없어서, 처음 들어가는 마을은 발판 좌표를 이미지의 땅 경계에 맞추는 계산을 한 번 하고 결과를 저장해 둔다(`src/maple/ground.ts`).
 
 ## 개발
@@ -161,6 +169,7 @@ MAPLE_SPEED=60 pnpm tauri dev  # 60배속으로 경험치 확인
 pnpm dev                       # 브라우저로 화면만 (http://localhost:1420/?speed=60)
                                # ?boss=8860000 이면 그 보스(?boss=1 이면 레벨에 맞는 보스)와 바로 싸운다. 개발 서버에서만
 pnpm test                      # 단위 테스트
+node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더]   # 마을 사냥터 다시 고르기 → src/game/routeData.ts
 pnpm tauri build --target universal-apple-darwin   # 배포용 .app·.dmg (src-tauri/target/universal-apple-darwin/release/bundle)
 pnpm tauri build               # Windows 에서 실행하면 -setup.exe·.msi (src-tauri/target/release/bundle/nsis·msi)
 ```
@@ -195,8 +204,12 @@ src/
     cashShop.ts      캐시샵 부위·가격, 캐시 아이템을 직업 장비에 덧입히는 규칙(composeLook), 사기·입기
     characters.ts    캐릭터 목록, 활동 시간 나누기, 이름 검사, 예전 저장 옮기기
     appearance.ts    캐릭터 생성에서 고르는 성별·헤어·얼굴·피부
+    routes.ts        마을 ↔ 사냥터 포털 이동: 지금 맵에서 갈 수 있는 맵, 옮길 때(사냥 수·머문 시간), 고르기
+    routeData.ts     마을별 사냥터(맵 ID·포털 x·몬스터). scripts/curate-routes.ts 가 만든다
+    routeCuration.ts 사냥터 고르기 규칙: 포털이 걸어서 닿는 바닥 위인지, 맵 몬스터 고르기, 레벨 폭, 마을에서 너비 우선으로 셋까지
   maple/             maplestory.io 주소, 텍스처 로딩, 발판·맵 이미지 맞추기, 대미지 숫자·레벨업 이펙트(basicEff.ts)
-  scene/             PixiJS 화면 (맵, 캐릭터, 몬스터, 카메라)
+    portal.ts        원작 포털 그림(MapHelper.img pv), 곧 갈 사냥터 맵을 서버에 미리 그려 두게 받기
+  scene/             PixiJS 화면 (맵, 캐릭터, 몬스터, 카메라, 포털로 걸어 들어가 맵 옮기기)
   audio/bgm.ts       마을·보스 맵 BGM. 곡을 통째로 받아 남긴 것으로 틀고, 곧 갈 맵 곡은 미리 받는다. 없으면 스트리밍하다 받은 파일로 갈아 끼운다
   ui/hud.ts          레벨·경험치 바·메소·「전직 가능!」·캐시샵 버튼·⚙️ 메뉴(소리·설정·캐릭터 선택)
   ui/settings.ts     설정 화면
@@ -209,6 +222,8 @@ src/
     notification.ts  OS 알림 띄우기·권한 묻기, 알림을 눌러 창이 열린 것 받기. 브라우저는 웹 Notification
     updater.ts       때가 되면 Rust 에 업데이트를 묻고, 처음 보는 버전이면 알린다. 받기 시작·실패 받기. 브라우저는 안 한다
     bgmCache.ts      받은 맵 BGM 읽기·있는지 보기·쓰기·지우기. Tauri 는 app data 의 bgm/, 브라우저는 Cache API
+scripts/
+  curate-routes.ts   마을에서 걸어서 가는 사냥터를 maplestory.io 에서 찾아 src/game/routeData.ts 를 쓴다. 응답은 캐시 폴더에 남기고 요청은 하나씩 보낸다
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장
