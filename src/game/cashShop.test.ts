@@ -12,6 +12,7 @@ import {
   fitsGender,
   neighborPages,
   normalizeCashData,
+  stackTryOn,
   toCashItems,
   unequipCash,
 } from './cashShop';
@@ -30,6 +31,8 @@ const CASH_OVERALL = 1050004;
 const CASH_TOP = 1040001;
 const CASH_BOTTOM = 1060001;
 const CASH_WEAPON = 1703482;
+const CASH_CAPE = 1102000;
+const CASH_SHOES = 1070000;
 
 describe('캐시 아이템 자리', () => {
   it('ID 앞자리로 부위를 정한다', () => {
@@ -114,6 +117,61 @@ describe('입고 벗기', () => {
     const equipped = equipCash({ cap: CASH_HAT }, 1000001);
     expect(equipped).toEqual({ cap: 1000001 });
     expect(unequipCash(equipped, 'cap')).toEqual({});
+  });
+
+  it('입거나 사도 그 자리(와 한벌옷·상의·하의 짝)만 바뀌고 다른 자리는 그대로다', () => {
+    const equipped = { cap: CASH_HAT, shoes: CASH_SHOES, overall: CASH_OVERALL };
+    expect(equipCash(equipped, CASH_CAPE)).toEqual({ ...equipped, cape: CASH_CAPE });
+    expect(equipCash(equipped, CASH_TOP)).toEqual({ cap: CASH_HAT, shoes: CASH_SHOES, top: CASH_TOP });
+    expect(unequipCash(equipped, 'shoes')).toEqual({ cap: CASH_HAT, overall: CASH_OVERALL });
+    expect(equipped).toEqual({ cap: CASH_HAT, shoes: CASH_SHOES, overall: CASH_OVERALL });
+
+    // main.ts 「사기」 와 같은 순서: 옷장에 넣고 바로 입힌다
+    const character = { ...createCharacter('a', '모험가', DEFAULT_APPEARANCE), meso: 1_000_000 };
+    buyCashItem(character, CASH_HAT);
+    character.cashEquipped = equipCash(character.cashEquipped, CASH_HAT);
+    buyCashItem(character, CASH_CAPE);
+    character.cashEquipped = equipCash(character.cashEquipped, CASH_CAPE);
+    expect(character.cashEquipped).toEqual({ cap: CASH_HAT, cape: CASH_CAPE });
+  });
+});
+
+describe('입어 보기', () => {
+  it('입고 있는 아이템 위에 입어 본 아이템이 쌓인다', () => {
+    const trying = equipCash(equipCash({}, CASH_CAPE), CASH_SHOES);
+    const preview = stackTryOn({ cap: CASH_HAT }, trying);
+    expect(preview).toEqual({ cap: CASH_HAT, cape: CASH_CAPE, shoes: CASH_SHOES });
+    expect(composeLook(warrior, preview)).toEqual(expect.arrayContaining([CASH_HAT, CASH_CAPE, CASH_SHOES]));
+  });
+
+  it('같은 자리는 마지막에 입어 본 것만 남고, 입고 있는 아이템도 그 자리만 가린다', () => {
+    const trying = equipCash(equipCash(equipCash({}, CASH_CAPE), 1102001), 1000001);
+    expect(trying).toEqual({ cape: 1102001, cap: 1000001 });
+    expect(stackTryOn({ cap: CASH_HAT, shoes: CASH_SHOES }, trying)).toEqual({
+      cap: 1000001,
+      shoes: CASH_SHOES,
+      cape: 1102001,
+    });
+  });
+
+  it('한벌옷과 상의·하의는 입어 볼 때도 서로 벗긴다', () => {
+    expect(stackTryOn({ cap: CASH_HAT, top: CASH_TOP, bottom: CASH_BOTTOM }, { overall: CASH_OVERALL })).toEqual({
+      cap: CASH_HAT,
+      overall: CASH_OVERALL,
+    });
+    expect(stackTryOn({ cap: CASH_HAT, overall: CASH_OVERALL }, { top: CASH_TOP })).toEqual({
+      cap: CASH_HAT,
+      top: CASH_TOP,
+    });
+    // 입어 보기 층 안에서도 나중 것이 앞 것을 벗긴다
+    expect(stackTryOn({}, equipCash(equipCash({}, CASH_TOP), CASH_OVERALL))).toEqual({ overall: CASH_OVERALL });
+  });
+
+  it('입어 보기 층을 비우면(원래대로) 입고 있는 그대로이고, 입고 있는 착용은 건드리지 않는다', () => {
+    const equipped = { cap: CASH_HAT, top: CASH_TOP };
+    expect(stackTryOn(equipped, {})).toEqual(equipped);
+    stackTryOn(equipped, { overall: CASH_OVERALL, cape: CASH_CAPE });
+    expect(equipped).toEqual({ cap: CASH_HAT, top: CASH_TOP });
   });
 });
 

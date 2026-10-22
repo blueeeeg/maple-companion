@@ -96,6 +96,14 @@ export function unequipCash(equipped: CashEquipped, slot: CashSlot): CashEquippe
   return next;
 }
 
+/**
+ * 입고 있는 캐시 아이템 위에 입어 보는 아이템을 겹친 미리보기 착용.
+ * 입어 보기 층도 equipCash 로 쌓아서 그 안에 한벌옷과 상의·하의가 같이 남지 않으므로 겹치는 순서는 상관없다
+ */
+export function stackTryOn(equipped: CashEquipped, trying: CashEquipped): CashEquipped {
+  return Object.values(trying).reduce<CashEquipped>((next, itemId) => equipCash(next, itemId), equipped);
+}
+
 const SLOT_ORDER = CASH_CATEGORIES.map((category) => category.slot);
 
 /**

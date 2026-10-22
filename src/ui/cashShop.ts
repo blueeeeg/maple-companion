@@ -13,6 +13,8 @@ import {
   fitsGender,
   hasWeapon,
   neighborPages,
+  stackTryOn,
+  unequipCash,
 } from '../game/cashShop';
 import { MESO_HUD_ICON_URL, cashShopUiUrl, characterAnimationUrl, itemIconUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
@@ -137,6 +139,8 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   let page = 0;
   let query = '';
   let selectedId: number | null = null;
+  /** 이번에 상점에 들어와 입어 본 아이템. 입고 있는 것 위에 겹쳐 보이고, 원래대로·나가기로 버린다 */
+  let trying: CashEquipped = {};
   let items: CashItem[] = [];
   let loading: 'loading' | 'error' | 'ready' = 'loading';
   let loadToken = 0;
@@ -297,8 +301,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
 
   function previewLook(): number[] {
     if (!state) return [];
-    const equipped = selectedId === null ? state.equipped : equipCash(state.equipped, selectedId);
-    return composeLook(state.jobLook, equipped);
+    return composeLook(state.jobLook, stackTryOn(state.equipped, trying));
   }
 
   function showPreview(url: string, src: string) {
@@ -414,6 +417,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     button.classList.toggle('is-selected', item.id === selectedId);
     button.addEventListener('click', () => {
       selectedId = item.id;
+      trying = equipCash(trying, item.id);
       checkWeapon(item.id);
       renderGrid();
       renderPick();
@@ -532,11 +536,15 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   wear.addEventListener('click', () => {
     if (selectedId === null || !owns(selectedId)) return;
     const slot = cashSlotOf(selectedId)!;
-    if (wearing(selectedId)) handlers.onUnequip(slot);
-    else handlers.onEquip(selectedId);
+    if (wearing(selectedId)) {
+      // 입어 보기 층에 같은 아이템이 남아 있으면 벗어도 미리보기에서 안 벗겨진다
+      trying = unequipCash(trying, slot);
+      handlers.onUnequip(slot);
+    } else handlers.onEquip(selectedId);
   });
   reset.addEventListener('click', () => {
     selectedId = null;
+    trying = {};
     renderGrid();
     renderPick();
   });
@@ -560,6 +568,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       state = next;
       confirm.hidden = true;
       selectedId = null;
+      trying = {};
       if (genderChanged) page = 0;
       dressUp();
       screen.hidden = false;
