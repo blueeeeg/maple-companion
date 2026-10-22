@@ -5,6 +5,8 @@ import { DATA_KEY, mapBgmUrl } from '../maple/api';
 export interface BgmCache {
   /** 남긴 곡이 없으면 null */
   read(mapId: number): Promise<Blob | null>;
+  /** 미리 받기에서 곡을 읽지 않고 있는지만 본다 */
+  has(mapId: number): Promise<boolean>;
   write(mapId: number, track: Blob): Promise<void>;
   remove(mapId: number): Promise<void>;
 }
@@ -17,6 +19,7 @@ const tauriCache: BgmCache = {
     const bytes = await invoke<ArrayBuffer>('read_bgm', { key: fileKey(mapId) });
     return bytes.byteLength > 0 ? new Blob([bytes], { type: 'audio/mpeg' }) : null;
   },
+  has: (mapId) => invoke<boolean>('has_bgm', { key: fileKey(mapId) }),
   async write(mapId, track) {
     // 숫자 배열(JSON)로 보내면 MB 단위 곡이 몇 배로 불어나서 바이트 그대로 보낸다
     await invoke('write_bgm', new Uint8Array(await track.arrayBuffer()), { headers: { 'bgm-key': fileKey(mapId) } });
@@ -33,6 +36,9 @@ const browserCache: BgmCache = {
   async read(mapId) {
     const response = await (await caches.open(CACHE_NAME)).match(mapBgmUrl(mapId));
     return response ? response.blob() : null;
+  },
+  async has(mapId) {
+    return (await (await caches.open(CACHE_NAME)).match(mapBgmUrl(mapId))) !== undefined;
   },
   async write(mapId, track) {
     await (await caches.open(CACHE_NAME)).put(mapBgmUrl(mapId), new Response(track, { headers: { 'content-type': track.type } }));

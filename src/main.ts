@@ -1,5 +1,5 @@
 import './styles.css';
-import { createBgm, shouldPlayBgm } from './audio/bgm';
+import { createBgm, likelyBgmMaps, shouldPlayBgm } from './audio/bgm';
 import {
   type Character,
   MAX_CHARACTERS,
@@ -391,6 +391,8 @@ async function tick(): Promise<void> {
   const character = selectedCharacter(roster);
   if (!character) return;
   const info = levelInfo(characterXp(character));
+  // 마을이 열리거나 캐릭터를 바꾸면 목록이 바뀐다. 같은 목록이면 bgm 이 무시한다
+  bgm.prefetch(likelyBgmMaps(info.level));
 
   const job = characterJob(character, info.level);
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다

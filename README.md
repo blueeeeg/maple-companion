@@ -120,7 +120,12 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 
 캐릭터·몬스터·맵·BGM 은 저장소와 앱에 넣지 않는다. 실행 중에 팬 API [maplestory.io](https://maplestory.io) (KMS 389) 에서 받아 온다. 보내는 값은 공개된 맵·몹·아이템 ID 뿐이다.
 
-BGM 은 주소를 audio 에 바로 걸지 않고 곡을 통째로 받아 app data 의 `bgm/` 에 남긴 뒤 거기서 튼다(`src/audio/bgm.ts`, `src-tauri/src/bgm_cache.rs`). 바로 걸면 WebKit 이 곡을 구간마다 따로 받고 디스크 캐시에도 안 남겨서, 팬 API 가 늦거나 520 을 내면 곡 중간·반복 지점에서 끊겼다. 지금은 맵마다 처음 한 번만 받고 다음부터는 네트워크 없이 바로 튼다. 받는 동안에는 앞 곡을 계속 틀다가 다 받으면 바꾸고, 못 받으면 15초 뒤 다시 받는다. 같은 곡을 다시 부르면(보스 맵에서 돌아올 때 등) 처음부터 다시 틀지 않는다. 브라우저(`pnpm dev`)에서는 Cache API(`maple-companion:bgm`)에 남긴다.
+BGM 은 주소를 audio 에 바로 걸지 않고 곡을 통째로 받아 app data 의 `bgm/` 에 남긴 뒤 거기서 튼다(`src/audio/bgm.ts`, `src-tauri/src/bgm_cache.rs`). 바로 걸면 WebKit 이 곡을 구간마다 따로 받고 디스크 캐시에도 안 남겨서, 팬 API 가 늦거나 520 을 내면 곡 중간·반복 지점에서 끊겼다. 지금은 맵마다 처음 한 번만 받고 다음부터는 네트워크 없이 바로 튼다.
+
+- 곧 들어갈 만한 맵의 곡을 뒤에서 한 곡씩 미리 받아 둔다(`likelyBgmMaps`). 순서는 마을을 돌 때 고르는 최근 마을 네 곳, 보스 후보 두 곳, 나머지 열린 마을이다. 이미 남긴 곡은 건너뛰고, 지금 맵 곡을 받는 동안에는 멈춘다. 실패한 곡은 5분 뒤 다시 받는다
+- 남긴 곡이 없는 맵으로 옮기면 앞 곡을 끊고 그 맵 주소를 바로 스트리밍한다. 다 받으면 받은 파일로 바꿔 듣던 자리부터 잇는다. 받기만 실패하면 15초 뒤 받기만 다시 한다
+- 같은 곡을 다시 부르면 처음부터 다시 틀지 않는다
+- 브라우저(`pnpm dev`)에서는 Cache API(`maple-companion:bgm`)에 남긴다
 
 맵은 전체 렌더(`render/0`)를 캐릭터 뒤에 깔고, 위쪽 레이어를 따로 받아(`render/layer/{n}/0?minX=&minY=`) 캐릭터 앞에 그린다. 그래서 무릉 다리 난간 같은 앞쪽 타일·오브젝트가 캐릭터를 가린다. 앞 레이어는 마을이 뜨고 몇 초 뒤에 들어온다.
 
@@ -192,7 +197,7 @@ src/
     appearance.ts    캐릭터 생성에서 고르는 성별·헤어·얼굴·피부
   maple/             maplestory.io 주소, 텍스처 로딩, 발판·맵 이미지 맞추기, 대미지 숫자·레벨업 이펙트(basicEff.ts)
   scene/             PixiJS 화면 (맵, 캐릭터, 몬스터, 카메라)
-  audio/bgm.ts       마을·보스 맵 BGM. 곡을 통째로 받아 남긴 것으로 틀고, 못 받으면 다시 받고, 멈추면 다시 건다
+  audio/bgm.ts       마을·보스 맵 BGM. 곡을 통째로 받아 남긴 것으로 틀고, 곧 갈 맵 곡은 미리 받는다. 없으면 스트리밍하다 받은 파일로 갈아 끼운다
   ui/hud.ts          레벨·경험치 바·메소·「전직 가능!」·캐시샵 버튼·⚙️ 메뉴(소리·설정·캐릭터 선택)
   ui/settings.ts     설정 화면
   ui/npcDialog.ts    원작 NPC 대화창과 전직 대화(직업 선택·전직 축하). 대화가 겹치면 차례로 띄운다
@@ -203,13 +208,13 @@ src/
     gameState.ts     캐릭터 목록·설정 읽기·쓰기. Tauri 는 game-state.json, 브라우저는 localStorage. localStorage 옮기기
     notification.ts  OS 알림 띄우기·권한 묻기, 알림을 눌러 창이 열린 것 받기. 브라우저는 웹 Notification
     updater.ts       때가 되면 Rust 에 업데이트를 묻고, 처음 보는 버전이면 알린다. 받기 시작·실패 받기. 브라우저는 안 한다
-    bgmCache.ts      받은 맵 BGM 읽기·쓰기·지우기. Tauri 는 app data 의 bgm/, 브라우저는 Cache API
+    bgmCache.ts      받은 맵 BGM 읽기·있는지 보기·쓰기·지우기. Tauri 는 app data 의 bgm/, 브라우저는 Cache API
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장
   game_state.rs      game-state.json 읽기·쓰기(임시 파일 → rename, .bak 백업). 저장을 잠깐 모았다가 쓰고 종료할 때 마저 쓴다
   tray_icon.rs       트레이 아이콘 PNG 읽기·저장. 메뉴바 높이(레티나 36px)에 맞게 늘리지 않고 가운데 둔다
-  bgm_cache.rs       프론트가 받은 맵 BGM 을 app data 의 bgm/ 에 읽기·쓰기(임시 파일 → rename)·지우기. 곡은 JSON 이 아니라 바이트로 오간다
+  bgm_cache.rs       프론트가 받은 맵 BGM 을 app data 의 bgm/ 에 읽기·있는지 보기·쓰기(임시 파일 → rename)·지우기. 곡은 JSON 이 아니라 바이트로 오간다
   app_icon.rs        트레이 그림으로 앱 아이콘 만들기(정수배 확대). macOS 는 .app 에 Finder 사용자 아이콘으로 붙이고, Windows 는 창 아이콘만
   updater.rs         업데이트 확인(check_update), 트레이 「업데이트」 항목 글자, 받기·설치·진행 표시, 저장 후 다시 켜기
   lib.rs             트레이(「설정」 포함), 펫·메뉴바 모드 전환, 창 크기, 알림을 누르면 창 열기, 프론트에 여는 명령

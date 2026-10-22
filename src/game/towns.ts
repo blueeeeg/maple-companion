@@ -180,7 +180,7 @@ export function unlockedTowns(level: number): Town[] {
 }
 
 /** 고레벨이 헤네시스만 도는 일이 없게 가장 최근에 열린 마을 네 곳 안에서 고른다 */
-const RECENT_TOWN_POOL = 4;
+export const RECENT_TOWN_POOL = 4;
 
 export function pickNextTown(level: number, currentId: string | null, random = Math.random): Town {
   const candidates = unlockedTowns(level).slice(-RECENT_TOWN_POOL);

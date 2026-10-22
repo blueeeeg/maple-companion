@@ -34,6 +34,11 @@ pub async fn read_bgm(app: AppHandle, key: String) -> Result<Response, String> {
     }
 }
 
+#[tauri::command]
+pub async fn has_bgm(app: AppHandle, key: String) -> Result<bool, String> {
+    Ok(app_track_path(&app, &key)?.is_file())
+}
+
 /// 개발 빌드와 배포 앱이 같은 폴더를 쓴다. 임시 파일에 다 쓴 뒤 바꿔치기해서 반만 쓰인 곡을 읽지 않게 한다
 #[tauri::command]
 pub async fn write_bgm(app: AppHandle, request: Request<'_>) -> Result<(), String> {
