@@ -30,6 +30,17 @@ Windows 에서는 아래 설명의 「메뉴바」를 작업표시줄 오른쪽 
 
 처음에는 화면 구석의 작은 창(펫 모드)으로 뜨고 Dock 에는 안 보인다. 메뉴바의 트레이 아이콘을 누르면(왼쪽·오른쪽 클릭 같음) 메뉴가 열린다. 메뉴 맨 위 항목으로 캐릭터(메뉴바 모드에서는 창)를 숨기거나 다시 띄우고, 펫 모드·메뉴바 모드를 바꾸거나(지금 모드에 체크) 「종료」로 끈다. 숨겨도 앱은 계속 돌아가서 활동 시간·사냥·BGM 이 이어진다. 캐릭터·맵·소리는 실행 중에 [maplestory.io](https://maplestory.io) 에서 받아 오므로 인터넷이 필요하다.
 
+## 업데이트
+
+**v0.1.0 에는 업데이트 기능이 없다.** v0.1.0 을 쓰고 있으면 다음 버전 한 번은 위 「설치」대로 손으로 받아 덮어쓴다(앱을 끄고 새 앱으로 바꿔 넣는다). 캐릭터는 앱 밖의 저장 폴더(아래 「저장 위치」)에 있어서 그대로 남는다. 그 다음 버전부터는 앱 안에서 업데이트한다.
+
+- 앱을 켜고 30초쯤 뒤에 한 번, 그 뒤로 6시간마다 [Releases 최신 버전](https://github.com/blueeeeg/maple-companion/releases/latest)의 `latest.json` 을 본다. 인터넷이 안 되면 아무것도 띄우지 않고 30분 뒤에 다시 본다
+- 새 버전이 있으면 OS 알림 「새 버전 vX.Y.Z 가 나왔어요」를 띄운다. 버전마다 한 번만 띄우고 앱을 다시 켜도 같은 버전은 다시 알리지 않는다. 전직 알림 설정과 상관없이 뜬다. 알림을 누르면 창이 열리고 트레이 메뉴로 안내한다
+- 트레이 메뉴 「종료」 바로 위 항목이 업데이트 버튼이다. 평소에는 「현재 버전 v0.1.1」 처럼 지금 버전을 보여 주고 누를 수 없다. 새 버전이 있으면 「업데이트 (v0.1.2)」 로 바뀐다
+- 누르면 받아서 설치하고 앱을 다시 켠다. 받는 동안 그 항목과 메뉴바 글자(Windows 는 트레이 툴팁)에 「업데이트 중… 42%」 가 나온다. 다시 켜기 전에 저장 파일을 마저 쓴다. 실패하면 항목이 「업데이트 실패 · 다시 시도 (v0.1.2)」 로 바뀌어 다시 누를 수 있다
+- 받은 파일은 앱에 넣어 둔 공개키로 서명을 확인하고, 맞지 않으면 설치하지 않는다(`tauri-plugin-updater`)
+- macOS 는 앱 번들을 통째로 바꿔 넣는다. 앱을 둔 폴더에 쓸 권한이 없으면 macOS 가 관리자 암호를 묻는다. Windows 는 설치 프로그램(`-setup.exe`)이 진행 창만 띄워 설치하고 앱을 다시 켠다. Windows 업데이트는 실제 PC 에서 아직 확인하지 않았다
+
 ## 기능
 
 - 키보드·마우스 입력이 있는 동안(기본 2분 넘게 입력이 없으면 멈춤) 경험치가 쌓인다
@@ -135,6 +146,16 @@ pnpm tauri build               # Windows 에서 실행하면 -setup.exe·.msi (s
 
 배포는 `v*` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 돈다. `release` 잡이 릴리스를 먼저 만들고, 그 뒤 `macos` 잡(macos-latest)이 유니버설 앱 `.dmg`·`.zip`·`.app.tar.gz` 를, `windows` 잡(windows-latest)이 `-setup.exe`(NSIS)·`.msi` 를 같은 릴리스에 올린다. 두 잡이 릴리스를 각자 만들지 않아서 둘이 생기거나 서로 부딪치지 않는다. Actions 화면에서 「Run workflow」로 수동 실행하면 Windows 빌드만 돌고, 설치 파일은 릴리스가 아니라 그 실행의 Artifacts(`maple-companion-windows`)에 올라간다. macOS 서명은 ad-hoc(`bundle.macOS.signingIdentity: "-"`)이고 공증은 하지 않는다. Windows 는 서명하지 않는다. 버전은 `package.json`·`src-tauri/tauri.conf.json`·`src-tauri/Cargo.toml` 세 곳을 같이 올린다.
 
+### 업데이트 서명
+
+앱 안 업데이트(「업데이트」 절)는 업데이트 파일을 서명키로 서명해 올리고 앱이 공개키로 확인한다.
+
+- 공개키는 `src-tauri/tauri.conf.json` 의 `plugins.updater.pubkey` 에 있다. 비밀키는 저장소 밖 `~/.tauri/maple-companion.key` 에 있고 비밀번호는 없다(`pnpm tauri signer generate -w ~/.tauri/maple-companion.key` 로 만들었다)
+- 태그를 푸시하기 전에 GitHub 저장소 Settings → Secrets and variables → Actions 에 `TAURI_SIGNING_PRIVATE_KEY` 를 등록한다. 값은 `~/.tauri/maple-companion.key` 파일 내용 전체다. 비밀번호가 없는 키라 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 는 등록하지 않는다. 워크플로가 둘 다 넘기는데 등록하지 않은 시크릿은 빈 문자열로 들어간다
+- `bundle.createUpdaterArtifacts` 를 켜 두어서 비밀키가 없으면 빌드가 서명 단계에서 실패한다. 손으로 빌드할 때는 `TAURI_SIGNING_PRIVATE_KEY=~/.tauri/maple-companion.key pnpm tauri build ...` 처럼 붙인다
+- `latest.json` 은 tauri-action 이 만들어 릴리스에 올린다. `macos` 잡이 유니버설 `.app.tar.gz` 로 `darwin-aarch64`·`darwin-x86_64` 를 넣고, `windows` 잡이 `-setup.exe`(`updaterJsonPreferNsis`)로 `windows-x86_64` 를 더한다. tauri-action 은 이미 올라간 `latest.json` 을 받아 자기 플랫폼을 더해 다시 올려서, 두 잡이 동시에 끝나면 한쪽이 빠진다. 그래서 `windows` 잡은 `macos` 잡이 끝난 뒤에 돈다
+- **비밀키를 백업한다.** 키 파일을 비밀번호 관리자 같은 저장소 밖 안전한 곳에 한 벌 더 둔다. 키를 잃으면 이미 설치된 앱은 새 업데이트의 서명을 확인할 수 없어 다시는 앱 안에서 업데이트하지 못한다. 새 키로 바꾸면 모든 사용자가 한 번 손으로 다시 설치해야 한다
+
 Rust 가 필요하다(`rustup`). 트레이 아이콘은 왼쪽·오른쪽 클릭 모두 같은 메뉴를 연다. 메뉴 맨 위 항목이 창을 띄우거나 숨긴다. 글자는 모드와 창 상태에 따라 바뀐다(펫 모드는 「캐릭터 숨기기/보이기」, 메뉴바 모드는 「창 닫기/열기」). 그 아래에서 펫 모드(화면 구석 창)와 메뉴바 모드(메뉴바 아이콘 아래에 여는 창)를 바꾸고, 지금 모드에 체크가 붙는다. 메뉴바 모드에서 아이콘 위치를 아직 모르면 화면 오른쪽 위에 연다. Windows 는 메뉴바 모드 창을 트레이 아이콘 위로 열고(화면 밖으로 나가면 모니터 안으로 당긴다), 아이콘 위치를 모르거나 펫 모드일 때는 작업표시줄을 뺀 영역의 오른쪽 아래 구석에 둔다. 테두리 없는 창도 Alt+F4 로 닫히므로 닫기는 숨기기로 바꿨다.
 
 트레이 메뉴 「설정」은 창을 띄우고 설정 화면을 연다(맵 화면일 때만). 트레이 메뉴 「크기」에서 창 크기를 75%~200% 로 고른다. 캐릭터·맵·HUD 가 같이 커지고 고른 크기는 다음 실행에도 남는다. 브라우저로 볼 때는 `?scale=1.5` 를 붙인다.
@@ -149,6 +170,7 @@ src/
     encounters.ts    몬스터 주기·사냥 진행(초 단위)·한 마리 보상
     settings.ts      설정 값·기본값·저장, 시간당 보상 몫 계산
     alerts.ts        OS 알림으로 알릴 일(직업 고르기·전직)의 문구, 알릴지 판정, 한 번만 알리기
+    updates.ts       업데이트를 언제 확인할지, 새 버전 알림을 버전마다 한 번만, 알림 문구
     cashShop.ts      캐시샵 부위·가격, 캐시 아이템을 직업 장비에 덧입히는 규칙(composeLook), 사기·입기
     characters.ts    캐릭터 목록, 활동 시간 나누기, 이름 검사, 예전 저장 옮기기
     appearance.ts    캐릭터 생성에서 고르는 성별·헤어·얼굴·피부
@@ -164,11 +186,13 @@ src/
   platform/          Tauri 연결 (활동 시간·자리 비움 판정 시간, 창 모드·크기, 트레이 문구·「설정」). 브라우저에서는 대체 구현
     gameState.ts     캐릭터 목록·설정 읽기·쓰기. Tauri 는 game-state.json, 브라우저는 localStorage. localStorage 옮기기
     notification.ts  OS 알림 띄우기·권한 묻기, 알림을 눌러 창이 열린 것 받기. 브라우저는 웹 Notification
+    updater.ts       때가 되면 Rust 에 업데이트를 묻고, 처음 보는 버전이면 알린다. 받기 시작·실패 받기. 브라우저는 안 한다
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장
   game_state.rs      game-state.json 읽기·쓰기(임시 파일 → rename, .bak 백업). 저장을 잠깐 모았다가 쓰고 종료할 때 마저 쓴다
   tray_icon.rs       트레이 아이콘 PNG 읽기·저장. 메뉴바 높이(레티나 36px)에 맞게 늘리지 않고 가운데 둔다
+  updater.rs         업데이트 확인(check_update), 트레이 「업데이트」 항목 글자, 받기·설치·진행 표시, 저장 후 다시 켜기
   lib.rs             트레이(「설정」 포함), 펫·메뉴바 모드 전환, 창 크기, 알림을 누르면 창 열기, 프론트에 여는 명령
 ```
 

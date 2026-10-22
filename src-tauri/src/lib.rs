@@ -2,6 +2,7 @@ mod activity;
 mod game_state;
 mod idle;
 mod tray_icon;
+mod updater;
 
 use std::sync::Arc;
 
@@ -300,10 +301,15 @@ fn build_tray(app: &AppHandle, scale_percent: u32) -> tauri::Result<()> {
     let separator = PredefinedMenuItem::separator(app)?;
     let separator_top = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&toggle, &separator_top, &pet, &panel, &scale, &settings, &separator, &quit])?;
+    let update = MenuItem::with_id(app, updater::MENU_ID, updater::idle_label(app), false, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[&toggle, &separator_top, &pet, &panel, &scale, &settings, &separator, &update, &quit],
+    )?;
 
     app.manage(ToggleItem(toggle));
     app.manage(ModeItems { pet, panel });
+    app.manage(updater::UpdateMenu(update));
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -314,6 +320,7 @@ fn build_tray(app: &AppHandle, scale_percent: u32) -> tauri::Result<()> {
             "mode-pet" => set_mode(app, DisplayMode::Pet),
             "mode-panel" => set_mode(app, DisplayMode::Panel),
             "settings" => open_settings(app),
+            updater::MENU_ID => updater::install(app),
             "quit" => app.exit(0),
             id => {
                 let Some(percent) = id
@@ -344,6 +351,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::UpdateState::default())
         .invoke_handler(tauri::generate_handler![
             activity_snapshot,
             display_mode,
@@ -352,7 +361,8 @@ pub fn run() {
             load_game_state,
             save_game_state,
             set_tray_status,
-            set_tray_icon
+            set_tray_icon,
+            updater::check_update
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

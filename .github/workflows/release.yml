@@ -78,11 +78,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # 릴리스는 release 잡이 만들어 둔 것에 올린다
+      # 릴리스는 release 잡이 만들어 둔 것에 올린다.
+      # 업데이트 파일(.app.tar.gz)을 서명키로 서명하고 latest.json(includeUpdaterJson 기본값)을 올린다
       - name: Build and upload to release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseDraft: false
@@ -98,7 +101,9 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
 
   windows:
-    needs: release
+    # latest.json 은 이미 올라간 것을 받아 자기 플랫폼을 더해 다시 올린다. macOS 와 동시에 끝나면 한쪽 플랫폼이
+    # 빠지므로 macOS 뒤에 돈다. macOS 가 실패해도 아래 조건으로 돈다
+    needs: [release, macos]
     # 수동 실행에서는 release 잡이 건너뛰어져도 돈다
     if: ${{ !cancelled() && needs.release.result != 'failure' }}
     runs-on: windows-latest
@@ -128,10 +133,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
           releaseDraft: false
           prerelease: false
+          # 릴리스 안내가 -setup.exe(NSIS)를 먼저 권한다. NSIS 로 깐 앱을 MSI 로 업데이트하지 않게 한다
+          updaterJsonPreferNsis: true
 
       - name: Upload installers as workflow artifacts
         if: github.event_name == 'workflow_dispatch'

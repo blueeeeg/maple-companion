@@ -42,11 +42,13 @@ import {
   townRotateMs,
 } from './game/settings';
 import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game/towns';
+import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
 import { createActivitySource } from './platform/activity';
 import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
 import { createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
+import { startUpdateChecks } from './platform/updater';
 import { createScene } from './scene/scene';
 import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
@@ -79,6 +81,8 @@ let townLoading = false;
 let townChangedAt = Date.now();
 let lastLevel: { characterId: string; level: number } | null = null;
 let lastTrayStatus = '';
+/** 트레이 메뉴에서 받을 수 있는 새 버전 */
+let availableUpdate: string | null = null;
 let panelVisible = true;
 /** 보스나 보스 맵을 못 받아 온 사냥 번호. 그 차례는 보통 몬스터로 치르고, 모인 보스 몫은 남아 다음 사냥에 다시 보스를 부른다 */
 let bossSkippedAt = -1;
@@ -467,9 +471,26 @@ desktop.onModeChange((mode) => (document.body.dataset.mode = mode));
 desktop.onOpenSettings(openSettings);
 // 직업 고르기 대화를 닫아 버린 뒤에 알림을 눌렀어도 다시 묻는다. 이미 떠 있으면 대화창이 무시한다
 notifier.onOpen(() => {
+  // 업데이트 버튼은 트레이 메뉴에 있어서 창에서는 거기로 안내만 한다
+  if (availableUpdate) hud.notify(updateNotice(availableUpdate).body);
   const character = selectedCharacter(roster);
   if (!character || screen !== 'map') return;
   if (characterJob(character, levelInfo(characterXp(character)).level).canChooseJob) hud.openJobChoice();
+});
+startUpdateChecks({
+  onFound(version, firstTime) {
+    availableUpdate = version;
+    // 전직 알림 설정과 따로 늘 알린다. 새 버전마다 한 번뿐이다
+    if (!firstTime) return;
+    const notice = updateNotice(version);
+    notifier.notify(notice.title, notice.body);
+  },
+  onStarted: () => hud.notify('업데이트 받는 중… 끝나면 저절로 다시 켜져요'),
+  onFailed() {
+    // Rust 가 메뉴바 글자에 띄운 진행 표시를 다음 틱에 원래 글자로 되돌린다
+    lastTrayStatus = '';
+    hud.notify('업데이트하지 못했어요. 트레이 메뉴에서 다시 눌러 주세요');
+  },
 });
 const applyScale = (scale: number) => {
   document.documentElement.style.setProperty('--ui-scale', String(scale));
