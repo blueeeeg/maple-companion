@@ -1,4 +1,5 @@
 mod activity;
+mod app_icon;
 mod game_state;
 mod idle;
 mod tray_icon;
@@ -125,7 +126,13 @@ fn set_tray_icon(app: AppHandle, png: Vec<u8>) -> Result<(), String> {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         tray.set_icon(Some(icon)).map_err(|error| error.to_string())?;
     }
-    tray_icon::save_cache(&app, &png).map_err(|error| error.to_string())
+    // 실행할 때마다 같은 그림을 받아 오므로 바뀐 때만 앱 아이콘을 다시 만든다
+    let changed = tray_icon::cached_png(&app).as_deref() != Some(png.as_slice());
+    tray_icon::save_cache(&app, &png).map_err(|error| error.to_string())?;
+    if changed {
+        app_icon::sync(&app);
+    }
+    Ok(())
 }
 
 fn current_mode(app: &AppHandle) -> DisplayMode {
@@ -384,6 +391,7 @@ pub fn run() {
             app.manage(state);
 
             build_tray(app.handle(), scale_percent)?;
+            app_icon::sync(app.handle());
             let handle = app.handle().clone();
             app.notification().on_action(move |performed| {
                 if performed.action_id() == "tap" {

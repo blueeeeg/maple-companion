@@ -95,6 +95,7 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 | `game-state.json.bak` | 바로 앞에 저장한 `game-state.json`. 본 파일을 못 읽으면 이것으로 연다 |
 | `activity.json` | 앱 전체 활동 시간, 창 모드·크기, 자리 비움 판정 시간 |
 | `tray-icon.png`·`custom-tray-icon.png` | 트레이 아이콘 |
+| `app-icon-applied.txt` | macOS 앱 아이콘을 마지막으로 붙인 그림의 해시, 또는 붙이지 못한 기록 |
 
 - 저장은 바뀔 때마다 0.3초쯤 모았다가 쓰고, 「종료」로 끌 때 남은 것을 바로 쓴다. 임시 파일에 다 쓴 뒤 바꿔치기해서 도중에 꺼져도 반만 쓰인 파일이 남지 않는다(`src-tauri/src/game_state.rs`)
 - 본 파일이 깨져 있으면 `game-state.json.corrupt` 로 복사해 두고 `.bak` 으로 연다
@@ -128,6 +129,15 @@ NPC 대화창은 `UI/UIWindow2.img/UtilDlgEx` 다. 폭 519 의 위(`t`)·가운�
 캐시샵 UI 는 `UI/CashShop.img` 원본 그림을 `_Canvas` 로 받는다. 바탕 `Base/backgrnd`, 미리보기 배경 `Base/Preview/0`, 부위 탭 글자 `CSTab/SubTab/4/{Enable,Disable}/n`, 버튼 `CSList/BtBuy`(구입하기)·`CSChar/BtDefaultAvatar`(원래대로)·`CSTab/BtExit`·`CSNotice/BtOK`·`BtCancel`, 페이지 넘김 `CSNotice/BTForward`(◀)·`BTBackward`(▶, 이름과 방향이 반대다), 검색 칸 `CSLocker/storageSearch/backgrnd`, 빈 목록 `Base/noItem_mini`, HUD 버튼 `CashItem/0`(캐시 동전). EXIT 버튼·빈 목록 그림·상점 위 메소 아이콘만 정확히 절반으로 줄이고 나머지는 원본 크기다. 그림을 못 받으면 글자 버튼으로 남고, 목록을 못 받으면 탭을 다시 눌러 받으라고 띄운다.
 
 메뉴바 트레이 아이콘은 아이템 「단풍잎」(4001126) 아이콘이다. 프론트가 받아 Rust 에 넘기고, Rust 는 app data 의 `tray-icon.png` 에 저장해 다음 실행부터 네트워크 없이 바로 쓴다. 못 받으면 기본 아이콘이 남는다. 같은 폴더에 `custom-tray-icon.png` 를 두면 그 그림이 먼저 쓰이고 단풍잎은 내려받아도 덮어쓰지 않는다(36×36 PNG 권장, 지우면 단풍잎으로 돌아간다). 앱·번들 아이콘(`src-tauri/icons`)은 넥슨 그림을 넣어 배포하게 되므로 바꾸지 않는다.
+
+앱 아이콘(Finder·Spotlight)은 macOS 에서만 트레이 아이콘과 같은 그림으로 바꾼다. 공개 저장소와 릴리스 파일에 넥슨 그림을 넣지 않으려고, 각자의 컴퓨터에서 실행 중에 붙인다(`src-tauri/src/app_icon.rs`).
+
+- 트레이 그림(`custom-tray-icon.png` 가 있으면 그것, 없으면 `tray-icon.png`)의 투명한 가장자리를 잘라 내고 1024×1024 의 가운데 824px 안에 들어가도록 정수배로 늘린다. 픽셀 그림이라 이웃 픽셀을 섞지 않는다
+- `NSWorkspace.setIcon(_:forFile:)` 으로 설치된 `.app` 에 Finder 사용자 아이콘을 붙인다. 번들 맨 위에 `Icon\r` 파일이 생기고 번들 폴더에 FinderInfo 확장 속성이 붙는다. 실행 중인 앱 아이콘(`NSApplication.applicationIconImage`)도 같은 그림으로 바꾼다
+- 붙인 그림의 해시를 app data 의 `app-icon-applied.txt` 에 남겨, 그림이 같고 `Icon\r` 이 남아 있으면 다시 쓰지 않는다. 업데이트는 `.app` 을 통째로 바꿔 넣어 아이콘이 사라지므로 다음 실행에서 다시 붙인다
+- `.app` 이 아닌 곳에서 띄운 개발 실행(`pnpm tauri dev`)은 번들이 없어 붙이지 않는다. 디스크 이미지 안에서 바로 띄우거나 macOS 가 앱 수정을 막는 등 번들에 쓸 수 없으면 로그만 남기고 기본 아이콘을 둔다. 실패도 `app-icon-applied.txt` 에 남겨, 차단 알림이 실행할 때마다 뜨지 않도록 그림이 바뀌거나 번들 폴더가 바뀔 때(업데이트·다시 설치로 inode 가 달라질 때)까지 다시 해 보지 않는다
+- 코드 서명: `codesign --verify` 는 그대로 통과한다. `--strict` 는 번들 폴더의 FinderInfo 때문에 실패한다. 실행 파일 서명은 바뀌지 않고, 업데이트는 받은 압축 파일의 서명만 확인하므로 영향이 없다
+- Windows 시작 메뉴·작업표시줄 아이콘은 exe 안의 리소스라 실행 중에 바꿀 수 없다. 창 아이콘(Alt+Tab)만 같은 그림으로 바꾼다
 
 맵 렌더 이미지에는 원점 정보가 없어서, 처음 들어가는 마을은 발판 좌표를 이미지의 땅 경계에 맞추는 계산을 한 번 하고 결과를 저장해 둔다(`src/maple/ground.ts`).
 
@@ -192,6 +202,7 @@ src-tauri/src/
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장
   game_state.rs      game-state.json 읽기·쓰기(임시 파일 → rename, .bak 백업). 저장을 잠깐 모았다가 쓰고 종료할 때 마저 쓴다
   tray_icon.rs       트레이 아이콘 PNG 읽기·저장. 메뉴바 높이(레티나 36px)에 맞게 늘리지 않고 가운데 둔다
+  app_icon.rs        트레이 그림으로 앱 아이콘 만들기(정수배 확대). macOS 는 .app 에 Finder 사용자 아이콘으로 붙이고, Windows 는 창 아이콘만
   updater.rs         업데이트 확인(check_update), 트레이 「업데이트」 항목 글자, 받기·설치·진행 표시, 저장 후 다시 켜기
   lib.rs             트레이(「설정」 포함), 펫·메뉴바 모드 전환, 창 크기, 알림을 누르면 창 열기, 프론트에 여는 명령
 ```

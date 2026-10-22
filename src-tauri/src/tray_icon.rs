@@ -29,11 +29,16 @@ pub fn from_png(bytes: &[u8]) -> Option<Image<'static>> {
     Some(center_on_canvas(image.rgba(), image.width(), image.height()))
 }
 
-pub fn load_cached(app: &AppHandle) -> Option<Image<'static>> {
+/// 지금 트레이에 쓰는 그림의 PNG 원본. 앱 아이콘도 같은 그림으로 만든다
+pub fn cached_png(app: &AppHandle) -> Option<Vec<u8>> {
     [CUSTOM_FILE, CACHE_FILE]
         .into_iter()
         .filter_map(|name| fs::read(data_file(app, name)?).ok())
-        .find_map(|bytes| from_png(&bytes))
+        .find(|bytes| Image::from_bytes(bytes).is_ok())
+}
+
+pub fn load_cached(app: &AppHandle) -> Option<Image<'static>> {
+    from_png(&cached_png(app)?)
 }
 
 pub fn save_cache(app: &AppHandle, bytes: &[u8]) -> std::io::Result<()> {
