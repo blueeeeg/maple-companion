@@ -30,6 +30,7 @@ import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
 import { advancementTier, describeJob } from './game/jobs';
 import { levelInfo } from './game/progression';
+import { bossRecord, noteAdvancements } from './game/records';
 import { newCharacterId } from './game/save';
 import {
   BGM_VOLUME_MAX,
@@ -47,6 +48,7 @@ import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
 import { warmMaps } from './maple/portal';
+import { canDrawSkill, loadSkill } from './maple/skills';
 import { createActivitySource } from './platform/activity';
 import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
 import { createNotifier } from './platform/notification';
@@ -57,6 +59,8 @@ import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
 import { createSettingsScreen } from './ui/settings';
+import { type SkillCheck, type SkillWindowState, createSkillWindow } from './ui/skillWindow';
+import { type StatWindowState, createStatWindow } from './ui/statWindow';
 
 const TICK_MS = 2000;
 /** 고정한 마을 맵을 못 받아 왔을 때 다시 받기까지 쉬는 시간 */
@@ -78,7 +82,7 @@ const roster = gameData.roster;
 writeRoster(roster);
 let settings = gameData.settings;
 
-let screen: 'map' | 'select' | 'shop' | 'settings' = selectedCharacter(roster) ? 'map' : 'select';
+let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' = selectedCharacter(roster) ? 'map' : 'select';
 let town: Town | null = null;
 let townLoading = false;
 let townChangedAt = Date.now();
@@ -126,6 +130,8 @@ const hud = createHud(root, {
   onOpenCharacterSelect: openCharacterSelect,
   onOpenCashShop: openCashShop,
   onOpenSettings: openSettings,
+  onOpenStat: openStat,
+  onOpenSkill: openSkill,
 });
 
 const characterSelect = createCharacterSelect(root, {
@@ -194,7 +200,19 @@ const settingsScreen = createSettingsScreen(root, {
   onCancel: closeSettings,
 });
 
-const scene = await createScene(stage, { onKill: handleKill });
+const statWindow = createStatWindow(root, { onClose: closeInfoWindow });
+const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onClose: closeInfoWindow });
+
+const scene = await createScene(stage, {
+  onKill: handleKill,
+  onSkillUnusable(skillId, name) {
+    const character = selectedCharacter(roster);
+    if (!character || character.huntSkillId !== skillId) return;
+    character.huntSkillId = null;
+    writeRoster(roster);
+    hud.notify(`${name} · 그릴 이펙트가 없어 자동 스킬로 싸워요`);
+  },
+});
 
 const isMuted = () => roster.muted || settings.bgmVolume === 0;
 
@@ -266,6 +284,80 @@ function openCashShop(): void {
   cashShop.show(cashShopState(character));
 }
 
+function statState(character: Character): StatWindowState {
+  const info = levelInfo(characterXp(character));
+  const job = characterJob(character, info.level);
+  return {
+    name: character.name,
+    level: info.level,
+    jobTitle: job.title,
+    tier: job.tier,
+    xpIntoLevel: info.xpIntoLevel,
+    xpForLevel: info.xpForLevel,
+    ratio: info.ratio,
+    activeSeconds: character.activeSeconds,
+    hunts: character.encountersResolved,
+    bosses: bossRecord(character.monsterBook),
+    meso: character.meso,
+    advancedAt: character.advancedAt,
+    look: job.look,
+  };
+}
+
+function skillState(character: Character): SkillWindowState {
+  const job = characterJob(character, levelInfo(characterXp(character)).level);
+  return { jobLine: character.jobLine, tier: job.tier, huntSkillId: character.huntSkillId };
+}
+
+/** 캐시샵처럼 맵·BGM 을 멈추고 창 안에 캐릭터 정보창·스킬창을 띄운다. HUD 의 스탯·스킬 버튼이 연다 */
+function openInfoWindow(kind: 'stat' | 'skill'): void {
+  const character = selectedCharacter(roster);
+  if (!character || screen !== 'map') return;
+  screen = kind;
+  syncRunning();
+  if (kind === 'stat') statWindow.show(statState(character));
+  else skillWindow.show(skillState(character));
+}
+
+function openStat(): void {
+  openInfoWindow('stat');
+}
+
+function openSkill(): void {
+  openInfoWindow('skill');
+}
+
+function closeInfoWindow(): void {
+  screen = 'map';
+  statWindow.hide();
+  skillWindow.hide();
+  syncRunning();
+  void tick();
+}
+
+/**
+ * 스킬창에서 고른 사냥 스킬을 맵에 그릴 수 있는지 받아 보고 저장한다. 겉모습만 바뀌고 보상은 같다.
+ * 받은 스킬은 맵이 같은 것을 다시 받지 않게 남는다
+ */
+async function chooseHuntSkill(skillId: number | null): Promise<SkillCheck> {
+  const character = selectedCharacter(roster);
+  if (!character) return 'failed';
+  if (skillId !== null) {
+    const job = characterJob(character, levelInfo(characterXp(character)).level);
+    try {
+      if (!canDrawSkill(await loadSkill(skillId, job.fallbackRange))) return 'noArt';
+    } catch {
+      return 'failed';
+    }
+    // 받는 동안 창을 닫고 다른 캐릭터로 바꿨으면 저장하지 않는다
+    if (selectedCharacter(roster) !== character) return 'failed';
+  }
+  character.huntSkillId = skillId;
+  writeRoster(roster);
+  skillWindow.update(skillState(character));
+  return 'ok';
+}
+
 /** 싸우는 도중에 몬스터를 껐으면 그 한 마리는 기본 주기로 친다 */
 const currentPace = (): HuntPace => huntPace(settings) ?? DEFAULT_PACE;
 
@@ -324,7 +416,9 @@ function fightBoss(boss: BossSpec, encounterNumber: number | null): void {
 function syncRunning(): void {
   const running = isShown() && screen === 'map';
   scene.setRunning(running);
-  bgm.setEnabled(shouldPlayBgm({ muted: roster.muted, volume: settings.bgmVolume, screen, windowVisible: isShown() }));
+  // 정보창·스킬창도 캐시샵처럼 맵을 멈추는 창이라 BGM 도 캐시샵과 같이 다룬다
+  const bgmScreen = screen === 'stat' || screen === 'skill' ? 'shop' : screen;
+  bgm.setEnabled(shouldPlayBgm({ muted: roster.muted, volume: settings.bgmVolume, screen: bgmScreen, windowVisible: isShown() }));
 }
 
 function moveTo(next: Town): void {
@@ -438,6 +532,8 @@ async function tick(): Promise<void> {
   bgm.prefetch([...(town ? townFields(town).map((each) => each.mapId) : []), ...likelyBgmMaps(info.level)]);
 
   const job = characterJob(character, info.level);
+  // 전직 날짜는 화면과 상관없이 그 차수가 된 틱에 적는다. 직업을 늦게 골랐으면 고른 틱이 그 날이다
+  if (noteAdvancements(character.advancedAt, job.tier, Date.now()).length > 0) writeRoster(roster);
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
   const trayStatus = job.canChooseJob ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
   if (trayStatus !== lastTrayStatus) {
@@ -445,6 +541,9 @@ async function tick(): Promise<void> {
     lastTrayStatus = trayStatus;
   }
 
+  // 열어 둔 정보창은 함께한 시간·경험치가 늘어나는 대로 고친다
+  if (screen === 'stat') statWindow.update(statState(character));
+  if (screen === 'skill') skillWindow.update(skillState(character));
   if (screen !== 'map') return;
 
   if (lastLevel?.characterId === character.id && info.level > lastLevel.level) {
@@ -461,7 +560,6 @@ async function tick(): Promise<void> {
     ratio: info.ratio,
     xpIntoLevel: info.xpIntoLevel,
     xpForLevel: info.xpForLevel,
-    meso: character.meso,
     muted: isMuted(),
     resting: snapshot.idleSeconds >= snapshot.idleLimitSeconds,
   });

@@ -1,9 +1,11 @@
 import { type Appearance, DEFAULT_APPEARANCE } from './appearance';
 import { type CashEquipped, composeLook } from './cashShop';
-import { type JobLineId, type JobView, describeJob } from './jobs';
+import { type JobLineId, type JobView, advancementTier, describeJob } from './jobs';
 import { BOSS_EVERY_ENCOUNTERS } from './bosses';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS } from './encounters';
 import { XP_PER_ACTIVE_SECOND, levelInfo } from './progression';
+import { type AdvancementLog, baselineAdvancements } from './records';
+import { huntSkill } from './skillBook';
 
 export const MAX_CHARACTERS = 6;
 export const NAME_MIN_LENGTH = 2;
@@ -32,6 +34,10 @@ export interface Character {
   wardrobe: number[];
   /** 지금 입고 있는 캐시 아이템. 직업·차수 장비 겉모습을 자리별로 덮는다 */
   cashEquipped: CashEquipped;
+  /** 스킬창에서 고른 사냥 스킬. null 이면 자동(차수마다 정해 둔 스킬). 겉모습만 바뀌고 보상은 같다 */
+  huntSkillId: number | null;
+  /** 전직한 날. 이 기록을 시작하기 전에 이미 한 전직은 null(날짜 모름)이다 */
+  advancedAt: AdvancementLog;
 }
 
 export interface Roster {
@@ -72,6 +78,8 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     bossChargeSeconds: 0,
     wardrobe: [],
     cashEquipped: {},
+    huntSkillId: null,
+    advancedAt: {},
   };
 }
 
@@ -89,6 +97,7 @@ export function migrateLegacySave(legacy: Partial<LegacySave>, id: string, globa
     encountersResolved: legacy.encountersResolved ?? 0,
     ...legacyHuntProgress(legacy.encountersResolved),
   };
+  character.advancedAt = baselineAdvancements(reachedTier(character));
   return { version: 2, characters: [character], selectedId: id, muted: legacy.muted ?? false };
 }
 
@@ -150,10 +159,24 @@ export interface CharacterSummary {
   look: number[];
 }
 
-/** 직업·차수 장비에 입고 있는 캐시 아이템을 덧입힌 모습. 맵·캐릭터 선택 화면이 같은 모습을 그린다 */
+/**
+ * 직업·차수 장비에 입고 있는 캐시 아이템을 덧입힌 모습. 맵·캐릭터 선택 화면이 같은 모습을 그린다.
+ * 공격 스킬은 스킬창에서 고른 것이고, 못 고른 상태면 자동 스킬 그대로다
+ */
 export function characterJob(character: Character, level: number): JobView {
   const job = describeJob(level, character.jobLine, character.appearance);
-  return { ...job, look: composeLook(job.look, character.cashEquipped) };
+  return {
+    ...job,
+    look: composeLook(job.look, character.cashEquipped),
+    skillId: huntSkill(character.jobLine, job.tier, character.huntSkillId),
+    autoSkillId: job.skillId,
+  };
+}
+
+/** 지금 몇 차인지. 직업을 아직 안 골랐으면 레벨이 넘어도 0 이다 */
+export function reachedTier(character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine'>): number {
+  if (!character.jobLine) return 0;
+  return advancementTier(levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp).level);
 }
 
 export function summarizeCharacter(character: Character): CharacterSummary {

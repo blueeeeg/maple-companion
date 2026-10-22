@@ -33,7 +33,7 @@ import {
 } from '../maple/bossMob';
 import { type Calibration, type GroundPath, calibrateFootholds, groundY, mainGround } from '../maple/ground';
 import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
-import { type EffectLayer, type Skill, loadSkill } from '../maple/skills';
+import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/skills';
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture } from '../maple/textures';
 import { loadPortalFrames } from '../maple/portal';
 import { createBossGauge } from './bossGauge';
@@ -121,6 +121,8 @@ export interface BossFightEvents {
 export interface SceneCallbacks {
   /** 몬스터를 잡으면 떨어뜨릴 메소 금액을 돌려준다 */
   onKill(monster: MonsterSpec): number;
+  /** 스킬창에서 고른 스킬에 맵에 그릴 이펙트가 없어 자동 스킬로 싸우게 됐을 때 */
+  onSkillUnusable?(skillId: number, name: string): void;
 }
 
 export interface Scene {
@@ -1034,7 +1036,16 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (key === lookKey && performance.now() < lookRetryAt) return;
       lookKey = key;
       lookRetryAt = Infinity;
-      const skillPromise = job.skillId === null ? Promise.resolve(null) : loadSkill(job.skillId, job.fallbackRange);
+      // 고른 스킬에 이펙트 그림이 없으면 맵에서 아무것도 안 보인 채 몬스터만 맞아서 자동 스킬로 싸운다
+      const autoSkillId = job.autoSkillId ?? job.skillId;
+      const skillPromise =
+        job.skillId === null
+          ? Promise.resolve(null)
+          : loadSkill(job.skillId, job.fallbackRange).then((chosen) => {
+              if (canDrawSkill(chosen) || autoSkillId === null || autoSkillId === chosen.id) return chosen;
+              callbacks.onSkillUnusable?.(chosen.id, chosen.name);
+              return loadSkill(autoSkillId, job.fallbackRange);
+            });
       // 스킬(수 MB)을 못 받아도 캐릭터는 먼저 보이게 따로 건다. 못 받은 것은 이전 것을 그대로 쓰다가 잠시 뒤 다시 받는다
       void Promise.allSettled([loadHeroAnimations(job), skillPromise]).then(([loadedHero, loadedSkill]) => {
         if (lookKey !== key) return;

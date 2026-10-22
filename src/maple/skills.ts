@@ -1,4 +1,5 @@
 import type { Texture } from 'pixi.js';
+import { hasUsableEffect } from '../game/skillBook';
 import { type SkillFrameData, type SkillInfo, fetchJson, skillUrl } from './api';
 import { textureFromBase64 } from './textures';
 
@@ -24,6 +25,9 @@ export interface Skill {
 
 const MAX_HIT_LINES = 8;
 const skills = new Map<number, Promise<Skill>>();
+
+/** 맵에서 캐릭터가 쓰는 모습을 그릴 수 있는지 */
+export const canDrawSkill = (skill: Skill): boolean => hasUsableEffect(skill.effect.map((layer) => layer.length));
 
 export function frontRange(lt: string | undefined): number | null {
   const x = lt?.match(/X=(-?\d+)/)?.[1];

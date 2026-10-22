@@ -1,6 +1,6 @@
 import type { JobLineId } from '../game/jobs';
-import { MESO_HUD_ICON_URL, cashShopUiUrl } from '../maple/api';
-import { loadWithRetry, loadedImage } from './art';
+import { cashShopUiUrl, wzImageUrl } from '../maple/api';
+import { applyArt, loadWithRetry, loadedImage } from './art';
 import { JOB_CHOICE_KEY, createNpcDialog, openAdvancementCongratulation, openJobChoice } from './npcDialog';
 
 export interface HudState {
@@ -10,7 +10,6 @@ export interface HudState {
   ratio: number;
   xpIntoLevel: number;
   xpForLevel: number;
-  meso: number;
   muted: boolean;
   resting: boolean;
 }
@@ -21,6 +20,8 @@ export interface HudHandlers {
   onOpenCharacterSelect(): void;
   onOpenCashShop(): void;
   onOpenSettings(): void;
+  onOpenStat(): void;
+  onOpenSkill(): void;
 }
 
 export interface Hud {
@@ -37,6 +38,14 @@ export interface Hud {
 
 const NOTICE_MS = 4000;
 
+// 원작(빅뱅 전) 상태 바의 스탯·스킬 단축 버튼(StatusBar.img StatKey·SkillKey, 28×20). HUD 높이에 맞아 원본 크기로 쓴다
+const quickKeyArt = (node: string) => ({
+  normal: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`),
+  hover: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/mouseOver/0`),
+  pressed: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/pressed/0`),
+  disabled: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/disabled/0`),
+});
+
 export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   root.insertAdjacentHTML(
     'beforeend',
@@ -47,7 +56,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <button class="hud-advance" type="button" hidden>전직 가능!</button>
       <span class="hud-rest" data-tauri-drag-region hidden>zZ 휴식 중</span>
       <span class="hud-spacer" data-tauri-drag-region></span>
-      <span class="hud-meso" data-tauri-drag-region aria-label="메소"><span class="hud-meso-amount"></span></span>
+      <button class="hud-stat hud-key art-button" type="button" aria-label="캐릭터 정보" title="캐릭터 정보">스탯</button>
+      <button class="hud-skill hud-key art-button" type="button" aria-label="스킬" title="스킬">스킬</button>
       <button class="hud-shop" type="button" aria-label="캐시샵" title="캐시샵">🛍</button>
       <button class="hud-menu-button" type="button" aria-label="메뉴" title="메뉴" aria-haspopup="menu" aria-expanded="false">⚙️</button>
     </header>
@@ -71,7 +81,6 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   const job = pick('.hud-job');
   const advance = pick<HTMLButtonElement>('.hud-advance');
   const rest = pick('.hud-rest');
-  const meso = pick('.hud-meso-amount');
   const mute = pick<HTMLButtonElement>('.hud-mute');
   const expFill = pick('.exp-fill');
   const expText = pick('.exp-text');
@@ -80,7 +89,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
 
   advance.addEventListener('click', openChoice);
 
-  // HUD 가 좁아서(긴 직업 이름·휴식 중·큰 메소면 이미 꽉 찬다) 소리·설정·캐릭터 선택은 버튼 하나의 메뉴로 묶는다
+  // HUD 가 좁아서(긴 직업 이름·휴식 중·스탯·스킬 버튼이면 이미 꽉 찬다) 소리·설정·캐릭터 선택은 버튼 하나의 메뉴로 묶는다
   const menuButton = pick<HTMLButtonElement>('.hud-menu-button');
   const menu = pick('.hud-menu');
   const setMenuOpen = (open: boolean) => {
@@ -103,8 +112,12 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   menuItem('.hud-mute', handlers.onToggleMute);
   menuItem('.hud-settings', handlers.onOpenSettings);
   menuItem('.hud-characters', handlers.onOpenCharacterSelect);
-  // 아이콘을 못 받으면 깨진 그림 대신 금액만 남는다
-  pick('.hud-meso').prepend(loadedImage(MESO_HUD_ICON_URL));
+  const stat = pick<HTMLButtonElement>('.hud-stat');
+  const skill = pick<HTMLButtonElement>('.hud-skill');
+  stat.addEventListener('click', handlers.onOpenStat);
+  skill.addEventListener('click', handlers.onOpenSkill);
+  applyArt(stat, quickKeyArt('StatKey'));
+  applyArt(skill, quickKeyArt('SkillKey'));
   const shop = pick('.hud-shop');
   shop.addEventListener('click', handlers.onOpenCashShop);
   // 원작 캐시샵의 캐시 동전 그림(13×13)을 받으면 글자 아이콘과 바꾼다
@@ -122,7 +135,6 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       // 직업 선택 대화를 띄운 채 다른 캐릭터로 바꾸면 그 캐릭터에는 맞지 않는 대화가 남는다
       if (!state.canChooseJob) dialog.cancel(JOB_CHOICE_KEY);
       rest.hidden = !state.resting;
-      meso.textContent = state.meso.toLocaleString();
       mute.textContent = state.muted ? '🔊 소리 켜기' : '🔇 소리 끄기';
       expFill.style.width = `${(state.ratio * 100).toFixed(2)}%`;
       expText.textContent =

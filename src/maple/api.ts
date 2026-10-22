@@ -150,6 +150,13 @@ export const cashWeaponNodeUrl = (itemId: number) => wzNodeUrl(`Character/Weapon
 export const cashShopUiUrl = (node: string) => wzImageUrl(`UI/_Canvas/CashShop.img/${node}`);
 
 /**
+ * 스킬 아이콘(32×32). img·node 는 skillWzPath 값이다. 대부분 `_Canvas` 의 같은 자리에 있지만 바이퍼 4차처럼
+ * 다른 스킬 그림을 가리키는 것은 그 자리에 없다(404). skillIconLinkUrl 은 그 `_outlink` 값(WZ 경로)이다
+ */
+export const skillIconUrl = (img: string, node: string) => wzImageUrl(`Skill/_Canvas/${img}.img/skill/${node}/icon`);
+export const skillIconLinkUrl = (img: string, node: string) => wzNodeUrl(`Skill/${img}.img/skill/${node}/icon/_outlink`);
+
+/**
  * 몹 프레임 하나의 기준점(발밑). 렌더 이미지는 원본 캔버스 그대로라 이 값을 그대로 쓰면 원작 위치에 맞는다.
  * 큰 보스는 기준점이 그림 가운데가 아니고 동작마다 그림 크기가 달라서, 가운데 아래를 기준으로 그리면 동작이 바뀔 때 튄다
  */

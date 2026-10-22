@@ -163,6 +163,8 @@ export interface JobView {
   look: number[];
   attackAction: string;
   skillId: number | null;
+  /** 스킬창에서 고른 skillId 를 맵에 못 그릴 때 대신 쓰는 자동 스킬. 없으면 skillId 가 곧 자동 스킬이다 */
+  autoSkillId?: number | null;
   fallbackRange: number;
   /** 1차 전직 레벨이 됐는데 아직 직업을 안 고른 상태 */
   canChooseJob: boolean;

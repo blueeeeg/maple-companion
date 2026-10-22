@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_APPEARANCE } from './appearance';
 import { type Character, type Roster, createCharacter, emptyRoster } from './characters';
+import { totalXpForLevel } from './progression';
 import { mergeRosters, normalizeRoster, parseRoster } from './save';
 
 const character = (id: string, change: Partial<Character> = {}): Character => ({
@@ -72,5 +73,46 @@ describe('파일 저장과 localStorage 저장 합치기', () => {
     const { characters } = normalizeRoster({ characters: [{ id: 'a', name: '모험가', activeSeconds: 1 } as Character] });
     expect(characters[0].wardrobe).toEqual([]);
     expect(characters[0].cashEquipped).toEqual({});
+  });
+});
+
+describe('사냥 스킬·전직 기록 저장', () => {
+  // Lv.156 언저리(4차). 활동 시간만으로 레벨을 맞춘다
+  const fourthJobSeconds = totalXpForLevel(156);
+
+  it('칸이 없던 예전 저장은 자동 스킬이고, 이미 한 전직은 날짜 모름이다', () => {
+    const old = { id: 'a', name: '불독', activeSeconds: fourthJobSeconds, killXp: 0, jobLine: 'magician' } as Character;
+    const [character] = normalizeRoster({ characters: [old] }).characters;
+    expect(character.huntSkillId).toBeNull();
+    expect(character.advancedAt).toEqual({ 1: null, 2: null, 3: null, 4: null });
+  });
+
+  it('직업을 안 고른 예전 저장은 아직 전직 기록이 없다', () => {
+    const old = { id: 'a', name: '초보', activeSeconds: fourthJobSeconds, jobLine: null } as Character;
+    expect(normalizeRoster({ characters: [old] }).characters[0].advancedAt).toEqual({});
+  });
+
+  it('저장한 사냥 스킬·전직 날짜는 그대로 읽고, 숫자가 아닌 스킬은 자동으로 읽는다', () => {
+    const saved = character('a', { huntSkillId: 2121007, advancedAt: { 1: null, 2: 1700000000000 } });
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [saved] }))).characters;
+    expect(read.huntSkillId).toBe(2121007);
+    expect(read.advancedAt).toEqual({ 1: null, 2: 1700000000000 });
+    const broken = { ...saved, huntSkillId: '2121007' } as unknown as Character;
+    expect(normalizeRoster({ characters: [broken] }).characters[0].huntSkillId).toBeNull();
+  });
+
+  it('예전 한 명 저장을 옮겨도 이미 한 전직은 날짜 모름이다', () => {
+    const legacy = JSON.stringify({ jobLine: 'warrior', killXp: 0, meso: 0, monsterBook: {}, encountersResolved: 0, muted: false });
+    const [moved] = parseRoster(null, legacy, totalXpForLevel(35), 'legacy').characters;
+    expect(moved.advancedAt).toEqual({ 1: null, 2: null });
+  });
+
+  it('합칠 때 사냥 스킬은 더 자란 쪽, 전직 날짜는 양쪽을 합친다', () => {
+    const file = roster([character('a', { activeSeconds: 100, huntSkillId: 2121007, advancedAt: { 1: null, 2: 900 } })]);
+    const local = roster([character('a', { activeSeconds: 50, huntSkillId: null, advancedAt: { 1: 300, 2: 800 } })]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.huntSkillId).toBe(2121007);
+    expect(merged.advancedAt).toEqual({ 1: 300, 2: 800 });
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
   });
 });

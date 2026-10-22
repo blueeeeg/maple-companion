@@ -80,18 +80,6 @@ body {
   align-self: stretch;
 }
 
-.hud-meso {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.hud-meso img {
-  width: 14px;
-  height: 14px;
-  image-rendering: var(--art-rendering);
-}
-
 .hud-rest {
   color: #b8c4ff;
 }
@@ -1645,7 +1633,7 @@ body {
 
 /* ── HUD 메뉴 (ui/hud.ts) ─────────────────────────────
    소리·설정·캐릭터 선택을 ⚙ 버튼 하나의 메뉴로 묶었다. HUD 와 같은 어두운 바탕 */
-/* 긴 직업 이름(아크메이지(불,독) · 5차)에 휴식 중·억 단위 메소가 겹쳐도 두 줄로 꺾이지 않게 직업 이름을 말줄임한다 */
+/* 긴 직업 이름(아크메이지(불,독) · 5차)에 휴식 중·스탯·스킬 버튼이 겹쳐도 두 줄로 꺾이지 않게 직업 이름을 말줄임한다 */
 .hud-job {
   min-width: 0;
   overflow: hidden;
@@ -1653,8 +1641,7 @@ body {
   white-space: nowrap;
 }
 
-.hud-rest,
-.hud-meso {
+.hud-rest {
   flex: none;
   white-space: nowrap;
 }
@@ -2053,4 +2040,696 @@ body {
   :root:not([data-theme='light']) .npc-window:not(.has-art) .npc-option {
     color: #8fa6ff;
   }
+}
+
+/* ── HUD 스탯·스킬 버튼 (ui/hud.ts) ─────────────────────────────
+   원작 상태 바 단축 버튼(StatusBar.img StatKey·SkillKey, 28×20)을 원본 크기로. 그림을 못 받으면 글자 버튼으로 남는다 */
+.hud .hud-key {
+  flex: none;
+  min-width: 28px;
+  height: 20px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.hud .hud-key.has-art {
+  width: 28px;
+  padding: 0;
+  image-rendering: var(--art-rendering);
+}
+
+/* ── 캐릭터 정보창·스킬창 공통 (ui/statWindow.ts · ui/skillWindow.ts) ─────────────
+   설정 창처럼 같은 창 안에 띄우고 뒤 맵을 어둡게 깐다. 열려 있는 동안 맵과 BGM 이 멈춘다 */
+.info-screen {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  color: #333333;
+}
+
+.info-screen[hidden] {
+  display: none;
+}
+
+.info-screen button {
+  font: inherit;
+  cursor: pointer;
+}
+
+/* 원작 창 닫기(Basic.img/BtClose3, 13×13) */
+.stat-close,
+.skill-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 9px;
+  line-height: 15px;
+}
+
+.stat-close.has-art,
+.skill-close.has-art {
+  width: 13px;
+  height: 13px;
+  image-rendering: var(--art-rendering);
+}
+
+.stat-title,
+.skill-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 18px;
+  margin: 0;
+  color: #ffd23f;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* 원작 창 그림에 「CHARACTER INFO」·「SKILL」 제목이 들어 있다 */
+.has-frame-art > .stat-title,
+.has-frame-art > .skill-title {
+  color: transparent;
+}
+
+/* ── 캐릭터 정보창 ─────────────────────────────
+   원작 캐릭터 정보창(UIWindow2.img/UserInfo/character): 창 틀 backgrnd(272×226) 안 (6,22)에 판 backgrnd2(259×174),
+   (10,27)에 캐릭터 칸 charBackgrnd(97×165), (14,169)에 이름표 name(89×19). 모두 원본 크기 그대로 원작 자리에 둔다.
+   판 오른쪽 위의 빈 띠에 함께한 시간을, 원작 항목 칸 자리(판 x 103~ y 44~)에 이 앱의 기록을 같은 모양으로 그린다 */
+.stat-window {
+  position: absolute;
+  z-index: 0;
+  left: 44px;
+  top: 2px;
+  width: 272px;
+  height: 226px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.73);
+  box-shadow: inset 0 0 0 1px #cccccc;
+}
+
+.stat-window.has-frame-art {
+  border-radius: 0;
+  background: var(--frame) no-repeat;
+  box-shadow: none;
+  image-rendering: var(--art-rendering);
+}
+
+.stat-board {
+  position: absolute;
+  left: 6px;
+  top: 22px;
+  width: 259px;
+  height: 174px;
+  border-radius: 4px;
+  background: #e9e9e9;
+}
+
+.stat-board.has-art {
+  border-radius: 0;
+  background: var(--board) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.stat-stage {
+  position: absolute;
+  left: 10px;
+  top: 27px;
+  width: 97px;
+  height: 165px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: radial-gradient(ellipse 18px 3px at 48px 127px, rgba(0, 0, 0, 0.3), transparent), #ffffff;
+}
+
+.stat-stage.has-art {
+  border-radius: 0;
+  background: var(--stage) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+/* 발이 그림 정중앙이라 반쪽 크기를 정수로 내려 원작 그림자 가운데(칸 안 48, 127)에 발을 맞춘다 */
+.stat-stage img {
+  position: absolute;
+  left: calc(48px - var(--half-width, 0px));
+  top: calc(127px - var(--half-height, 0px));
+  image-rendering: var(--art-rendering);
+}
+
+.stat-name {
+  position: absolute;
+  left: 14px;
+  top: 169px;
+  width: 89px;
+  height: 19px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #22aadd;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 19px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 60, 90, 0.45);
+}
+
+.stat-name.has-art {
+  border-radius: 0;
+  background: var(--plate) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+/* 판 오른쪽 위의 빈 띠(판 x 102~256, y 3~40). 이 창에서 가장 먼저 읽히는 값이다 */
+.stat-together {
+  position: absolute;
+  left: 110px;
+  top: 27px;
+  width: 150px;
+  height: 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  cursor: grab;
+}
+
+.stat-together span {
+  color: #7a7a7a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.stat-together strong {
+  overflow: hidden;
+  color: #d9620b;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 17px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0 #ffffff;
+}
+
+/* 원작 항목 칸(16 높이, 18 간격)과 같은 칸 일곱 줄. 원작 판의 항목 이름이 비치지 않게 흰 바탕으로 덮는다 */
+.stat-rows {
+  position: absolute;
+  left: 109px;
+  top: 66px;
+  width: 155px;
+  height: 127px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 45px minmax(0, 1fr);
+  grid-auto-rows: 16px;
+  row-gap: 2px;
+  align-content: start;
+  margin: 0;
+  padding: 2px 4px 0 1px;
+  background: #ffffff;
+}
+
+.stat-rows dt,
+.stat-row-button {
+  display: block;
+  height: 16px;
+  border-radius: 4px 0 0 4px;
+  background: linear-gradient(#9b9b9b, #6b6b6b);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.stat-row-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: linear-gradient(#5fb8ea, #1f86c8);
+}
+
+.stat-row-button::after {
+  content: ' ▸';
+  font-size: 7px;
+}
+
+.stat-row-button:hover,
+.stat-row-button:focus-visible {
+  background: linear-gradient(#7cc8f2, #2d97da);
+  outline: none;
+}
+
+.stat-rows dd {
+  min-width: 0;
+  height: 16px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 5px;
+  overflow: hidden;
+  border: 1px solid #bdbdbd;
+  border-left: 0;
+  border-radius: 0 5px 5px 0;
+  background: #ffffff;
+  color: #333333;
+  font-size: 9.5px;
+  line-height: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stat-rows dd.stat-meso {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* 메소 아이콘(23×24)은 상점 위 메소처럼 정확히 절반으로 */
+.stat-meso img {
+  flex: none;
+  width: 11.5px;
+  height: 12px;
+}
+
+.stat-back {
+  grid-column: 1 / -1;
+  height: 16px;
+  padding: 0;
+  border: 1px solid #b4b4b4;
+  border-radius: 4px;
+  background: linear-gradient(#ffffff, #e4e4e4);
+  color: #555555;
+  font-size: 9.5px;
+}
+
+.stat-back:hover,
+.stat-back:focus-visible {
+  border-color: #6aa9d8;
+  outline: none;
+}
+
+/* ── 스킬창 ─────────────────────────────
+   원작 스킬창(UIWindow2.img/Skill/main). 창 틀 backgrnd(318×361)는 위 198px·아래 32px 띠, 판 backgrnd2(306×333, (5,22))는
+   위 176px·아래 26px 띠만 잘라 230 높이로 잇는다. 차수 탭 Tab/{selected,enabled,disabled}/n 은 (10+26n, 29),
+   직업 띠 backgrnd3(304×45)는 (7,47)에 두되 고른 파란색이 이어지는 가운데 6px 를 빼 36 높이로 쓴다 */
+.skill-window {
+  position: absolute;
+  z-index: 0;
+  left: 21px;
+  top: 0;
+  width: 318px;
+  height: 230px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.73);
+  box-shadow: inset 0 0 0 1px #cccccc;
+}
+
+.skill-window.has-frame-art {
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.skill-window.has-frame-art::before,
+.skill-window.has-frame-art::after,
+.skill-board.has-art::before,
+.skill-board.has-art::after,
+.skill-banner.has-art::before,
+.skill-banner.has-art::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  right: 0;
+  background-repeat: no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-window.has-frame-art::before {
+  top: 0;
+  height: 198px;
+  background-image: var(--frame);
+}
+
+.skill-window.has-frame-art::after {
+  bottom: 0;
+  height: 32px;
+  background-image: var(--frame);
+  background-position: 0 100%;
+}
+
+.skill-board {
+  position: absolute;
+  left: 5px;
+  top: 22px;
+  width: 306px;
+  height: 202px;
+  border-radius: 4px;
+  background: #f4f4f4;
+}
+
+.skill-board.has-art {
+  z-index: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.skill-board.has-art::before {
+  top: 0;
+  height: 176px;
+  background-image: var(--board);
+}
+
+.skill-board.has-art::after {
+  bottom: 0;
+  height: 26px;
+  background-image: var(--board);
+  background-position: 0 100%;
+}
+
+.skill-tabs {
+  position: absolute;
+  left: 10px;
+  top: 27px;
+  display: flex;
+  gap: 1px;
+}
+
+.skill-tab {
+  width: 25px;
+  height: 18px;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px 4px 0 0;
+  background: #8c8c8c;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.skill-tab.is-active {
+  height: 20px;
+  margin-top: 0;
+  background: #f08a1c;
+}
+
+.skill-tab.is-locked {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.skill-tab.has-art {
+  border-radius: 0;
+  background: var(--off) no-repeat;
+  color: transparent;
+  opacity: 1;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-tab.has-art.is-active {
+  background-image: var(--on);
+}
+
+.skill-tab.has-art.is-locked {
+  background-image: var(--locked);
+}
+
+.skill-tab:focus-visible {
+  outline: 1px solid #ffd23f;
+}
+
+.skill-banner {
+  position: absolute;
+  left: 7px;
+  top: 47px;
+  width: 304px;
+  height: 36px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(#006699, #4499cc);
+  box-shadow: inset 0 2px 0 #ee7700;
+  cursor: grab;
+}
+
+.skill-banner.has-art {
+  z-index: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.skill-banner.has-art::before {
+  top: 0;
+  height: 30px;
+  background-image: var(--banner);
+}
+
+.skill-banner.has-art::after {
+  top: 30px;
+  height: 6px;
+  background-image: var(--banner);
+  background-position: 0 -36px;
+}
+
+/* 직업 띠 왼쪽 흰 칸(36 폭)에 스킬북 아이콘(32×32)을 원본 크기로 */
+.skill-book {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 32px;
+  height: 32px;
+  background: #ffffff;
+}
+
+.skill-book.has-art {
+  background: var(--job) no-repeat center;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-book.has-art[data-kind='beginner'] {
+  background-image: var(--beginner);
+}
+
+.skill-banner-title {
+  position: absolute;
+  left: 44px;
+  top: 4px;
+  right: 8px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0 rgba(0, 40, 70, 0.6);
+}
+
+.skill-banner-count {
+  position: absolute;
+  left: 44px;
+  top: 19px;
+  color: #d6efff;
+  font-size: 9px;
+  line-height: 12px;
+}
+
+/* 원작 스킬 칸(140×35) 두 줄. 판의 머리 띠 구분선(창 y 87~90) 아래로 세 줄이 보이고 나머지는 한 줄씩 내려서 본다 */
+.skill-list {
+  position: absolute;
+  left: 10px;
+  top: 91px;
+  width: 298px;
+  height: 107px;
+  display: grid;
+  grid-template-columns: 140px 140px;
+  grid-auto-rows: 35px;
+  gap: 1px 5px;
+  align-content: start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+}
+
+.skill-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.skill-list::-webkit-scrollbar-track {
+  border-radius: 4px;
+  background: #e2e2e2;
+}
+
+.skill-list::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #b3b3b3;
+}
+
+.skill-row {
+  position: relative;
+  display: block;
+  width: 140px;
+  height: 35px;
+  padding: 0;
+  border: 1px solid #d0d0d0;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #333333;
+  text-align: left;
+  box-sizing: border-box;
+  scroll-snap-align: start;
+}
+
+.skill-list.has-art .skill-row {
+  border: 0;
+  border-radius: 0;
+  background: var(--row) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-list.has-art .skill-row.is-dim {
+  background-image: var(--row-dim);
+}
+
+.skill-icon {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 32px;
+  height: 32px;
+}
+
+.skill-icon img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-row.is-dim .skill-icon img {
+  filter: grayscale(0.85);
+  opacity: 0.7;
+}
+
+.skill-name,
+.skill-state {
+  position: absolute;
+  left: 38px;
+  width: 99px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.skill-name {
+  top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 14px;
+}
+
+.skill-state {
+  top: 19px;
+  color: #8a8a8a;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.skill-row.is-attack .skill-state {
+  color: #1f7fc8;
+}
+
+.skill-row.is-attack:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px #6aa9d8;
+}
+
+.skill-row.is-attack:focus-visible {
+  outline: 1px solid #ffd23f;
+  outline-offset: -1px;
+}
+
+.skill-row:disabled {
+  cursor: progress;
+}
+
+/* 지금 사냥에 쓰는 스킬. 원작 탭·직업 띠의 주황으로 테두리를 두른다. 마우스를 올려도 주황을 지킨다 */
+.skill-row.is-hunting,
+.skill-row.is-hunting.is-attack:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px #f08a1c, inset 0 0 0 2px rgba(255, 196, 120, 0.55);
+}
+
+.skill-row.is-hunting .skill-state {
+  color: #d9620b;
+  font-weight: 700;
+}
+
+.skill-row.is-hunting .skill-state::before {
+  content: '⚔ ';
+}
+
+.skill-footer {
+  position: absolute;
+  left: 11px;
+  top: 201px;
+  width: 296px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skill-hunt {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #444444;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.skill-hunt.is-problem {
+  color: #c8392b;
+}
+
+.skill-auto {
+  flex: none;
+  height: 15px;
+  padding: 0 7px;
+  border: 1px solid #b4b4b4;
+  border-radius: 3px;
+  background: linear-gradient(#ffffff, #e4e4e4);
+  color: #555555;
+  font-size: 9.5px;
+  line-height: 13px;
+}
+
+.skill-auto:hover:not(:disabled) {
+  border-color: #6aa9d8;
+}
+
+.skill-auto:disabled {
+  opacity: 0.4;
+  cursor: default;
 }

@@ -8,7 +8,9 @@ import {
   emptyRoster,
   legacyHuntProgress,
   migrateLegacySave,
+  reachedTier,
 } from './characters';
+import { mergeAdvancements, normalizeAdvancements } from './records';
 
 const STORAGE_KEY = 'maple-companion:characters';
 // 캐릭터가 한 명뿐이던 때의 키. 옮긴 뒤에도 지우지 않아서 되돌릴 여지를 남긴다
@@ -23,13 +25,20 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
   const characters = (parsed.characters ?? []).map((character): Character => {
     const appearance = normalizeAppearance(character.appearance);
     // 캐시샵이 생기기 전 저장에는 옷장이 없어서 빈 옷장으로 시작한다
-    return {
+    const filled: Character = {
       ...createCharacter(character.id, character.name, appearance),
       // 몬스터 주기 설정이 생기기 전 저장에는 사냥 진행이 마리 수로만 있다
       ...(character.huntSeconds === undefined ? legacyHuntProgress(character.encountersResolved) : {}),
       ...character,
       appearance,
       ...normalizeCashData(character),
+    };
+    const { huntSkillId } = character;
+    return {
+      ...filled,
+      huntSkillId: typeof huntSkillId === 'number' && Number.isInteger(huntSkillId) ? huntSkillId : null,
+      // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다
+      advancedAt: normalizeAdvancements(character.advancedAt, reachedTier(filled)),
     };
   });
   return { ...emptyRoster(), ...parsed, characters };
@@ -77,7 +86,12 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
     const fromLocal = localById.get(fromFile.id);
     if (!fromLocal) return fromFile;
     const winner = progress(fromLocal) > progress(fromFile) ? fromLocal : fromFile;
-    return { ...winner, wardrobe: [...new Set([...fromFile.wardrobe, ...fromLocal.wardrobe])] };
+    // 사냥 스킬은 메소처럼 더 자란 쪽 것을 쓴다. 전직 날짜는 한쪽에만 적혀 있을 수 있어 합친다
+    return {
+      ...winner,
+      wardrobe: [...new Set([...fromFile.wardrobe, ...fromLocal.wardrobe])],
+      advancedAt: mergeAdvancements(fromFile.advancedAt, fromLocal.advancedAt),
+    };
   });
   const fileIds = new Set(fileCharacters.map((character) => character.id));
   const characters = [...merged, ...local.characters.filter((character) => !fileIds.has(character.id))];
