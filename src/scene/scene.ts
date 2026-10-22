@@ -1042,6 +1042,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     },
     setDisplayScale(scale) {
       app.renderer.resize(width, height, window.devicePixelRatio * scale);
+      // autoDensity 가 캔버스 CSS 크기를 논리 크기로 되돌린다. 화면에서는 창 크기만큼 늘려 둬야
+      // Pixi 가 (캔버스 픽셀 / 화면 크기) 비율로 클릭 좌표를 논리 좌표로 되돌린다
+      Object.assign(app.canvas.style, { width: `${width * scale}px`, height: `${height * scale}px` });
       updateCamera(1);
     },
   };

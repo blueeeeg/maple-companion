@@ -266,8 +266,10 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   });
   checkbox(bgmControl, '음소거', () => muted, (next) => (muted = next));
 
+  // 설정 창 높이에 줄이 더 안 들어가서 전직 알림은 레벨업 줄에 붙인다
+  const levelUpControl = row('레벨업', HINTS.levelUp);
   segments(
-    row('레벨업', HINTS.levelUp),
+    levelUpControl,
     [
       { value: 'original', label: '원본' },
       { value: 'small', label: '작게' },
@@ -275,6 +277,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     () => current().levelUpEffect,
     (levelUpEffect) => edit({ levelUpEffect }),
   );
+  checkbox(levelUpControl, '전직 알림', () => current().jobAlerts, (jobAlerts) => edit({ jobAlerts }));
   segments(
     row('자리 비움', HINTS.idle),
     minutes(IDLE_MINUTE_OPTIONS),

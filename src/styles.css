@@ -5,9 +5,15 @@
   --exp-fill: linear-gradient(90deg, #f7e04a, #f0a020);
   --sheet-bg: #fffaf0;
   --sheet-text: #2b2b2b;
+  --art-rendering: pixelated;
   font-family: -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
   font-size: 12px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* 화면 배율 × 기기 픽셀 배율이 1.25배처럼 정수가 아닐 때 원작 그림을 칸 그대로 늘리면 칸 폭이 들쭉날쭉해져서 부드럽게 늘린다 */
+:root[data-fractional-scale] {
+  --art-rendering: auto;
 }
 
 html,
@@ -24,16 +30,19 @@ body {
 
 #app {
   position: relative;
-  width: 360px;
-  height: 230px;
-  border-radius: 14px;
+  width: calc(360px * var(--ui-scale, 1));
+  height: calc(230px * var(--ui-scale, 1));
+  border-radius: calc(14px * var(--ui-scale, 1));
   overflow: hidden;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 calc(1px * var(--ui-scale, 1)) rgba(0, 0, 0, 0.25);
   color: var(--hud-text);
-  /* 창 크기를 바꿔도 360x230 배치는 그대로 두고 통째로 늘린다. zoom 은 WebKit 에서 getBoundingClientRect 를
-     zoom 만큼 나눠 돌려줘서 캔버스 클릭 좌표가 어긋난다. 캔버스는 배율만큼 촘촘히 그려 흐려지지 않는다 */
-  transform: scale(var(--ui-scale, 1));
-  transform-origin: 0 0;
+}
+
+/* 창 크기를 바꿔도 360x230 배치는 그대로 두고 화면 위 DOM 만 zoom 으로 늘린다. #app 을 transform 으로 늘리면
+   WebKit 이 글자를 1배로 그린 뒤 비트맵째 늘려서 흐려진다. zoom 은 배율만큼 큰 글자로 다시 배치해 선명하다.
+   캔버스는 zoom 밖에 둔다. 캔버스 크기와 해상도는 scene.setDisplayScale 이 맞춘다 */
+#app > :not(#stage) {
+  zoom: var(--ui-scale, 1);
 }
 
 #stage,
@@ -80,7 +89,7 @@ body {
 .hud-meso img {
   width: 14px;
   height: 14px;
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 .hud-rest {
@@ -219,7 +228,7 @@ body {
 }
 
 .select-feet img {
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 .select-burst,
@@ -510,7 +519,7 @@ body {
   position: absolute;
   left: calc(50% - var(--half-width, 0px));
   top: calc(100% - 8px - var(--half-height, 0px));
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 .create-fields {
@@ -880,7 +889,7 @@ body {
 }
 
 .hud-shop img {
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 /* 캐시샵. 360×230 창 안에 왼쪽 부위 탭(78) · 가운데 미리보기(104) · 오른쪽 아이템 6칸(172)을 둔다.
@@ -1015,7 +1024,7 @@ body {
   position: absolute;
   left: calc(52px - var(--half-width, 0px));
   top: calc(116px - var(--half-height, 0px));
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 /* 새 모습을 받는 동안 앞 모습을 흐리게 남겨 둔다. 금방 오는 그림에 깜빡이지 않게 조금 늦게 흐린다 */
@@ -1197,7 +1206,7 @@ body {
 
 .shop-card-icon img,
 .shop-confirm-icon img {
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 .shop-card-name {
@@ -1461,7 +1470,7 @@ body {
 .npc-piece {
   position: absolute;
   background-repeat: no-repeat;
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 .npc-piece.is-t {
@@ -1493,7 +1502,7 @@ body {
 .npc-portrait img {
   position: absolute;
   bottom: 0;
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 /* 원작 이름표(bar, 109×19)는 파란 띠 위 2px 에 둔다 */
@@ -1617,7 +1626,7 @@ body {
 }
 
 .npc-button.has-art {
-  image-rendering: pixelated;
+  image-rendering: var(--art-rendering);
 }
 
 .npc-button.is-close.has-art {

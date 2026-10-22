@@ -25,11 +25,12 @@ import {
   resolveHunts,
   settleHunt,
 } from './game/bosses';
+import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
 import { advancementTier, describeJob } from './game/jobs';
 import { levelInfo } from './game/progression';
-import { loadRoster, newCharacterId, writeRoster } from './game/save';
+import { newCharacterId } from './game/save';
 import {
   BGM_VOLUME_MAX,
   DEFAULT_SETTINGS,
@@ -37,14 +38,14 @@ import {
   huntPace,
   idleLimitSeconds,
   levelUpScale,
-  loadSettings,
   pinnedTown,
   townRotateMs,
-  writeSettings,
 } from './game/settings';
 import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game/towns';
 import { TRAY_ICON_URL } from './maple/api';
 import { createActivitySource } from './platform/activity';
+import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
+import { createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
 import { createScene } from './scene/scene';
 import { type CashShopState, createCashShop } from './ui/cashShop';
@@ -61,14 +62,16 @@ const stage = document.querySelector<HTMLElement>('#stage')!;
 
 const activity = createActivitySource();
 const bgm = createBgm();
+const notifier = createNotifier();
 desktop.refreshTrayIcon(TRAY_ICON_URL);
 
 // Rust 의 활동 시간은 캐릭터 구분 없는 앱 전체 누적값이라, 이번 실행의 첫 값은 늘어난 몫을 재는 기준으로만 쓴다
 const firstSnapshot = await activity.snapshot();
 let lastGlobalActiveSeconds = firstSnapshot.activeSeconds;
-const roster = loadRoster(firstSnapshot.activeSeconds);
+const gameData = await loadGameData(firstSnapshot.activeSeconds);
+const roster = gameData.roster;
 writeRoster(roster);
-let settings = loadSettings();
+let settings = gameData.settings;
 
 let screen: 'map' | 'select' | 'shop' | 'settings' = selectedCharacter(roster) ? 'map' : 'select';
 let town: Town | null = null;
@@ -81,6 +84,8 @@ let panelVisible = true;
 let bossSkippedAt = -1;
 /** 개발용. `?boss=8860000` 이면 그 보스, `?boss=1` 이면 레벨에 맞는 보스와 바로 한 번 싸운다. 사냥 횟수에는 안 센다 */
 let forcedBoss = import.meta.env.DEV ? new URLSearchParams(location.search).get('boss') : null;
+/** 이번 실행에 OS 알림으로 알린 일. 전직은 레벨이 오르는 순간에만 알려서 다시 켜도 같은 일이 또 오지 않는다 */
+const sentAlerts = new Set<string>();
 
 const isShown = () => panelVisible && document.visibilityState === 'visible';
 const summaries = () => roster.characters.map(summarizeCharacter);
@@ -319,16 +324,27 @@ function moveTo(next: Town): void {
     .finally(() => (townLoading = false));
 }
 
+function alertUser(event: AlertEvent): void {
+  const alert = describeAlert(event);
+  if (!shouldAlert(settings, { shown: isShown(), focused: document.hasFocus() })) return;
+  if (firstAlert(sentAlerts, alert.key)) notifier.notify(alert.title, alert.body);
+}
+
 function handleLevelUp(character: Character, from: number, to: number): void {
   scene.celebrate('LEVEL UP!');
+  const who = { characterId: character.id, characterName: character.name };
 
   // 직업을 아직 안 골랐으면 1차 전직 레벨이 된 그때 한 번만 직업을 묻는다. 닫아도 HUD 의 「전직 가능!」 버튼이 남는다
-  if (!character.jobLine && advancementTier(from) === 0 && advancementTier(to) > 0) hud.openJobChoice();
+  if (!character.jobLine && advancementTier(from) === 0 && advancementTier(to) > 0) {
+    hud.openJobChoice();
+    alertUser({ kind: 'job-choice', ...who, level: to });
+  }
   if (character.jobLine && advancementTier(to) > advancementTier(from)) {
     const job = describeJob(to, character.jobLine, character.appearance);
     scene.celebrate(`${job.tier}차 전직!`);
     hud.notify(`전직 완료: ${job.title}`);
     hud.congratulate(character.jobLine, job.tier);
+    alertUser({ kind: 'advancement', ...who, tier: job.tier, jobTitle: job.title });
   }
 
   const opened = unlockedTowns(to).filter((candidate) => candidate.minLevel > from);
@@ -372,7 +388,9 @@ async function tick(): Promise<void> {
   if (!character) return;
   const info = levelInfo(characterXp(character));
 
-  const trayStatus = `Lv.${info.level}`;
+  const job = characterJob(character, info.level);
+  // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
+  const trayStatus = job.canChooseJob ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
   if (trayStatus !== lastTrayStatus) {
     desktop.setTrayStatus(trayStatus);
     lastTrayStatus = trayStatus;
@@ -380,7 +398,6 @@ async function tick(): Promise<void> {
 
   if (screen !== 'map') return;
 
-  const job = characterJob(character, info.level);
   if (lastLevel?.characterId === character.id && info.level > lastLevel.level) {
     handleLevelUp(character, lastLevel.level, info.level);
   }
@@ -448,8 +465,16 @@ desktop.onVisibilityChange((visible) => {
 });
 desktop.onModeChange((mode) => (document.body.dataset.mode = mode));
 desktop.onOpenSettings(openSettings);
+// 직업 고르기 대화를 닫아 버린 뒤에 알림을 눌렀어도 다시 묻는다. 이미 떠 있으면 대화창이 무시한다
+notifier.onOpen(() => {
+  const character = selectedCharacter(roster);
+  if (!character || screen !== 'map') return;
+  if (characterJob(character, levelInfo(characterXp(character)).level).canChooseJob) hud.openJobChoice();
+});
 const applyScale = (scale: number) => {
   document.documentElement.style.setProperty('--ui-scale', String(scale));
+  // Windows 125%·150% 디스플레이는 UI 100% 여도 실제 픽셀 배율이 정수가 아니다
+  document.documentElement.toggleAttribute('data-fractional-scale', !Number.isInteger(scale * window.devicePixelRatio));
   scene.setDisplayScale(scale);
 };
 desktop.onScaleChange(applyScale);

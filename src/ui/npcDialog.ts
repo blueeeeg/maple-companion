@@ -208,11 +208,16 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
   function layout() {
     // 글 칸은 위아래가 창에 붙어 있어서 창 높이를 따라 늘어난다. 아래를 풀어 글 높이만 잰다
     textBox.style.bottom = 'auto';
+    // WebKit 은 zoom 이 걸린 글의 줄 높이를 확대된 픽셀로 반올림해서 배율마다 글 높이가 몇 px 씩 달라진다.
+    // 창 높이(띠 수)가 배율 따라 바뀌지 않게 잠깐 1배로 배치해서 잰다
+    overlay.style.zoom = '1';
     const rows = dialogRows(textBox.scrollHeight, portraitHeight);
+    overlay.style.zoom = '';
     const height = dialogHeight(rows);
     windowEl.style.height = `${height}px`;
-    windowEl.style.top = `${Math.floor((root.clientHeight - height) / 2)}px`;
-    windowEl.style.left = `${Math.floor((root.clientWidth - DIALOG_WIDTH) / 2)}px`;
+    // root 는 창 배율만큼 커져 있다. zoom 이 걸린 overlay 로 재야 배율과 무관한 360x230 기준 값이 나온다
+    windowEl.style.top = `${Math.floor((overlay.clientHeight - height) / 2)}px`;
+    windowEl.style.left = `${Math.floor((overlay.clientWidth - DIALOG_WIDTH) / 2)}px`;
     textBox.style.bottom = '';
   }
 

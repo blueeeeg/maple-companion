@@ -4,12 +4,54 @@ on:
   push:
     tags:
       - "v*"
+  # 태그 없이 Windows 빌드만 시험한다. 릴리스에는 안 올리고 실행 화면의 Artifacts 로 받는다
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  # macOS·Windows 빌드가 같은 릴리스에 올리도록 먼저 만들어 둔다. 두 빌드가 각자 만들면 동시에 만들다
+  # 한쪽이 실패하거나 릴리스가 둘 생긴다. 다시 돌릴 때는 이미 있는 릴리스를 그대로 쓴다
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Create release
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists"
+            exit 0
+          fi
+          cat > notes.md <<'EOF'
+          ### macOS
+
+          유니버설 앱(Apple Silicon·Intel)이다.
+
+          1. 아래 `.dmg` 를 받아 열고 Maple Companion 을 응용 프로그램 폴더로 끌어 놓는다. `.zip` 을 받았다면 풀어서 나온 앱을 옮긴다
+          2. 공증(notarization)을 받지 않은 앱이라 처음 열 때 경고가 뜬다. 앱을 우클릭 → 「열기」를 누르거나 터미널에서 아래를 한 번 실행한다
+
+          ```bash
+          xattr -dr com.apple.quarantine "/Applications/Maple Companion.app"
+          ```
+
+          ### Windows 10·11 (x64)
+
+          1. 아래 `-setup.exe` 를 받아 실행한다. `.msi` 를 써도 된다
+          2. 서명하지 않은 앱이라 「Windows의 PC 보호」 창이 뜬다. 「추가 정보」 → 「실행」을 누른다
+          3. 트레이 아이콘이 작업표시줄 오른쪽 숨겨진 아이콘(^) 안에 들어가 있을 수 있다. 끌어서 작업표시줄로 꺼내 둔다
+
+          Windows 판은 CI 에서 빌드만 했고 실제 PC 에서는 아직 확인하지 않았다.
+
+          캐릭터·맵·소리는 실행 중에 maplestory.io 에서 받아 오므로 인터넷이 필요하다.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "Maple Companion $GITHUB_REF_NAME" --notes-file notes.md
+
   macos:
+    needs: release
     runs-on: macos-latest
     env:
       APP_NAME: Maple Companion
@@ -36,24 +78,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build and publish release
+      # 릴리스는 release 잡이 만들어 둔 것에 올린다
+      - name: Build and upload to release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: Maple Companion ${{ github.ref_name }}
-          releaseBody: |
-            macOS 용 유니버설 앱(Apple Silicon·Intel)이다.
-
-            1. 아래 `.dmg` 를 받아 열고 Maple Companion 을 응용 프로그램 폴더로 끌어 놓는다. `.zip` 을 받았다면 풀어서 나온 앱을 옮긴다
-            2. 공증(notarization)을 받지 않은 앱이라 처음 열 때 경고가 뜬다. 앱을 우클릭 → 「열기」를 누르거나 터미널에서 아래를 한 번 실행한다
-
-            ```bash
-            xattr -dr com.apple.quarantine "/Applications/Maple Companion.app"
-            ```
-
-            캐릭터·맵·소리는 실행 중에 maplestory.io 에서 받아 오므로 인터넷이 필요하다.
           releaseDraft: false
           prerelease: false
           args: --target universal-apple-darwin
@@ -65,3 +96,49 @@ jobs:
           ZIP="Maple.Companion_${GITHUB_REF_NAME#v}_universal.app.zip"
           ditto -c -k --keepParent "$BUNDLE_DIR/macos/$APP_NAME.app" "$ZIP"
           gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+
+  windows:
+    needs: release
+    # 수동 실행에서는 release 잡이 건너뛰어져도 돈다
+    if: ${{ !cancelled() && needs.release.result != 'failure' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      # bundle.targets 가 all 이라 NSIS(-setup.exe)와 MSI 를 둘 다 만든다. 서명은 하지 않는다.
+      # tagName 이 비면(수동 실행) 빌드만 하고 릴리스에는 올리지 않는다
+      - name: Build (and upload to release on tag)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          releaseDraft: false
+          prerelease: false
+
+      - name: Upload installers as workflow artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: maple-companion-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
