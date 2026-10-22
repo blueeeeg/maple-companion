@@ -7,8 +7,10 @@ import {
   mobAnimationUrl,
   mobFrameOriginUrl,
   mobFrameUrl,
+  mobGageIconLinkUrl,
   mobGageUrl,
   mobInfoUrl,
+  wzImageUrl,
 } from './api';
 import type { Point } from './ground';
 import { type Animation, loadAnimation, loadTexture } from './textures';
@@ -95,15 +97,62 @@ export interface BossGaugeTextures {
   background: Texture;
 }
 
+const GAUGE_TRIES = 3;
+const GAUGE_RETRY_MS = 1500;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** tries 번까지 받는다. 실패할 때마다 waitMs 씩 더 오래 기다린다 */
+export async function retry<T>(load: () => Promise<T>, tries: number, waitMs: number, wait = sleep): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await load();
+    } catch (error) {
+      if (attempt >= tries) throw error;
+      await wait(waitMs * attempt);
+    }
+  }
+}
+
+// 그림 일곱 장 중 하나만 못 받아도 게이지 전체가 단색으로 바뀐다. 팬 API 가 가끔 520 을 내서 한 장씩 다시 받는다
+const gaugePart = (url: string) => retry(() => loadTexture(url), GAUGE_TRIES, GAUGE_RETRY_MS);
+
+/** 아이콘 노드가 없는 몹은 null. 노드가 가리키는 그림을 받는다 */
+async function loadGaugeIcon(mobId: number): Promise<Texture | null> {
+  let target: string;
+  try {
+    ({ value: target } = await retry(
+      () => fetchJson<WzValue<string>>(mobGageIconLinkUrl(mobId)),
+      GAUGE_TRIES,
+      GAUGE_RETRY_MS,
+    ));
+  } catch {
+    return null;
+  }
+  return gaugePart(wzImageUrl(target)).catch(() => null);
+}
+
+/** 모든 보스가 같이 쓰는 틀과 기본 색. 첫 보스를 만났을 때 팬 API 가 느려도 틀은 이미 받아 둔 것을 쓴다 */
+export function preloadBossGauge(): Promise<unknown> {
+  return Promise.all([
+    gaugePart(mobGageUrl('backgrnd', true)),
+    gaugePart(mobGageUrl('backgrnd2', true)),
+    gaugePart(mobGageUrl('backgrnd3', false)),
+    gaugePart(mobGageUrl('backgrnd4', true)),
+    gaugePart(mobGageUrl(`Gage/${DEFAULT_GAUGE.fill}/1`, false)),
+    gaugePart(mobGageUrl(`Gage/${DEFAULT_GAUGE.background}/1`, false)),
+  ]);
+}
+
 export async function loadBossGauge(mobId: number, colors: BossGaugeColors): Promise<BossGaugeTextures> {
   const [iconFrame, left, middle, right, fill, background, icon] = await Promise.all([
-    loadTexture(mobGageUrl('backgrnd', true)),
-    loadTexture(mobGageUrl('backgrnd2', true)),
-    loadTexture(mobGageUrl('backgrnd3', false)),
-    loadTexture(mobGageUrl('backgrnd4', true)),
-    loadTexture(mobGageUrl(`Gage/${colors.fill}/1`, false)),
-    loadTexture(mobGageUrl(`Gage/${colors.background}/1`, false)),
-    loadTexture(mobGageUrl(`Mob/${mobId}`, true)).catch(() => null),
+    gaugePart(mobGageUrl('backgrnd', true)),
+    gaugePart(mobGageUrl('backgrnd2', true)),
+    gaugePart(mobGageUrl('backgrnd3', false)),
+    gaugePart(mobGageUrl('backgrnd4', true)),
+    gaugePart(mobGageUrl(`Gage/${colors.fill}/1`, false)),
+    gaugePart(mobGageUrl(`Gage/${colors.background}/1`, false)),
+    loadGaugeIcon(mobId),
   ]);
   return { iconFrame, icon, left, middle, right, fill, background };
 }

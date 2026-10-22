@@ -157,11 +157,16 @@ export const mobFrameOriginUrl = (mobId: number, action: string, frame: number) 
   wzNodeUrl(`Mob/${mobId}.img/${action}/${frame}/origin`);
 
 /**
- * 보스 HP 게이지(UI/UIWindow2.img/MobGage). 아이콘 틀·게이지 틀 양 끝·보스 아이콘은 `_Canvas` 로 `_outlink` 되어 있고,
+ * 보스 HP 게이지(UI/UIWindow2.img/MobGage). 아이콘 틀·게이지 틀 양 끝은 `_Canvas` 로 `_outlink` 되어 있고,
  * 게이지 틀 가운데(backgrnd3)와 1px 색 띠(Gage/{색}/{0|1})는 원래 자리에 그림이 있다
  */
 export const mobGageUrl = (node: string, outlinked: boolean) =>
   wzImageUrl(`UI/${outlinked ? '_Canvas/' : ''}UIWindow2.img/MobGage/${node}`);
+/**
+ * 보스 아이콘(MobGage/Mob/{몹 ID})의 `_outlink` 노드. 값이 그림 경로다. 대부분 `_Canvas` 의 같은 이름이지만
+ * 크림슨 발록은 주니어 발록 아이콘을, 파풀라투스·진 힐라는 `UIBoss.img/BossList/{n}/Icon` 을 가리킨다
+ */
+export const mobGageIconLinkUrl = (mobId: number) => wzNodeUrl(`UI/UIWindow2.img/MobGage/Mob/${mobId}/_outlink`);
 
 export interface WzValue<T> {
   value: T;

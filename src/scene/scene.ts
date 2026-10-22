@@ -24,7 +24,13 @@ import {
   loadJobChanged,
   loadLevelUp,
 } from '../maple/basicEff';
-import { type BossAnimations, type PlacedAnimation, loadBossGauge, loadBossMob } from '../maple/bossMob';
+import {
+  type BossAnimations,
+  type PlacedAnimation,
+  loadBossGauge,
+  loadBossMob,
+  preloadBossGauge,
+} from '../maple/bossMob';
 import { type Calibration, type GroundPath, calibrateFootholds, groundY, mainGround } from '../maple/ground';
 import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
 import { type EffectLayer, type Skill, loadSkill } from '../maple/skills';
@@ -75,6 +81,8 @@ const CALIBRATION_KEY = 'maple-companion:calibration:';
 const BANNER_Y = 58;
 /** 보스전에는 위쪽에 HP 게이지가 있어서 그 아래에 띄운다 */
 const BOSS_BANNER_Y = 88;
+/** 게이지 그림은 이만큼만 기다리고 단색 게이지로 싸움을 시작한다. 늦게 오면 싸우는 중에 원작 게이지로 바꿔 낀다 */
+const BOSS_GAUGE_WAIT_MS = 5000;
 /** 보스 몸통 끝과 캐릭터 기준점 사이를 이만큼 띄워 캐릭터가 보스 몸에 겹치지 않게 한다(맵 픽셀) */
 const HERO_HALF_WIDTH = 25;
 /** 보스가 처음 나타날 때 캐릭터는 설 자리에서 이만큼 떨어져 있다가 걸어 들어간다 */
@@ -319,6 +327,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   app.stage.addChild(sky, world, overlay, fade);
   const bossGauge = createBossGauge(width);
   overlay.addChild(bossGauge.node);
+  preloadBossGauge().catch(() => {});
 
   const hero = new Sprite();
   hero.anchor.set(0.5);
@@ -933,6 +942,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     updateHero(dtMs);
     updateEncounter(dtMs);
     updateCamera(Math.min(1, dtMs / 250));
+    bossGauge.update(dtMs);
     if (fade.alpha !== fadeTarget) {
       const step = dtMs / 330;
       fade.alpha = fadeTarget > fade.alpha ? Math.min(fadeTarget, fade.alpha + step) : Math.max(fadeTarget, fade.alpha - step);
@@ -1033,7 +1043,11 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         });
         const stage = await stagePromise;
         // 게이지 그림을 못 받아도 단색 게이지로 싸운다
-        const gaugeTextures = await loadBossGauge(boss.id, mob.gauge).catch(() => null);
+        const gaugePromise = loadBossGauge(boss.id, mob.gauge);
+        const gaugeTextures = await Promise.race([
+          gaugePromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), BOSS_GAUGE_WAIT_MS)),
+        ]).catch(() => null);
 
         await fadeTo(1);
         enterStage(stage, boss);
@@ -1091,6 +1105,13 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         behavior = { kind: 'approach' };
         bossGauge.show(gaugeTextures, first);
         bossGauge.setRatio(1);
+        if (!gaugeTextures) {
+          gaugePromise
+            .then((late) => {
+              if (encounter === created) bossGauge.show(late, first);
+            })
+            .catch(() => {});
+        }
         events.onArrive();
         updateCamera(1);
         await fadeTo(0);
