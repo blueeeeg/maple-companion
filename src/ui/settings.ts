@@ -73,14 +73,36 @@ function huntHints() {
 const HINTS = {
   default: '몬스터·보스 주기를 바꿔도 시간당 EXP·메소는 같아요',
   encounter: '자주 나오면 한 마리 보상이 줄어서 시간당 EXP·메소는 같아요',
-  boss: '자주 나오면 한 번에 덜, 드물게 나오면 더 줘서 시간당 보상은 같아요',
+  boss: '자주 나오면 한 번에 덜 줘서 시간당 보상은 같아요',
   damage: '타격할 때 뜨는 대미지 숫자',
   rotate: '정해 둔 시간마다 최근에 열린 마을 중 하나로 옮겨요',
   pinned: '마을을 고정하면 자동 이동은 쉬어요. 아직 안 열린 캐릭터는 자동으로 돌아요',
   bgm: '음소거는 HUD ⚙️ 메뉴의 「소리 끄기」와 같아요',
   levelUp: `작게는 ${LEVEL_UP_SMALL_SCALE}배예요. 전직 이펙트는 원본 크기 그대로예요`,
-  idle: '입력이 없는 채로 이 시간이 지나면 활동 시간이 멈춰요',
+  idle: '키보드·마우스를 쓰는 동안만 성장해요. 입력 없이 이만큼 지나면 자리 비움으로 보고 멈춰요 · 읽기·회의가 많으면 늘려요',
+  rotateOff: '자동 이동을 꺼 둬서 쉬어요 · 「자동」을 켜면 시간을 골라요',
 };
+
+/** 활동 분을 「40분」·「1시간」·「6시간 40분」으로 */
+export function formatMinutes(total: number): string {
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  if (hours === 0) return `${rest}분`;
+  return rest === 0 ? `${hours}시간` : `${hours}시간 ${rest}분`;
+}
+
+// 보스 차례는 잡은 마리 수로 세지 않고 활동 시간으로 온다. 「몇 마리 잡으면」으로 읽히지 않게 시간을 같이 적는다
+export function bossHint(bossEvery: number, encounterMinutes: number | null): string {
+  const every = `사냥 ${bossEvery}번마다 1번은 보스예요`;
+  if (encounterMinutes === null) return `${every}. 몬스터를 켜야 나와요`;
+  return `${every}(활동 약 ${formatMinutes(bossEvery * encounterMinutes)}마다) · ${HINTS.boss}`;
+}
+
+/** 마을 이동 시간 버튼이 왜 잠겼고 어떻게 푸는지. 고정이 먼저다 — 자동을 켜도 고정 중이면 그대로 쉰다 */
+export function townRotateHint(townRotate: boolean, pinnedTownName: string | null): string {
+  if (pinnedTownName !== null) return `${pinnedTownName} 고정 중이라 쉬어요 · 마을 고정을 「자동」으로 바꾸면 골라요`;
+  return townRotate ? HINTS.rotate : HINTS.rotateOff;
+}
 
 export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandlers): SettingsScreen {
   root.insertAdjacentHTML(
@@ -114,7 +136,8 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   let draft: Settings | null = null;
   let muted = false;
   let towns: SettingsScreenState['towns'] = [];
-  let hoveredHint: string | null = null;
+  // 문자열이 아니라 읽는 함수로 둬야 올려 둔 채 값을 바꿀 때 안내도 따라 바뀐다
+  let hoveredHint: (() => string) | null = null;
   const renders: (() => void)[] = [];
 
   function row(label: string, rowHint: string | (() => string)): HTMLElement {
@@ -122,7 +145,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     element.className = 'settings-row';
     element.innerHTML = `<span class="settings-label">${label}</span><div class="settings-control"></div>`;
     const showHint = () => {
-      hoveredHint = typeof rowHint === 'string' ? rowHint : rowHint();
+      hoveredHint = typeof rowHint === 'string' ? () => rowHint : rowHint;
       renderHint();
     };
     const clearHint = () => {
@@ -188,21 +211,30 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   const current = () => draft!;
 
   segments(
-    row('몬스터', () => (current().encounterMinutes === null ? huntHint.monstersOff : HINTS.encounter)),
+    row('몬스터', () => {
+      const { encounterMinutes, bossEvery } = current();
+      if (encounterMinutes === null) return huntHint.monstersOff;
+      if (bossEvery === null) return HINTS.encounter;
+      return `${HINTS.encounter} · 보스는 활동 약 ${formatMinutes(encounterMinutes * bossEvery)}마다`;
+    }),
     withOff(minutes(ENCOUNTER_MINUTE_OPTIONS)),
     () => current().encounterMinutes,
     (encounterMinutes) => edit({ encounterMinutes }),
   );
   segments(
-    row('보스', () => (current().bossEvery === null ? huntHint.bossOff : HINTS.boss)),
-    withOff(BOSS_EVERY_OPTIONS.map((value) => ({ value, label: `${value}마리` }))),
+    row('보스', () => {
+      const { bossEvery, encounterMinutes } = current();
+      return bossEvery === null ? huntHint.bossOff : bossHint(bossEvery, encounterMinutes);
+    }),
+    withOff(BOSS_EVERY_OPTIONS.map((value) => ({ value, label: `${value}번마다` }))),
     () => current().bossEvery,
     (bossEvery) => edit({ bossEvery }),
     () => current().encounterMinutes !== null,
   );
   checkbox(row('데미지', HINTS.damage), '숫자 표시', () => current().damageNumbers, (damageNumbers) => edit({ damageNumbers }));
 
-  const rotateControl = row('마을 이동', () => (current().pinnedTownId ? HINTS.pinned : HINTS.rotate));
+  const rotateHint = () => townRotateHint(current().townRotate, pinnedTownName());
+  const rotateControl = row('마을 이동', rotateHint);
   checkbox(rotateControl, '자동', () => current().townRotate, (townRotate) => edit({ townRotate }));
   segments(
     rotateControl,
@@ -211,6 +243,17 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     (townRotateMinutes) => edit({ townRotateMinutes }),
     () => current().townRotate && current().pinnedTownId === null,
   );
+  // 고정 중에는 흐린 시간 버튼만 보여서는 왜 못 고르는지 몰라 버튼 자리에 고정한 마을을 적는다
+  const rotateMinutes = rotateControl.querySelector<HTMLElement>('.settings-segments')!;
+  const rotatePaused = document.createElement('span');
+  rotatePaused.className = 'settings-note';
+  rotateControl.appendChild(rotatePaused);
+  renders.push(() => {
+    const pinned = pinnedTownName();
+    rotateMinutes.hidden = pinned !== null;
+    rotatePaused.hidden = pinned === null;
+    rotatePaused.textContent = pinned === null ? '' : `${pinned} 고정 중`;
+  });
 
   // 마을은 열 몇 곳이라 한 줄에 다 못 늘어놓아서 ◀ ▶ 로 넘긴다. 맨 앞이 「자동」
   const townControl = row('마을 고정', HINTS.pinned);
@@ -230,6 +273,10 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
       choices.push({ value: pinned, label: '안 열린 마을' });
     }
     return choices;
+  };
+  const pinnedTownName = () => {
+    const pinned = current().pinnedTownId;
+    return pinned === null ? null : (townChoices().find((choice) => choice.value === pinned)?.label ?? null);
   };
   const stepTown = (delta: number) => {
     const choices = townChoices();
@@ -287,9 +334,10 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
 
   function renderHint(): void {
     if (!draft) return;
-    let text = hoveredHint;
+    let text = hoveredHint?.() ?? null;
     if (text === null && draft.encounterMinutes === null) text = huntHint.monstersOff;
     else if (text === null && draft.bossEvery === null) text = huntHint.bossOff;
+    else if (text === null && draft.pinnedTownId !== null) text = rotateHint();
     hint.textContent = text ?? HINTS.default;
   }
 

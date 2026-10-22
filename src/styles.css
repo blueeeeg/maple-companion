@@ -1918,6 +1918,18 @@ body {
   outline: 1px solid #1f90e2;
 }
 
+.settings-segments[hidden] {
+  display: none;
+}
+
+.settings-note {
+  overflow: hidden;
+  color: #1b7cc8;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .settings-stepper {
   display: flex;
   flex: 1;
@@ -2007,6 +2019,7 @@ body {
   color: #3a3a3a;
   font-size: 10px;
   line-height: 12px;
+  word-break: keep-all;
 }
 
 /* 원작 확인·취소 자리(창 왼쪽에서 99·144, 아래 띠 안) */
