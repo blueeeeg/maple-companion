@@ -98,9 +98,14 @@ export function bossHint(bossEvery: number, encounterMinutes: number | null): st
   return `${every}(활동 약 ${formatMinutes(bossEvery * encounterMinutes)}마다) · ${HINTS.boss}`;
 }
 
-/** 마을 이동 시간 버튼이 왜 잠겼고 어떻게 푸는지. 고정이 먼저다 — 자동을 켜도 고정 중이면 그대로 쉰다 */
-export function townRotateHint(townRotate: boolean, pinnedTownName: string | null): string {
-  if (pinnedTownName !== null) return `${pinnedTownName} 고정 중이라 쉬어요 · 마을 고정을 「자동」으로 바꾸면 골라요`;
+/**
+ * 마을 이동 시간 버튼이 왜 잠겼고 어떻게 푸는지.
+ * 유효한 고정이 먼저다 — 자동을 켜도 고정 중이면 그대로 쉰다.
+ * pinEffective: 고정한 마을이 지금 캐릭터에게 열려 있는지
+ */
+export function townRotateHint(townRotate: boolean, pinnedTownName: string | null, pinEffective = true): string {
+  if (pinnedTownName !== null && pinEffective) return `${pinnedTownName} 고정 중이라 쉬어요 · 마을 고정을 「자동」으로 바꾸면 골라요`;
+  if (pinnedTownName !== null) return '고정한 마을이 아직 안 열려서 자동으로 돌아요';
   return townRotate ? HINTS.rotate : HINTS.rotateOff;
 }
 
@@ -233,7 +238,11 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   );
   checkbox(row('데미지', HINTS.damage), '숫자 표시', () => current().damageNumbers, (damageNumbers) => edit({ damageNumbers }));
 
-  const rotateHint = () => townRotateHint(current().townRotate, pinnedTownName());
+  const isPinEffective = () => {
+    const pinned = current().pinnedTownId;
+    return pinned !== null && towns.some((t) => t.id === pinned);
+  };
+  const rotateHint = () => townRotateHint(current().townRotate, pinnedTownName(), isPinEffective());
   const rotateControl = row('마을 이동', rotateHint);
   checkbox(rotateControl, '자동', () => current().townRotate, (townRotate) => edit({ townRotate }));
   segments(
@@ -241,7 +250,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     minutes(TOWN_ROTATE_MINUTE_OPTIONS),
     () => current().townRotateMinutes,
     (townRotateMinutes) => edit({ townRotateMinutes }),
-    () => current().townRotate && current().pinnedTownId === null,
+    () => current().townRotate && !isPinEffective(),
   );
   // 고정 중에는 흐린 시간 버튼만 보여서는 왜 못 고르는지 몰라 버튼 자리에 고정한 마을을 적는다
   const rotateMinutes = rotateControl.querySelector<HTMLElement>('.settings-segments')!;
@@ -249,10 +258,10 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   rotatePaused.className = 'settings-note';
   rotateControl.appendChild(rotatePaused);
   renders.push(() => {
-    const pinned = pinnedTownName();
-    rotateMinutes.hidden = pinned !== null;
-    rotatePaused.hidden = pinned === null;
-    rotatePaused.textContent = pinned === null ? '' : `${pinned} 고정 중`;
+    const effective = isPinEffective();
+    rotateMinutes.hidden = effective;
+    rotatePaused.hidden = !effective;
+    rotatePaused.textContent = effective ? `${pinnedTownName()} 고정 중` : '';
   });
 
   // 마을은 열 몇 곳이라 한 줄에 다 못 늘어놓아서 ◀ ▶ 로 넘긴다. 맨 앞이 「자동」

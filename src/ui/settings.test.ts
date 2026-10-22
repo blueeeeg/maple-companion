@@ -34,6 +34,11 @@ describe('마을 이동 안내', () => {
     expect(townRotateHint(false, '리스항구')).toMatch(/^리스항구 고정 중/);
   });
 
+  it('고정한 마을이 아직 안 열렸으면 자동으로 도는 힌트를 적는다', () => {
+    expect(townRotateHint(true, '안 열린 마을', false)).toBe('고정한 마을이 아직 안 열려서 자동으로 돌아요');
+    expect(townRotateHint(false, '안 열린 마을', false)).toBe('고정한 마을이 아직 안 열려서 자동으로 돌아요');
+  });
+
   it('고정 없이 자동을 껐으면 자동을 켜라고 한다', () => {
     expect(townRotateHint(false, null)).toContain('「자동」을 켜면 시간을 골라요');
   });

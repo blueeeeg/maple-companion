@@ -354,8 +354,8 @@ function handleLevelUp(character: Character, from: number, to: number): void {
   const opened = unlockedTowns(to).filter((candidate) => candidate.minLevel > from);
   if (opened.length > 0) {
     hud.notify(`새 마을: ${opened.map((candidate) => candidate.name).join(', ')}`);
-    // 자동 이동을 껐거나 마을을 고정했으면 새 마을로도 옮기지 않는다
-    if (isShown() && !scene.inEncounter && townRotateMs(settings) !== null) moveTo(opened[opened.length - 1]);
+    // 자동 이동을 껐거나 유효한 마을을 고정했으면 새 마을로도 옮기지 않는다
+    if (isShown() && !scene.inEncounter && townRotateMs(settings) !== null && pinnedTown(settings, to) === null) moveTo(opened[opened.length - 1]);
   }
 }
 

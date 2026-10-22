@@ -240,10 +240,11 @@ describe('설정 해석', () => {
     expect(huntPace(withSettings({ encounterMinutes: null }))).toBeNull();
   });
 
-  it('마을을 고정하거나 자동 이동을 끄면 돌지 않는다', () => {
+  it('자동 이동을 끄면 돌지 않는다. 핀 유효 여부는 호출한 쪽이 판단한다', () => {
     expect(townRotateMs(DEFAULT_SETTINGS)).toBe(8 * 60 * 1000);
     expect(townRotateMs(withSettings({ townRotate: false }))).toBeNull();
-    expect(townRotateMs(withSettings({ pinnedTownId: 'ellinia' }))).toBeNull();
+    // pinnedTownId 가 있어도 유효한지는 main.ts 가 판단 — townRotateMs 는 자동 on/off 만 본다
+    expect(townRotateMs(withSettings({ pinnedTownId: 'ellinia' }))).toBe(8 * 60 * 1000);
   });
 
   it('고정한 마을이 아직 안 열렸으면 자동', () => {

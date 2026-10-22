@@ -118,9 +118,9 @@ export function idleLimitSeconds(settings: Settings): number {
   return settings.idleMinutes * 60;
 }
 
-/** 자동 이동을 껐거나 마을을 고정했으면 null */
+/** 자동 이동을 껐으면 null. 핀이 유효한지(열린 마을인지)는 호출한 쪽이 판단한다 */
 export function townRotateMs(settings: Settings): number | null {
-  if (!settings.townRotate || settings.pinnedTownId !== null) return null;
+  if (!settings.townRotate) return null;
   return settings.townRotateMinutes * 60 * 1000;
 }
 
