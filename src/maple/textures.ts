@@ -1,14 +1,20 @@
 import { ImageSource, Texture } from 'pixi.js';
+import { MAP_RENDER_TIMEOUT_MS, fetchWithin } from './api';
 import { gifFrameDelays } from './gif';
 import type { AlphaMap } from './ground';
 import type { Pixels } from './layers';
 
 const textures = new Map<string, Promise<Texture>>();
 
-async function loadBitmap(url: string): Promise<ImageBitmap> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${response.status} ${url}`);
-  return createImageBitmap(await response.blob());
+function loadBitmap(url: string, timeoutMs?: number): Promise<ImageBitmap> {
+  return fetchWithin(
+    url,
+    async (response) => {
+      if (!response.ok) throw new Error(`${response.status} ${url}`);
+      return createImageBitmap(await response.blob());
+    },
+    timeoutMs,
+  );
 }
 
 const toTexture = (bitmap: ImageBitmap) =>
@@ -41,9 +47,10 @@ export interface Animation {
 
 /** 애니메이션 GIF 로 프레임 수와 딜레이를 읽고, 프레임은 투명도가 살아 있는 PNG 로 받는다 */
 export async function loadAnimation(gifUrl: string, frameUrl: (frame: number) => string): Promise<Animation> {
-  const response = await fetch(gifUrl);
-  if (!response.ok) throw new Error(`${response.status} ${gifUrl}`);
-  const delays = gifFrameDelays(await response.arrayBuffer());
+  const delays = await fetchWithin(gifUrl, async (response) => {
+    if (!response.ok) throw new Error(`${response.status} ${gifUrl}`);
+    return gifFrameDelays(await response.arrayBuffer());
+  });
   const frames = await loadFrames(delays.map((_, frame) => frameUrl(frame)));
   return { frames, delays };
 }
@@ -62,7 +69,7 @@ export function frameAt(delays: number[], elapsedMs: number, loop: boolean): num
 
 /** 맵 이미지는 발판과 앞 레이어 위치를 맞추려고 픽셀값도 함께 읽는다 */
 export async function loadMapImage(url: string): Promise<{ texture: Texture; alpha: AlphaMap; pixels: Pixels }> {
-  const bitmap = await loadBitmap(url);
+  const bitmap = await loadBitmap(url, MAP_RENDER_TIMEOUT_MS);
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const context = canvas.getContext('2d', { willReadFrequently: true })!;
   context.drawImage(bitmap, 0, 0);
@@ -79,11 +86,16 @@ export async function loadMapImage(url: string): Promise<{ texture: Texture; alp
 }
 
 /** 그릴 것이 없는 레이어는 404, 맵 레이어가 통째로 비어 있으면 400(서버가 빈 목록의 최솟값을 구하다 실패)으로 온다 */
-async function loadOptionalBitmap(url: string): Promise<ImageBitmap | null> {
-  const response = await fetch(url);
-  if (response.status === 404 || response.status === 400) return null;
-  if (!response.ok) throw new Error(`${response.status} ${url}`);
-  return createImageBitmap(await response.blob());
+function loadOptionalBitmap(url: string): Promise<ImageBitmap | null> {
+  return fetchWithin(
+    url,
+    async (response) => {
+      if (response.status === 404 || response.status === 400) return null;
+      if (!response.ok) throw new Error(`${response.status} ${url}`);
+      return createImageBitmap(await response.blob());
+    },
+    MAP_RENDER_TIMEOUT_MS,
+  );
 }
 
 /** 원점을 같게 받은 레이어 이미지들을 순서대로 겹쳐 한 장으로 만든다. 모두 비어 있으면 null */

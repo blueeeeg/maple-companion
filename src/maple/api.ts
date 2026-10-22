@@ -60,10 +60,38 @@ export function characterAnimationUrl(itemIds: number[], action: string): string
   return `https://maplestory.io/api/character/${characterItems(itemIds)}/${action}/animated?resize=1&renderMode=FeetCenter`;
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${response.status} ${url}`);
-  return response.json() as Promise<T>;
+/**
+ * maplestory.io 는 가끔 응답 없이 1분 넘게 멈춘다. fetch 는 스스로 끊지 않아서, 멈춘 요청을 기다리는 쪽(캐릭터 그림·사냥·마을 이동)이
+ * 같이 멈추고 실패해야 도는 재시도도 돌지 않는다
+ */
+export const FETCH_TIMEOUT_MS = 30_000;
+/** 맵 전체·레이어 렌더는 서버가 처음 그릴 때 40초 넘게 걸리기도 한다 */
+export const MAP_RENDER_TIMEOUT_MS = 90_000;
+
+/** 응답 본문을 다 읽을 때까지 timeoutMs 안에 못 끝내면 요청을 끊고 실패한다 */
+export async function fetchWithin<T>(
+  url: string,
+  read: (response: Response) => Promise<T>,
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error(`${timeoutMs}ms 안에 응답 없음 ${url}`)), timeoutMs);
+  try {
+    return await read(await fetch(url, { signal: controller.signal }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function fetchJson<T>(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<T> {
+  return fetchWithin(
+    url,
+    (response) => {
+      if (!response.ok) throw new Error(`${response.status} ${url}`);
+      return response.json() as Promise<T>;
+    },
+    timeoutMs,
+  );
 }
 
 export interface Foothold {

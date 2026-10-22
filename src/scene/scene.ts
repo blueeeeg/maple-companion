@@ -53,6 +53,14 @@ const FRONT_SEARCH = 24;
 /** 공격 동작의 이 지점에서 대미지가 들어간다 */
 const HIT_POINT_RATIO = 0.5;
 const ATTACK_COOLDOWN_MS = 300;
+/** 캐릭터 그림을 아직 못 받았을 때 공격 동작 대신 기다리는 시간. 그림 없이도 비슷한 박자로 때린다 */
+const NO_ART_ATTACK_MS = 800;
+/** 애니메이션 대신 정지 그림 한 장을 쓸 때 그 한 장을 보여 줄 시간 */
+const STILL_FRAME_MS = 600;
+/** 캐릭터 그림·스킬을 다 못 받았을 때 다시 받기까지 쉬는 시간 */
+const LOOK_RETRY_MS = 30_000;
+/** 사냥이 이보다 오래 안 끝나면 마무리한다. 끝나지 않은 사냥은 다음 몬스터·마을 이동을 모두 막는다. 보스도 보통 1분 안에 끝난다 */
+const ENCOUNTER_LIMIT_MS = 3 * 60 * 1000;
 const HIT_LINE_HEIGHT = 30;
 const HIT_LINE_STAGGER_MS = 70;
 /** 대미지 숫자 대신 글자를 띄울 때 글자 가운데를 숫자 바닥선에서 올릴 거리 */
@@ -135,6 +143,8 @@ interface Encounter {
   animations: MobAnimations;
   hp: number;
   clockMs: number;
+  /** 화면이 돌아간 동안 이 사냥에 쓴 시간 */
+  ageMs: number;
   hitMs: number;
   dyingMs: number | null;
   /** 보스전이면 있다. 보스는 프레임마다 원작 기준점에 맞춰 그린다 */
@@ -213,11 +223,29 @@ async function loadMobAnimations(spec: MonsterSpec): Promise<MobAnimations> {
   return { move, hit, die };
 }
 
-async function loadHeroAnimations(job: JobView): Promise<HeroAnimations> {
-  const load = (action: string) =>
-    loadAnimation(characterAnimationUrl(job.look, action), (frame) => characterFrameUrl(job.look, action, frame));
-  const [stand, walk, attack] = await Promise.all([load('stand1'), load('walk1'), load(job.attackAction)]);
-  return { stand, walk, attack };
+/**
+ * 애니메이션 GIF 는 서버가 그리는 데 오래 걸리고 5xx 로 자주 실패한다(같은 때 프레임 PNG 는 1초 안에 온다).
+ * 그러면 첫 프레임 한 장으로 대신한다. still 이면 나중에 다시 받는다
+ */
+async function loadHeroAction(look: number[], action: string): Promise<{ animation: Animation; still: boolean }> {
+  try {
+    const animation = await loadAnimation(characterAnimationUrl(look, action), (frame) => characterFrameUrl(look, action, frame));
+    return { animation, still: false };
+  } catch (error) {
+    console.warn(`[scene] 캐릭터 ${action} 애니메이션을 못 받아 정지 그림으로 대신한다`, error);
+    const frame = await loadTexture(characterFrameUrl(look, action, 0));
+    return { animation: { frames: [frame], delays: [STILL_FRAME_MS] }, still: true };
+  }
+}
+
+async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnimations; still: boolean }> {
+  const [stand, walk, attack] = await Promise.all(
+    ['stand1', 'walk1', job.attackAction].map((action) => loadHeroAction(job.look, action)),
+  );
+  return {
+    animations: { stand: stand.animation, walk: walk.animation, attack: attack.animation },
+    still: stand.still || walk.still || attack.still,
+  };
 }
 
 const totalMs = (animation: Animation) => animation.delays.reduce((sum, delay) => sum + delay, 0);
@@ -289,6 +317,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let fallbackRange = 60;
   let heroTier = 0;
   let lookKey = '';
+  /** lookKey 를 다 못 받았을 때 다시 받을 시각. 다 받았거나 받는 중이면 Infinity */
+  let lookRetryAt = Infinity;
   let heroAction: HeroAction = 'stand';
   let heroClockMs = 0;
   let facing: -1 | 1 = -1;
@@ -646,10 +676,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function startAttack(target: Encounter): void {
-    if (!heroAnimations) return;
-    setHeroAction('attack');
+    // 캐릭터 그림을 아직 못 받았어도 사냥은 이어 간다. 그림이 없을 때 멈추면 몬스터가 안 죽어 다음 사냥·마을 이동이 다 막힌다
+    if (heroAnimations) setHeroAction('attack');
     if (skill) playLayers(skill.effect, hero.x, hero.y, facing);
-    let waitMs = totalMs(heroAnimations.attack) * HIT_POINT_RATIO;
+    let waitMs = (heroAnimations ? totalMs(heroAnimations.attack) : NO_ART_ATTACK_MS) * HIT_POINT_RATIO;
     addEffect(new Container(), worldEffects, (dtMs) => {
       waitMs -= dtMs;
       if (waitMs > 0) return true;
@@ -687,7 +717,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         behavior.cooldownMs -= dtMs;
         if (behavior.cooldownMs <= 0 && encounter.dyingMs === null) {
           startAttack(encounter);
-          behavior.cooldownMs = ATTACK_COOLDOWN_MS;
+          // 그림 없이 때리면 공격 동작이 끝나기를 기다리지 않으니 그 몫을 쉬는 시간에 얹는다
+          behavior.cooldownMs = ATTACK_COOLDOWN_MS + (heroAnimations ? 0 : NO_ART_ATTACK_MS);
         }
       }
     }
@@ -697,6 +728,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function updateEncounter(dtMs: number): void {
     if (!encounter || !ground) return;
+    encounter.ageMs += dtMs;
+    if (encounter.ageMs > ENCOUNTER_LIMIT_MS && encounter.dyingMs === null) {
+      console.warn(`[scene] ${encounter.spec.name} 사냥이 끝나지 않아 마무리한다`);
+      encounter.hp = 1;
+      strike(encounter, false);
+    }
     if (encounter.boss) {
       updateBoss(encounter, encounter.boss, dtMs);
       return;
@@ -842,8 +879,16 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     return new Promise((resolve) => (fadeResolve = resolve));
   }
 
+  // Pixi 티커는 콜백이 던지면 다음 프레임을 요청하지 않아서 창을 숨겼다 다시 열 때까지 화면이 멈춘다. 그 프레임만 버리고 이어 간다
   app.ticker.add((ticker) => {
-    const dtMs = Math.min(ticker.deltaMS, 250);
+    try {
+      step(Math.min(ticker.deltaMS, 250));
+    } catch (error) {
+      console.error('[scene] 프레임 갱신 실패', error);
+    }
+  });
+
+  function step(dtMs: number): void {
     updateHero(dtMs);
     updateEncounter(dtMs);
     updateCamera(Math.min(1, dtMs / 250));
@@ -867,7 +912,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       return keep;
     });
     effects = alive.concat(effects);
-  });
+  }
 
   return {
     get inEncounter() {
@@ -889,20 +934,24 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       heroTier = job.tier;
       fallbackRange = job.fallbackRange;
       const key = `${job.look.join(',')}|${job.attackAction}|${job.skillId}`;
-      if (key === lookKey) return;
+      if (key === lookKey && performance.now() < lookRetryAt) return;
       lookKey = key;
+      lookRetryAt = Infinity;
       const skillPromise = job.skillId === null ? Promise.resolve(null) : loadSkill(job.skillId, job.fallbackRange);
-      Promise.all([loadHeroAnimations(job), skillPromise])
-        .then(([animations, loadedSkill]) => {
-          if (lookKey !== key) return;
-          heroAnimations = animations;
-          skill = loadedSkill;
+      // 스킬(수 MB)을 못 받아도 캐릭터는 먼저 보이게 따로 건다. 못 받은 것은 이전 것을 그대로 쓰다가 잠시 뒤 다시 받는다
+      void Promise.allSettled([loadHeroAnimations(job), skillPromise]).then(([loadedHero, loadedSkill]) => {
+        if (lookKey !== key) return;
+        if (loadedHero.status === 'fulfilled') {
+          heroAnimations = loadedHero.value.animations;
           heroClockMs = 0;
-        })
-        .catch(() => {
-          // 다음 setJob 에서 다시 받는다
-          if (lookKey === key) lookKey = '';
-        });
+        }
+        if (loadedSkill.status === 'fulfilled') skill = loadedSkill.value;
+        const failures = [loadedHero, loadedSkill].flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
+        if (failures.length > 0 || (loadedHero.status === 'fulfilled' && loadedHero.value.still)) {
+          if (failures.length > 0) console.warn('[scene] 캐릭터 그림·스킬을 못 받아 잠시 뒤 다시 받는다', ...failures);
+          lookRetryAt = performance.now() + LOOK_RETRY_MS;
+        }
+      });
     },
     startEncounter(spec, hits) {
       if (encounter || encounterLoading || bossBusy || !ground) return;
@@ -920,7 +969,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
           sprite.eventMode = 'static';
           sprite.cursor = 'pointer';
           actors.addChildAt(sprite, 0);
-          const created: Encounter = { spec, sprite, animations, hp: hits, clockMs: 0, hitMs: 0, dyingMs: null };
+          const created: Encounter = { spec, sprite, animations, hp: hits, clockMs: 0, ageMs: 0, hitMs: 0, dyingMs: null };
           sprite.on('pointertap', () => strike(created, true));
           encounter = created;
           behavior = { kind: 'approach' };
@@ -978,6 +1027,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
           animations: { move: animations.stand, hit: animations.hit, die: animations.die },
           hp: hits,
           clockMs: 0,
+          ageMs: 0,
           hitMs: 0,
           dyingMs: null,
           boss: {
