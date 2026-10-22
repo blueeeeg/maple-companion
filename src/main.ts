@@ -408,6 +408,7 @@ async function tick(): Promise<void> {
   lastLevel = { characterId: character.id, level: info.level };
 
   scene.setJob(job);
+  scene.setName(character.name);
   hud.render({
     level: info.level,
     jobTitle: job.title,

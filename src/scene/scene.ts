@@ -32,6 +32,7 @@ import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, l
 import { createBossGauge } from './bossGauge';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
+import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
 
 // 스킬 이펙트 프레임 딜레이가 60ms 라서 15fps 로는 프레임이 빠진다
 const FPS = 30;
@@ -67,6 +68,9 @@ const HIT_LINE_STAGGER_MS = 70;
 const DAMAGE_TEXT_HALF_HEIGHT = 16;
 const BASIC_EFF_RETRY_MS = 30_000;
 const FONT = '-apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+/** 원작 이름표 글자(12px)를 VIEW_SCALE 로 줄이면 8px 아래라 한글이 뭉개진다. 읽히는 가장 작은 크기로 둔다(화면 px) */
+const NAME_TAG_FONT_SIZE = 10;
+const NAME_TAG_ALPHA = 0.6;
 const CALIBRATION_KEY = 'maple-companion:calibration:';
 const BANNER_Y = 58;
 /** 보스전에는 위쪽에 HP 게이지가 있어서 그 아래에 띄운다 */
@@ -126,6 +130,8 @@ export interface Scene {
   setRunning(running: boolean): void;
   /** 화면 좌표는 그대로 두고, 늘려 보여 줄 배율만큼 더 촘촘하게 그려서 흐려지지 않게 한다 */
   setDisplayScale(scale: number): void;
+  /** 캐릭터 발밑 이름표. 비어 있으면 이름표를 숨긴다 */
+  setName(name: string): void;
 }
 
 type HeroAction = 'stand' | 'walk' | 'attack';
@@ -300,7 +306,14 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   // 몬스터를 누르는 입력이 앞 레이어에 막히지 않게 한다
   frontSprite.eventMode = 'none';
   const worldEffects = new Container();
-  world.addChild(mapSprite, actors, frontSprite, worldEffects);
+  // 이름표는 원작처럼 앞 레이어보다 위, 대미지 숫자·스킬 이펙트보다 아래에 그린다
+  const nameTag = new Container();
+  nameTag.eventMode = 'none';
+  nameTag.visible = false;
+  const nameTagBack = new Graphics();
+  const nameTagText = new Text({ style: { fontFamily: FONT, fontSize: NAME_TAG_FONT_SIZE, fill: 0xffffff } });
+  nameTag.addChild(nameTagBack, nameTagText);
+  world.addChild(mapSprite, actors, frontSprite, nameTag, worldEffects);
   const overlay = new Container();
   const fade = new Graphics().rect(0, 0, width, height).fill(0x000000);
   app.stage.addChild(sky, world, overlay, fade);
@@ -339,6 +352,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let cameraY = 0;
 
   world.scale.set(worldScale);
+  // 맵과 같이 줄이면 글자 텍스처가 0.65 배로 다시 샘플링돼 흐려진다. 화면 픽셀 그대로 그리고 위치만 맵을 따라간다
+  nameTag.scale.set(1 / worldScale);
+  let nameLabel: string | null = null;
 
   const randomGroundX = () =>
     ground ? ground.minX + EDGE_MARGIN + Math.random() * (ground.maxX - ground.minX - EDGE_MARGIN * 2) : 0;
@@ -792,6 +808,31 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     // 이징 중간값을 그대로 쓰면 맵이 기기 픽셀 사이에 걸려 도트가 칸마다 다르게 찍힌다. 이징은 실수로 이어 가고 그릴 위치만 맞춘다
     const resolution = app.renderer.resolution;
     world.position.set(Math.round(cameraX * resolution) / resolution, Math.round(cameraY * resolution) / resolution);
+    placeNameTag();
+  }
+
+  /** 원작 기본 이름표는 그림이 아니라 클라이언트가 그린다. 반투명 검은 상자의 네 모서리를 1px 씩 깎아 둥글게 보인다 */
+  function drawNameTag(label: string): void {
+    nameTagText.text = label;
+    const box = nameTagBox({ width: nameTagText.width, height: nameTagText.height });
+    nameTagText.position.set(box.textX, box.textY);
+    nameTagBack
+      .clear()
+      .rect(1, 0, box.width - 2, box.height)
+      .rect(0, 1, 1, box.height - 2)
+      .rect(box.width - 1, 1, 1, box.height - 2)
+      .fill({ color: 0x000000, alpha: NAME_TAG_ALPHA });
+  }
+
+  /** 카메라를 옮긴 뒤 불러야 기기 픽셀에 맞춘 맵 위치를 기준으로 이름표를 맞춘다 */
+  function placeNameTag(): void {
+    // 캐릭터 그림이 없을 때 이름표만 떠 있지 않게 한다
+    nameTag.visible = nameLabel !== null && heroAnimations !== null && ground !== null;
+    if (!nameTag.visible) return;
+    const feet = { x: world.position.x + hero.x * worldScale, y: world.position.y + hero.y * worldScale };
+    const box = { width: nameTagBack.width, height: nameTagBack.height };
+    const at = nameTagPosition(feet, box, { width, height }, app.renderer.resolution);
+    nameTag.position.set((at.x - world.position.x) / worldScale, (at.y - world.position.y) / worldScale);
   }
 
   function setFront(front: { texture: Texture; x: number; y: number } | null): void {
@@ -1096,6 +1137,13 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       // Pixi 가 (캔버스 픽셀 / 화면 크기) 비율로 클릭 좌표를 논리 좌표로 되돌린다
       Object.assign(app.canvas.style, { width: `${width * scale}px`, height: `${height * scale}px` });
       updateCamera(1);
+    },
+    setName(name) {
+      const label = nameTagLabel(name);
+      if (label === nameLabel) return;
+      nameLabel = label;
+      if (label) drawNameTag(label);
+      placeNameTag();
     },
   };
 }
