@@ -1,5 +1,6 @@
 import { ImageSource, Texture } from 'pixi.js';
-import { MAP_RENDER_TIMEOUT_MS, fetchWithin } from './api';
+import { MAP_RENDER_TIMEOUT_MS } from './api';
+import { artStore, fetchStored } from './artStore';
 import { gifFrameDelays } from './gif';
 import type { AlphaMap } from './ground';
 import type { Pixels } from './layers';
@@ -7,7 +8,7 @@ import type { Pixels } from './layers';
 const textures = new Map<string, Promise<Texture>>();
 
 function loadBitmap(url: string, timeoutMs?: number): Promise<ImageBitmap> {
-  return fetchWithin(
+  return fetchStored(
     url,
     async (response) => {
       if (!response.ok) throw new Error(`${response.status} ${url}`);
@@ -45,14 +46,31 @@ export interface Animation {
   delays: number[];
 }
 
-/** 애니메이션 GIF 로 프레임 수와 딜레이를 읽고, 프레임은 투명도가 살아 있는 PNG 로 받는다 */
-export async function loadAnimation(gifUrl: string, frameUrl: (frame: number) => string): Promise<Animation> {
-  const delays = await fetchWithin(gifUrl, async (response) => {
+const loadDelays = (gifUrl: string) =>
+  fetchStored(gifUrl, async (response) => {
     if (!response.ok) throw new Error(`${response.status} ${gifUrl}`);
     return gifFrameDelays(await response.arrayBuffer());
   });
+
+/** 애니메이션 GIF 로 프레임 수와 딜레이를 읽고, 프레임은 투명도가 살아 있는 PNG 로 받는다 */
+export async function loadAnimation(gifUrl: string, frameUrl: (frame: number) => string): Promise<Animation> {
+  const delays = await loadDelays(gifUrl);
   const frames = await loadFrames(delays.map((_, frame) => frameUrl(frame)));
   return { frames, delays };
+}
+
+/**
+ * 텍스처는 만들지 않고 GIF 와 프레임 PNG 를 기기에만 받아 둔다. 이미 있는 것은 건너뛴다.
+ * 그림이 맞는지만 보려고 풀었다가 바로 닫는다
+ */
+export async function storeAnimation(gifUrl: string, frameUrl: (frame: number) => string): Promise<void> {
+  const delays = await loadDelays(gifUrl);
+  await delays.reduce<Promise<unknown>>(async (previous, _, frame) => {
+    await previous;
+    const url = frameUrl(frame);
+    if (await artStore.has(url)) return;
+    (await loadBitmap(url)).close();
+  }, Promise.resolve());
 }
 
 /** 지난 시간(ms)에 해당하는 프레임 번호. loop 가 아니면 마지막 프레임에서 멈추고 -1 을 돌려준다 */
@@ -87,7 +105,7 @@ export async function loadMapImage(url: string): Promise<{ texture: Texture; alp
 
 /** 그릴 것이 없는 레이어는 404, 맵 레이어가 통째로 비어 있으면 400(서버가 빈 목록의 최솟값을 구하다 실패)으로 온다 */
 function loadOptionalBitmap(url: string): Promise<ImageBitmap | null> {
-  return fetchWithin(
+  return fetchStored(
     url,
     async (response) => {
       if (response.status === 404 || response.status === 400) return null;
@@ -95,6 +113,7 @@ function loadOptionalBitmap(url: string): Promise<ImageBitmap | null> {
       return createImageBitmap(await response.blob());
     },
     MAP_RENDER_TIMEOUT_MS,
+    { keepMissing: true },
   );
 }
 

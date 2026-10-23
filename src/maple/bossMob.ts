@@ -3,7 +3,6 @@ import {
   type MobInfo,
   type MobMeta,
   type WzValue,
-  fetchJson,
   mobAnimationUrl,
   mobFrameOriginUrl,
   mobFrameUrl,
@@ -12,6 +11,7 @@ import {
   mobInfoUrl,
   wzImageUrl,
 } from './api';
+import { fetchStoredJson } from './artStore';
 import type { Point } from './ground';
 import { type Animation, loadAnimation, loadTexture } from './textures';
 
@@ -47,7 +47,7 @@ const DEFAULT_GAUGE: BossGaugeColors = { fill: 1, background: 5 };
 /** 기준점을 못 받으면 그림 아래 가운데를 쓴다 */
 async function frameOrigin(mobId: number, action: string, frame: number, texture: Texture): Promise<Point> {
   try {
-    const { value } = await fetchJson<WzValue<Point>>(mobFrameOriginUrl(mobId, action, frame));
+    const { value } = await fetchStoredJson<WzValue<Point>>(mobFrameOriginUrl(mobId, action, frame));
     return { x: value.x, y: value.y };
   } catch {
     return { x: texture.width / 2, y: texture.height };
@@ -61,7 +61,7 @@ async function loadPlaced(mobId: number, action: string): Promise<PlacedAnimatio
 }
 
 export async function loadBossMob(mobId: number): Promise<BossMob> {
-  const info = await fetchJson<MobInfo & MobMeta>(mobInfoUrl(mobId));
+  const info = await fetchStoredJson<MobInfo & MobMeta>(mobInfoUrl(mobId));
   const { framebooks } = info;
   const has = (action: string) => (framebooks[action] ?? 0) > 0;
   const idle = has('stand') ? 'stand' : has('move') ? 'move' : 'fly';
@@ -122,7 +122,7 @@ async function loadGaugeIcon(mobId: number): Promise<Texture | null> {
   let target: string;
   try {
     ({ value: target } = await retry(
-      () => fetchJson<WzValue<string>>(mobGageIconLinkUrl(mobId)),
+      () => fetchStoredJson<WzValue<string>>(mobGageIconLinkUrl(mobId)),
       GAUGE_TRIES,
       GAUGE_RETRY_MS,
     ));

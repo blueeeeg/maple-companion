@@ -1,4 +1,5 @@
-import { MAP_RENDER_TIMEOUT_MS, fetchWithin, mapInfoUrl, mapRenderUrl, wzImageUrl } from './api';
+import { MAP_RENDER_TIMEOUT_MS, mapInfoUrl, mapRenderUrl, wzImageUrl } from './api';
+import { artStore, fetchStored } from './artStore';
 import type { EffectLayer } from './skills';
 import { loadTexture } from './textures';
 
@@ -42,7 +43,7 @@ let warming = false;
 
 /**
  * 곧 갈 사냥터 맵을 하나씩 미리 받아 둔다. 서버는 처음 그리는 맵 렌더에 40초 넘게 걸리기도 해서, 한 번 그려 두게 하면
- * 실제로 옮길 때 금방 온다. 받은 것은 버린다
+ * 실제로 옮길 때 금방 온다. 받은 것은 기기에 남겨 다음 실행에는 받지 않는다
  */
 export function warmMaps(mapIds: number[]): void {
   warmQueue = mapIds.filter((mapId) => !warmed.has(mapId));
@@ -57,9 +58,19 @@ async function warmNext(): Promise<void> {
   }
   warming = true;
   warmed.add(mapId);
-  const read = (response: Response) => response.arrayBuffer();
-  await fetchWithin(mapInfoUrl(mapId), read)
-    .then(() => fetchWithin(mapRenderUrl(mapId), read, MAP_RENDER_TIMEOUT_MS))
+  const store = async (url: string, timeoutMs?: number) => {
+    if (await artStore.has(url)) return;
+    await fetchStored(
+      url,
+      async (response) => {
+        if (!response.ok) throw new Error(`${response.status} ${url}`);
+        await response.arrayBuffer();
+      },
+      timeoutMs,
+    );
+  };
+  await store(mapInfoUrl(mapId))
+    .then(() => store(mapRenderUrl(mapId), MAP_RENDER_TIMEOUT_MS))
     .catch(() => warmed.delete(mapId));
   setTimeout(() => void warmNext(), WARM_GAP_MS);
 }

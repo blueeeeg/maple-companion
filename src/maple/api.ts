@@ -58,13 +58,16 @@ function characterItems(itemIds: number[]): string {
   return encodeURIComponent(itemIds.map((itemId) => JSON.stringify({ itemId, region: REGION, version: VERSION })).join(','));
 }
 
+/** 이 모습의 동작·프레임 주소는 모두 이 아래에 있다 */
+export const characterArtBase = (itemIds: number[]) => `https://maplestory.io/api/character/${characterItems(itemIds)}`;
+
 /** 발이 이미지 정중앙에 오게 그려 받아서 프레임마다 크기가 달라도 발 위치가 흔들리지 않는다 */
 export function characterFrameUrl(itemIds: number[], action: string, frame: number): string {
-  return `https://maplestory.io/api/character/${characterItems(itemIds)}/${action}/${frame}?resize=1&renderMode=FeetCenter`;
+  return `${characterArtBase(itemIds)}/${action}/${frame}?resize=1&renderMode=FeetCenter`;
 }
 
 export function characterAnimationUrl(itemIds: number[], action: string): string {
-  return `https://maplestory.io/api/character/${characterItems(itemIds)}/${action}/animated?resize=1&renderMode=FeetCenter`;
+  return `${characterArtBase(itemIds)}/${action}/animated?resize=1&renderMode=FeetCenter`;
 }
 
 /**

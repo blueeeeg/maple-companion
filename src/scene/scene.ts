@@ -4,11 +4,12 @@ import type { JobView } from '../game/jobs';
 import type { RoutePortal } from '../game/routes';
 import type { MonsterSpec, Town } from '../game/towns';
 import {
+  DATA_KEY,
   type MapInfo,
   type MobInfo,
   characterAnimationUrl,
+  characterArtBase,
   characterFrameUrl,
-  fetchJson,
   mapInfoUrl,
   mapLayerRenderUrl,
   mapRenderUrl,
@@ -35,7 +36,8 @@ import {
 import { type Calibration, type GroundPath, calibrateFootholds, correctCalibration, groundY, mainGround } from '../maple/ground';
 import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
 import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/skills';
-import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture } from '../maple/textures';
+import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture, storeAnimation } from '../maple/textures';
+import { fetchStoredJson, keepArt } from '../maple/artStore';
 import { loadPortalFrames } from '../maple/portal';
 import {
   type NavAction,
@@ -105,7 +107,11 @@ const FONT = '-apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif'
 /** 원작 이름표 글자(12px)를 VIEW_SCALE 로 줄이면 8px 아래라 한글이 뭉개진다. 읽히는 가장 작은 크기로 둔다(화면 px) */
 const NAME_TAG_FONT_SIZE = 10;
 const NAME_TAG_ALPHA = 0.6;
-const CALIBRATION_KEY = 'maple-companion:calibration:';
+// 보정값은 그 버전의 맵 렌더로 잰 것이라 버전마다 따로 둔다
+const CALIBRATION_KEY = `maple-companion:calibration:${DATA_KEY}:`;
+/** 버전 표시 없이 남긴 예전 보정값. 모두 KMS 389 렌더로 잰 것이다 */
+const LEGACY_CALIBRATION_KEY = 'maple-companion:calibration:';
+const LEGACY_CALIBRATION_DATA_KEY = 'KMS-389';
 const BANNER_Y = 58;
 /** 보스전에는 위쪽에 HP 게이지가 있어서 그 아래에 띄운다 */
 const BOSS_BANNER_Y = 88;
@@ -259,7 +265,9 @@ interface Effect {
 
 function readCalibration(mapId: number): Calibration | null {
   try {
-    const text = localStorage.getItem(CALIBRATION_KEY + mapId);
+    const text =
+      localStorage.getItem(CALIBRATION_KEY + mapId) ??
+      (DATA_KEY === LEGACY_CALIBRATION_DATA_KEY ? localStorage.getItem(LEGACY_CALIBRATION_KEY + mapId) : null);
     return text ? (JSON.parse(text) as Calibration) : null;
   } catch {
     return null;
@@ -281,7 +289,7 @@ function mobAction(framebooks: Record<string, number>): string {
 }
 
 async function loadMobAnimations(spec: MonsterSpec): Promise<MobAnimations> {
-  const { framebooks } = await fetchJson<MobInfo>(mobInfoUrl(spec.id));
+  const { framebooks } = await fetchStoredJson<MobInfo>(mobInfoUrl(spec.id));
   const idle = mobAction(framebooks);
   const load = (action: string) => loadAnimation(mobAnimationUrl(spec.id, action), (frame) => mobFrameUrl(spec.id, action, frame));
   const [move, hit, die] = await Promise.all([
@@ -308,13 +316,36 @@ async function loadHeroAction(look: number[], action: string): Promise<{ animati
 }
 
 async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnimations; still: boolean }> {
+  keepArt('look', [characterArtBase(job.look)]);
   const [stand, walk, attack] = await Promise.all(
     ['stand1', 'walk1', job.attackAction].map((action) => loadHeroAction(job.look, action)),
   );
+  storeHeroActions(job.look, job.attackAction);
   return {
     animations: { stand: stand.animation, walk: walk.animation, attack: attack.animation },
     still: stand.still || walk.still || attack.still,
   };
+}
+
+/** 지금 모습에서 기기에 받아 둘 동작. 정지 그림으로 대신한 서기·걷기도 다시 받고, 스킬·사다리·로프 동작은 네트워크가 막혀도 그려진다 */
+const STORED_HERO_ACTIONS = ['stand1', 'walk1', 'alert', 'jump', 'ladder', 'rope'];
+/** 맵·캐릭터를 다 받은 뒤에 받기 시작해 처음 그리는 데 끼어들지 않는다 */
+const STORE_HERO_ACTIONS_DELAY_MS = 5000;
+let storedHeroLook = '';
+
+/** 지금 모습의 동작을 기기에만 하나씩 받아 둔다. 실패한 동작은 넘어가고 모습이 바뀌면 그만둔다 */
+function storeHeroActions(look: number[], attackAction: string): void {
+  const key = `${look.join(',')}|${attackAction}`;
+  if (key === storedHeroLook) return;
+  storedHeroLook = key;
+  [...new Set([...STORED_HERO_ACTIONS, attackAction])].reduce<Promise<unknown>>(
+    (previous, action) =>
+      previous.then(() => {
+        if (storedHeroLook !== key) return;
+        return storeAnimation(characterAnimationUrl(look, action), (frame) => characterFrameUrl(look, action, frame)).catch(() => {});
+      }),
+    new Promise((resolve) => setTimeout(resolve, STORE_HERO_ACTIONS_DELAY_MS)),
+  );
 }
 
 const totalMs = (animation: Animation) => animation.delays.reduce((sum, delay) => sum + delay, 0);
@@ -986,7 +1017,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   /** 맵 정보·전체 렌더를 받아 발판을 이미지 좌표로 맞춘다. 화면은 아직 안 바꾼다 */
   async function prepareStage(mapId: number, label: string): Promise<Stage> {
-    const [info, image] = await Promise.all([fetchJson<MapInfo>(mapInfoUrl(mapId)), loadMapImage(mapRenderUrl(mapId))]);
+    // 옮겨 가는 동안과 보스 맵에 가 있는 동안 지금 마을도 지우지 않는다
+    keepArt('map', [mapInfoUrl(mapId), ...(home ? [mapInfoUrl(home.stage.mapId)] : [])]);
+    const [info, image] = await Promise.all([fetchStoredJson<MapInfo>(mapInfoUrl(mapId)), loadMapImage(mapRenderUrl(mapId))]);
     const footholds = Object.values(info.footholds);
     const worldGround = mainGround(footholds);
     if (!worldGround) {
