@@ -105,7 +105,7 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 - 설정은 앱 전체에 하나라 다른 캐릭터로 고른 마을이 지금 캐릭터에게 아직 안 열렸을 수 있다. 그 캐릭터는 고른 시간마다 돌고, ◀ ▶ 자리에 「리프레(안 열림)」, 안내 줄에 「리프레는 이 캐릭터에게 아직 안 열려서 8분마다 최근에 열린 마을을 돌아다녀요」가 뜬다. 넘기면 그 마을은 목록에서 빠진다
 - 저장에는 머물 마을(`pinnedTownId`, 돌기면 `null`)과 도는 시간만 남긴다. 예전 판의 「마을 이동 · 자동」 체크(`townRotate`)는 없앴다. 예전에 마을을 고정해 뒀으면 그대로 머문다. 고정 없이 「자동」만 꺼 뒀으면 그때 서 있던 마을에 머물렀는데 그 마을은 저장되지 않았고 켤 때마다 최근 마을 중에서 골랐다. 그래서 지금 캐릭터에게 가장 최근에 열린 마을에 머물기로 옮긴다(`src/platform/gameState.ts` 가 레벨을 넘긴다). 돌기로 옮기면 멈춰 두었던 캐릭터가 갑자기 돌아다니게 돼서 고르지 않았다
 - 배경음악 음소거는 HUD 메뉴의 「소리 끄기」와 같은 값이다. 음량을 0 으로 둔 채 「소리 켜기」를 누르면 기본 음량으로 돌아온다
-- 전직 알림은 설정 창에 줄을 더 넣을 높이가 없어 레벨업 줄에 있다. 알림은 `tauri-plugin-notification` 으로 띄우고, 처음 알릴 때 권한을 묻는다. macOS 는 처음 알림이 갈 때 시스템이 허용 여부를 묻고, 거절했으면 시스템 설정 → 알림에서 켠다. Windows 는 따로 묻지 않고, 설치 프로그램이 시작 메뉴 바로가기에 앱 ID(`com.maplecompanion.app`)를 붙여 둬야 알림이 뜬다. 그래서 설치한 앱에서만 앱 이름으로 뜨고 `pnpm tauri dev` 에서는 PowerShell 이름으로 뜬다. 꺼져 있으면 설정 → 시스템 → 알림에서 켠다. 브라우저로 볼 때는 웹 Notification 으로 띄운다
+- 전직 알림은 설정 창에 줄을 더 넣을 높이가 없어 레벨업 줄에 있다. 알림은 `tauri-plugin-notification` 으로 권한을 묻고 띄운다. macOS 는 알림에 앱 아이콘 그림을 넣으려고 Rust 가 직접 보낸다(아래 「OS 알림의 그림」). 처음 알릴 때 권한을 묻는다. macOS 는 처음 알림이 갈 때 시스템이 허용 여부를 묻고, 거절했으면 시스템 설정 → 알림에서 켠다. Windows 는 따로 묻지 않고, 설치 프로그램이 시작 메뉴 바로가기에 앱 ID(`com.maplecompanion.app`)를 붙여 둬야 알림이 뜬다. 그래서 설치한 앱에서만 앱 이름으로 뜨고 `pnpm tauri dev` 에서는 PowerShell 이름으로 뜬다. 꺼져 있으면 설정 → 시스템 → 알림에서 켠다. 브라우저로 볼 때는 웹 Notification 으로 띄운다
 
 설정 창은 원작 시스템 옵션 창 `UI/UIWindow2.img/SysOpt/backgrnd`(283×354)를 원본 크기로 쓰되 위 198px·아래 32px 띠만 잘라 230 높이로 잇는다. 확인 `MemoInGame/Get/BtOK`·취소 `Basic.img/BtCancel4`(40×16), 음량 슬라이더 `Basic.img/HScr8`(양 끝 `prev0`·`next0`, 가운데 `base`, 손잡이 `thumb0`·`thumb1`), 체크 상자 `Basic.img/CheckBox0`(11×11)도 `_Canvas` 로 받아 원본 크기로 쓴다. 안쪽 회색 판과 항목 칸은 원작 옵션 창 색을 CSS 로 옮겼다. 그림을 못 받으면 같은 배치의 어두운 창과 글자 버튼으로 남는다.
 
@@ -195,6 +195,16 @@ HUD 의 스탯·스킬 버튼은 옆 캐시샵·⚙️ 버튼과 같은 어두�
 - `.app` 이 아닌 곳에서 띄운 개발 실행(`pnpm tauri dev`)은 번들이 없어 붙이지 않는다. 디스크 이미지 안에서 바로 띄우거나 macOS 가 앱 수정을 막는 등 번들에 쓸 수 없으면 로그만 남기고 기본 아이콘을 둔다. 실패도 `app-icon-applied.txt` 에 남겨, 차단 알림이 실행할 때마다 뜨지 않도록 그림이 바뀌거나 번들 폴더가 바뀔 때(업데이트·다시 설치로 inode 가 달라질 때)까지 다시 해 보지 않는다
 - 코드 서명: `codesign --verify` 는 그대로 통과한다. `--strict` 는 번들 폴더의 FinderInfo 때문에 실패한다. 실행 파일 서명은 바뀌지 않고, 업데이트는 받은 압축 파일의 서명만 확인하므로 영향이 없다
 - Windows 시작 메뉴·작업표시줄 아이콘은 exe 안의 리소스라 실행 중에 바꿀 수 없다. 창 아이콘(Alt+Tab)만 같은 그림으로 바꾼다
+
+OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(`src-tauri/src/notification.rs`). 다만 알림 왼쪽 아이콘은 바꿀 수 없어서 오른쪽 그림으로 넣는다.
+
+- macOS 알림 센터는 왼쪽 아이콘을 번들의 `Contents/Resources/icon.icns`(Info.plist 의 `CFBundleIconFile`)로만 그린다. Finder 사용자 아이콘, 실행 중인 앱 아이콘, NSUserNotification 의 비공개 키 `_identityImage`(mac-notification-sys 의 `app_icon`)는 모두 무시된다. macOS 26.5.1 에서 테스트 알림을 띄워 확인했다
+- `icon.icns` 를 실행 중에 바꿔 쓰면 코드 서명의 리소스 봉인이 깨진다(`codesign --verify` 가 「a sealed resource is missing or invalid」로 실패). 업데이트마다 번들이 통째로 바뀌어 다시 써야 하므로 쓰지 않는다. 번들에 넥슨 그림을 넣어 배포할 수도 없다
+- 그래서 알림 오른쪽 그림(`contentImage`)에 앱 아이콘 캔버스(1024×1024, 가운데 824px)를 넣는다. 트레이 그림으로 app data 의 `notification-image.png` 를 만들고, 그림이 바뀌었을 때만 다시 쓴다
+- tauri-plugin-notification 은 macOS 에서 이 그림을 넘길 길이 없어, 프론트는 Rust 명령 `show_notification` 을 부르고 Rust 가 mac-notification-sys 로 직접 보낸다. 보내는 앱은 플러그인과 같다(설치한 앱은 `com.maplecompanion.app`, `pnpm tauri dev` 는 터미널)
+- 알림을 누를 때까지 기다리게 보내야 누른 것을 받는다. 알림마다 스레드 하나가 기다리고, 알림을 누르거나 알림 센터에서 지우면 끝난다. 누르면 창이 열린다
+- 트레이 그림이 없거나 그림 파일을 못 쓰면 그림 없이 보낸다. 명령이 실패하면 프론트가 플러그인으로 그림 없는 알림을 띄운다
+- Windows 는 플러그인 그대로 띄운다. 플러그인은 토스트에 그림을 넘기지 않아 시작 메뉴 바로가기의 앱 아이콘이 나온다
 
 사냥터 연결은 `scripts/curate-routes.ts` 가 미리 골라 `src/game/routeData.ts` 에 적어 둔다(아래 「개발」). 맵 정보 API(`/map/{ID}`)의 `portals` 는 스크립트가 붙은 포털(마을 밖으로 나가는 `east00`·`west00` 등)을 `null` 로 내려서, 포털은 WZ 노드 `Map/Map/Map{앞자리}/{9자리 ID}.img/portal/{n}` 의 `pn`·`tm`·`tn`·`x`·`y` 로 읽는다. 포털까지는 발판 길(`src/maple/navigation.ts`)로 간다. 맵 정보의 `footholds`(prev/next 로 이어진 묶음, 벽은 x1 = x2)와 `ladderRopes`(x, 위 끝 y1, 아래 끝 y2, 사다리/로프)로 이음을 만든다.
 - 걷기: 같은 발판 묶음 위. 벽에서 끊긴다
@@ -290,6 +300,7 @@ src-tauri/src/
   tray_icon.rs       트레이 아이콘 PNG 읽기·저장. 메뉴바 높이(레티나 36px)에 맞게 늘리지 않고 가운데 둔다
   bgm_cache.rs       프론트가 받은 맵 BGM 을 app data 의 bgm/ 에 읽기·있는지 보기·쓰기(임시 파일 → rename)·지우기. 곡은 JSON 이 아니라 바이트로 오간다
   app_icon.rs        트레이 그림으로 앱 아이콘 만들기(정수배 확대). macOS 는 .app 에 Finder 사용자 아이콘으로 붙이고, Windows 는 창 아이콘만
+  notification.rs    OS 알림 보내기(show_notification). macOS 는 앱 아이콘과 같은 그림을 알림 오른쪽에 넣어 직접 보내고, 누르면 창을 연다
   updater.rs         업데이트 확인(check_update), 트레이 「업데이트」 항목 글자, 받기·설치·진행 표시, 저장 후 다시 켜기
   lib.rs             트레이(「설정」 포함), 펫·메뉴바 모드 전환, 창 크기, 알림을 누르면 창 열기, 프론트에 여는 명령
 ```

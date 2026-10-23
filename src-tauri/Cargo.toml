@@ -36,6 +36,8 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSImage",
   "NSWorkspace",
 ] }
+# 알림 오른쪽 그림을 넣으려고 알림을 직접 보낸다. tauri-plugin-notification(notify-rust)이 이미 쓰는 그 크레이트다
+mac-notification-sys = "0.6"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

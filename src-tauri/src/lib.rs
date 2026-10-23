@@ -3,6 +3,7 @@ mod app_icon;
 mod bgm_cache;
 mod game_state;
 mod idle;
+mod notification;
 mod tray_icon;
 mod updater;
 
@@ -374,7 +375,8 @@ pub fn run() {
             bgm_cache::has_bgm,
             bgm_cache::write_bgm,
             bgm_cache::remove_bgm,
-            updater::check_update
+            updater::check_update,
+            notification::show_notification
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

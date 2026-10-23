@@ -2096,6 +2096,7 @@ name = "maple-companion"
 version = "0.1.4"
 dependencies = [
  "image",
+ "mac-notification-sys",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

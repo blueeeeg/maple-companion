@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
 import { isTauri } from './tauri';
@@ -15,7 +16,8 @@ function tauriNotifier(): Notifier {
       isPermissionGranted()
         .then(async (granted) => granted || (await requestPermission()) === 'granted')
         .then((granted) => {
-          if (granted) sendNotification({ title, body });
+          // macOS 는 Rust 가 알림 오른쪽에 앱 아이콘 그림을 넣어 보낸다. 못 보내면 그림 없는 플러그인 알림
+          if (granted) return invoke('show_notification', { title, body }).catch(() => sendNotification({ title, body }));
         })
         .catch(() => {});
     },

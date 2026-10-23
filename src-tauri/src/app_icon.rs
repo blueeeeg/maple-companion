@@ -9,9 +9,9 @@ use crate::tray_icon;
 /// 저장소의 번들 아이콘(src-tauri/icons)에는 넥슨 그림을 넣을 수 없어서, 받아 둔 트레이 그림으로
 /// 사용자 컴퓨터에서 앱 아이콘을 바꾼다. 가장자리는 macOS 아이콘 격자(1024 중 824)만큼 비워 다른 앱과 크기를 맞춘다
 #[cfg(target_os = "macos")]
-const MAC_CANVAS: u32 = 1024;
+pub(crate) const MAC_CANVAS: u32 = 1024;
 #[cfg(target_os = "macos")]
-const MAC_CONTENT: u32 = 824;
+pub(crate) const MAC_CONTENT: u32 = 824;
 /// Windows 는 창 아이콘(Alt+Tab)만 바꿀 수 있다. 시작 메뉴·작업표시줄은 exe 리소스라 실행 중에 못 바꾼다
 const WINDOWS_CANVAS: u32 = 256;
 
@@ -114,7 +114,7 @@ mod mac {
             .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
             .map_err(|error| error.to_string())?;
         let image = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(&png)).ok_or("NSImage 를 만들지 못했다")?;
-        // 알림·경고창처럼 실행 중인 앱 아이콘을 쓰는 곳. 저장되지 않아서 실행할 때마다 넣는다
+        // 경고창처럼 실행 중인 앱 아이콘을 쓰는 곳. 알림 센터는 이 그림을 쓰지 않는다(notification.rs). 저장되지 않아서 실행할 때마다 넣는다
         unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&image)) };
 
         let Some(bundle) = std::env::current_exe().ok().as_deref().and_then(bundle_from_exe) else {
