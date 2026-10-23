@@ -59,7 +59,7 @@ export interface FieldCadence {
 }
 
 // 마을 자동 이동 기본 8분 안에 사냥터를 한두 번 오가게 맞췄다
-export const FIELD_CADENCE: FieldCadence = { hunts: 2, stayMs: 4 * 60 * 1000, minStayMs: 60 * 1000 };
+export const FIELD_CADENCE: FieldCadence = { hunts: 2, stayMs: 3 * 60 * 1000, minStayMs: 60 * 1000 };
 
 export function fieldMoveDue(
   stay: { hunts: number; sinceArrivalMs: number },
