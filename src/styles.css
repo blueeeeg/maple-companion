@@ -2823,3 +2823,568 @@ body {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ── 보스 도전 (ui/bossWindow.ts) ─────────────────────────────
+   원작 보스 입장 창(UIBossEnter.img) 틀을 352×226 으로 잘라 붙이고, 안쪽 판 왼쪽에 원작 보스 목록(UIBoss.img BossList·Move_wnd 칸,
+   135×30 칸이 33 간격), 오른쪽에 고른 보스의 정보와 버튼을 둔다. 원작 그림은 모두 원본 크기 그대로다 */
+.boss-window {
+  position: absolute;
+  z-index: 0;
+  left: 4px;
+  top: 2px;
+  width: 352px;
+  height: 226px;
+  border-radius: 6px;
+  background: #3a3f48;
+  box-shadow: inset 0 0 0 1px #6b7280;
+  color: #e4e8ef;
+  font-family: Dotum, '돋움', AppleGothic, 'Apple SD Gothic Neo', sans-serif;
+}
+
+/* 틀 그림을 못 받았을 때의 안쪽 판 */
+.boss-window::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 12px;
+  top: 32px;
+  width: 328px;
+  height: 182px;
+  border-radius: 6px;
+  background: #1d2026;
+}
+
+.boss-window.has-frame-art {
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.boss-window.has-frame-art::after {
+  display: none;
+}
+
+.boss-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: none;
+}
+
+.has-frame-art > .boss-art {
+  display: block;
+}
+
+.boss-strip {
+  position: absolute;
+  background-image: var(--frame);
+  background-repeat: no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.boss-title {
+  position: absolute;
+  left: 18px;
+  top: 0;
+  height: 30px;
+  margin: 0;
+  color: #e5ff3c;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 30px;
+}
+
+/* 원작 창 그림에 「BOSS ENTRY」 제목이 들어 있다 */
+.has-frame-art > .boss-title {
+  color: transparent;
+}
+
+.boss-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 9px;
+  line-height: 15px;
+}
+
+.boss-close.has-art {
+  width: 13px;
+  height: 13px;
+  image-rendering: var(--art-rendering);
+}
+
+/* 원작 목록 위아래 화살표(BtArrowUp·Down, 135×13) */
+.boss-arrow {
+  position: absolute;
+  left: 18px;
+  width: 135px;
+  height: 13px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #34373e;
+  color: #9aa0aa;
+  font-size: 7px;
+  line-height: 13px;
+}
+
+.boss-arrow.is-up {
+  top: 42px;
+}
+
+.boss-arrow.is-down {
+  top: 190px;
+}
+
+.boss-arrow:disabled {
+  cursor: default;
+}
+
+.boss-arrow.has-art {
+  image-rendering: var(--art-rendering);
+}
+
+.boss-arrow:not(.has-art):disabled {
+  opacity: 0.4;
+}
+
+.boss-list {
+  position: absolute;
+  left: 18px;
+  top: 58px;
+  width: 135px;
+  height: 129px;
+  display: grid;
+  grid-auto-rows: 30px;
+  gap: 3px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+
+.boss-list::-webkit-scrollbar {
+  display: none;
+}
+
+.boss-row {
+  position: relative;
+  width: 135px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: #2e3138;
+  color: #ffffff;
+  text-align: left;
+  scroll-snap-align: start;
+  overflow: hidden;
+}
+
+/* 원작 목록 칸(Move_wnd/backgrnd 의 (13, 28) 칸) */
+.boss-list.has-art .boss-row {
+  border-radius: 0;
+  background: var(--slot) -13px -28px no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.boss-row:focus-visible {
+  outline: 1px solid #e5ff3c;
+  outline-offset: -1px;
+}
+
+.boss-row-art {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: var(--normal) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.boss-row.has-row-art .boss-row-art {
+  display: block;
+}
+
+.boss-row.has-row-art:hover .boss-row-art {
+  background-image: var(--hover);
+}
+
+.boss-row.has-row-art.is-selected .boss-row-art {
+  background-image: var(--checked);
+}
+
+/* 원작 버튼 그림의 이름 글씨(밝은 회색, 어두운 테두리)를 따라 쓴다 */
+.boss-row-name {
+  position: absolute;
+  left: 11px;
+  top: 0;
+  max-width: 92px;
+  overflow: hidden;
+  color: #dcdcdc;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 30px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow:
+    1px 0 0 #1a1a1a,
+    -1px 0 0 #1a1a1a,
+    0 1px 0 #1a1a1a,
+    0 -1px 0 #1a1a1a;
+}
+
+/* 그림에 이름이 들어 있어도 화면 읽기에는 남긴다 */
+.boss-row.has-row-art .boss-row-name {
+  clip-path: inset(50%);
+}
+
+.boss-row-icon {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+}
+
+.boss-row-icon img {
+  display: block;
+  image-rendering: var(--art-rendering);
+}
+
+/* 그림이 없는 보스 칸을 고르면 원작 checked 그림의 청록으로 테를 두른다 */
+.boss-row:not(.has-row-art)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.boss-row:not(.has-row-art):hover::after {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.boss-row:not(.has-row-art).is-selected::after {
+  background: rgba(40, 190, 210, 0.3);
+  box-shadow: inset 0 0 0 1px #46d2e3;
+}
+
+.boss-row-tag,
+.boss-row-count {
+  position: absolute;
+  right: 1px;
+  z-index: 1;
+  height: 11px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.78);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 11px;
+}
+
+.boss-row-tag {
+  top: 1px;
+  display: none;
+  background: #36c3d3;
+  color: #0b2a2f;
+}
+
+.boss-row.is-reserved .boss-row-tag {
+  display: block;
+}
+
+.boss-row-count {
+  bottom: 1px;
+  color: #ffe08a;
+}
+
+.boss-row-count:empty {
+  display: none;
+}
+
+.boss-row-count.is-zero {
+  color: #8d96a6;
+}
+
+.boss-row.is-locked .boss-row-art,
+.boss-row.is-locked .boss-row-icon,
+.boss-row.is-locked .boss-row-name {
+  filter: grayscale(1) brightness(0.45);
+}
+
+.boss-row-lock {
+  position: absolute;
+  right: 5px;
+  top: 0;
+  z-index: 1;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 30px;
+  text-shadow:
+    0 0 2px #000000,
+    0 0 2px #000000;
+}
+
+.boss-detail {
+  position: absolute;
+  left: 160px;
+  top: 42px;
+  width: 174px;
+  height: 161px;
+}
+
+/* 원작 보스 HP 게이지 아이콘 틀(MobGage/backgrnd, 37×37) */
+.boss-icon-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 37px;
+  height: 37px;
+  border-radius: 4px;
+  background: #3a3f48;
+}
+
+.boss-icon-frame.has-art {
+  border-radius: 0;
+  background: var(--frame) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.boss-icon-frame img {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  image-rendering: var(--art-rendering);
+}
+
+.boss-name {
+  position: absolute;
+  left: 43px;
+  top: 3px;
+  max-width: 131px;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.boss-meta {
+  position: absolute;
+  left: 43px;
+  top: 21px;
+  color: #9aa6b8;
+  font-size: 10px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.boss-body {
+  position: absolute;
+  left: 0;
+  top: 43px;
+  width: 174px;
+  height: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.boss-line {
+  margin: 0;
+  color: #c8d0dc;
+  font-size: 10px;
+  line-height: 13px;
+  word-break: keep-all;
+}
+
+.boss-line:empty {
+  display: none;
+}
+
+.boss-line.is-ready {
+  color: #e5ff3c;
+  font-weight: 700;
+}
+
+.boss-line.is-waiting {
+  color: #ffffff;
+}
+
+.boss-line.is-off {
+  color: #ffb347;
+}
+
+.boss-line.is-reservation {
+  color: #7fdce8;
+}
+
+.boss-line.is-random {
+  color: #8d96a6;
+}
+
+.boss-line.is-problem {
+  color: #ff8a7a;
+}
+
+.boss-line.is-title {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.boss-line.is-notice {
+  color: #ffd9a0;
+}
+
+.boss-unreserve {
+  height: 13px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border: 1px solid #3a8f9c;
+  border-radius: 2px;
+  background: #173a40;
+  color: #9ff0fa;
+  font-size: 9px;
+  line-height: 11px;
+  vertical-align: top;
+}
+
+.boss-unreserve:hover {
+  background: #1f4c54;
+}
+
+/* 원작 연습 모드 표시(BossPracticeMode/backgrd, 174×18) */
+.boss-practice-banner,
+.hud-practice-banner {
+  display: block;
+  flex: none;
+  width: 174px;
+  height: 18px;
+  background: linear-gradient(90deg, transparent, #4a4a4a 30%, #4a4a4a 70%, transparent);
+  color: #ffffff;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
+.boss-practice-banner.has-art,
+.hud-practice-banner.has-art {
+  background: var(--banner) no-repeat;
+  color: transparent;
+  image-rendering: var(--art-rendering);
+}
+
+.boss-actions {
+  position: absolute;
+  left: 0;
+  top: 131px;
+  width: 174px;
+  height: 30px;
+  display: flex;
+  gap: 6px;
+}
+
+/* 버튼 크기는 원작 「연습모드」 버튼(84×30)과 같다. 색은 원작 보스 UI 의 버튼에서 따왔다 */
+.boss-action {
+  flex: none;
+  width: 84px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #0d1118;
+  border-radius: 4px;
+  background: linear-gradient(#4b505b, #2b2f37);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.65);
+}
+
+.boss-action:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.boss-action:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.boss-action:focus-visible {
+  outline: 1px solid #e5ff3c;
+  outline-offset: 1px;
+}
+
+.boss-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 원작 보스 UI 「보스 이동」 버튼의 연두. 보스 차례를 쓰는 진짜 싸움 */
+.boss-action.is-go {
+  border-color: #4d6b05;
+  background: linear-gradient(#cfe64a, #7ea414);
+  text-shadow: 0 1px 0 rgba(40, 70, 0, 0.7);
+}
+
+/* 원작 「연습모드」 버튼의 보라. 보상 없는 연습전 */
+.boss-action.is-go-practice {
+  border-color: #6ea8c4;
+  background: linear-gradient(#5a3a7e, #2f2756);
+}
+
+/* 원작 목록 checked 그림의 청록. 지금 지정해 둔 보스 */
+.boss-action.is-reserve[aria-pressed='true'] {
+  border-color: #0e5560;
+  background: linear-gradient(#36c3d3, #17808f);
+}
+
+.boss-action.is-practice-start.has-art {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  image-rendering: var(--art-rendering);
+}
+
+/* 연습전 동안 보스 HP 게이지(위 29~66px) 바로 아래 가운데에 띄운다 */
+.hud-practice {
+  position: absolute;
+  left: 93px;
+  top: 68px;
+  width: 174px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.hud-practice[hidden] {
+  display: none;
+}
+
+.hud-practice-text {
+  color: #ffe9a8;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 12px;
+  white-space: nowrap;
+  text-shadow:
+    0 0 2px #000000,
+    0 0 2px #000000;
+}

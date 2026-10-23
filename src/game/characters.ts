@@ -36,6 +36,8 @@ export interface Character {
   cashEquipped: CashEquipped;
   /** 스킬창에서 고른 사냥 스킬. null 이면 자동(차수마다 정해 둔 스킬). 겉모습만 바뀌고 보상은 같다 */
   huntSkillId: number | null;
+  /** 보스 도전 창에서 지정한 다음 보스(몹 ID). 다음 보스 차례에 무작위 대신 이 보스가 나오고, 잡으면 지운다. 보상은 같다 */
+  reservedBossId: number | null;
   /** 전직한 날. 이 기록을 시작하기 전에 이미 한 전직은 null(날짜 모름)이다 */
   advancedAt: AdvancementLog;
 }
@@ -79,6 +81,7 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     wardrobe: [],
     cashEquipped: {},
     huntSkillId: null,
+    reservedBossId: null,
     advancedAt: {},
   };
 }

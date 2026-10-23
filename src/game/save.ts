@@ -1,4 +1,5 @@
 import { normalizeAppearance } from './appearance';
+import { normalizeReservedBoss } from './bossChallenge';
 import { normalizeCashData } from './cashShop';
 import {
   type Character,
@@ -37,6 +38,8 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
     return {
       ...filled,
       huntSkillId: typeof huntSkillId === 'number' && Number.isInteger(huntSkillId) ? huntSkillId : null,
+      // 보스 지정이 생기기 전 저장이거나 지금은 없는 보스면 지정 없음(무작위)이다
+      reservedBossId: normalizeReservedBoss(character.reservedBossId),
       // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다
       advancedAt: normalizeAdvancements(character.advancedAt, reachedTier(filled)),
     };
@@ -86,7 +89,8 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
     const fromLocal = localById.get(fromFile.id);
     if (!fromLocal) return fromFile;
     const winner = progress(fromLocal) > progress(fromFile) ? fromLocal : fromFile;
-    // 사냥 스킬은 메소처럼 더 자란 쪽 것을 쓴다. 전직 날짜는 한쪽에만 적혀 있을 수 있어 합친다
+    // 사냥 스킬·보스 지정은 메소처럼 더 자란 쪽 것을 쓴다. 덜 자란 쪽 지정은 이미 써 버린 것일 수 있다.
+    // 전직 날짜는 한쪽에만 적혀 있을 수 있어 합친다
     return {
       ...winner,
       wardrobe: [...new Set([...fromFile.wardrobe, ...fromLocal.wardrobe])],

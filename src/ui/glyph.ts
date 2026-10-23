@@ -41,3 +41,29 @@ export function keyOutBackground(
 
 /** 빅뱅 전 상태 바 단축 버튼(StatusBar.img StatKey·SkillKey)의 파란 바탕. 그림의 하늘색 테두리·청록 막대는 남는다 */
 export const isQuickKeyBlue = (r: number, g: number, b: number): boolean => b > r + 40 && b > g + 40;
+
+/**
+ * 바탕이 투명한 그림에서 알파가 minAlpha 아래인 픽셀(바탕에 흩뿌린 옅은 점)을 지우고, 남은 그림을 감싸는 상자를 돌려준다.
+ * 남은 픽셀의 반투명(글자 그림자 등)은 그대로 둔다. 남은 것이 없으면 null
+ */
+export function keyOutFaint(pixels: Uint8ClampedArray, width: number, minAlpha: number): GlyphBox | null {
+  const height = pixels.length / 4 / width;
+  let left = Infinity;
+  let top = Infinity;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const at = (y * width + x) * 4 + 3;
+      if (pixels[at] < minAlpha) {
+        pixels[at] = 0;
+        continue;
+      }
+      left = Math.min(left, x);
+      top = Math.min(top, y);
+      right = Math.max(right, x);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  return right < 0 ? null : { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+}

@@ -59,6 +59,17 @@ export function pickBoss(level: number, random = Math.random): BossSpec | null {
   return pool[Math.floor(random() * pool.length)];
 }
 
+/** 보스 도전 창에서 다음 보스로 지정해 둔 보스. 지정이 없거나, 없는 보스거나, 아직 레벨이 모자라면 null */
+export function reservedBoss(level: number, reservedBossId: number | null): BossSpec | null {
+  const boss = BOSSES.find((each) => each.id === reservedBossId);
+  return boss && boss.minLevel <= level ? boss : null;
+}
+
+/** 보스 차례에 나올 보스. 지정해 둔 보스가 있으면 그 보스다. 어느 보스든 보상은 같다(settleHunt) */
+export function scheduledBoss(level: number, reservedBossId: number | null, random = Math.random): BossSpec | null {
+  return reservedBoss(level, reservedBossId) ?? pickBoss(level, random);
+}
+
 export function bossHits(random = Math.random): number {
   return BOSS_HITS_MIN + Math.floor(random() * (BOSS_HITS_MAX - BOSS_HITS_MIN + 1));
 }
@@ -136,9 +147,14 @@ export interface HuntResult {
   bosses: Record<string, number>;
   xp: number;
   meso: number;
+  /** 지정해 둔 보스가 이번에 나왔는지. 나왔으면 받는 쪽이 지정을 지운다 */
+  reservationUsed: boolean;
 }
 
-/** 창이 안 보이는 동안 쌓인 사냥 count 번을 애니메이션 없이 한 번에 치른다. 보스 차례면 레벨에 맞는 보스로 친다 */
+/**
+ * 창이 안 보이는 동안 쌓인 사냥 count 번을 애니메이션 없이 한 번에 치른다. 보스 차례면 레벨에 맞는 보스로 친다.
+ * 지정해 둔 보스(reservedBossId)는 첫 보스 차례에 한 번만 나온다
+ */
 export function resolveHunts(
   progress: HuntProgress,
   pace: HuntPace,
@@ -146,10 +162,14 @@ export function resolveHunts(
   town: Town,
   count: number,
   random = Math.random,
+  reservedBossId: number | null = null,
 ): HuntResult {
-  const result: HuntResult = { kills: {}, bosses: {}, xp: 0, meso: 0 };
+  const result: HuntResult = { kills: {}, bosses: {}, xp: 0, meso: 0, reservationUsed: false };
   for (let index = 0; index < count; index += 1) {
-    const boss = bossDue(progress, pace) ? pickBoss(level, random) : null;
+    const due = bossDue(progress, pace);
+    const reserved = due && !result.reservationUsed ? reservedBoss(level, reservedBossId) : null;
+    if (reserved) result.reservationUsed = true;
+    const boss = due ? (reserved ?? pickBoss(level, random)) : null;
     const name = boss ? boss.name : pickMonster(town, random).name;
     const reward = settleHunt(progress, pace, town, boss !== null, random);
     result.kills[name] = (result.kills[name] ?? 0) + 1;

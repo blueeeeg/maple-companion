@@ -116,3 +116,32 @@ describe('사냥 스킬·전직 기록 저장', () => {
     expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
   });
 });
+
+describe('보스 지정 저장', () => {
+  const PINK_BEAN = 8820001;
+
+  it('보스 지정이 생기기 전 저장은 지정 없음으로 읽는다', () => {
+    const old = { ...character('a') } as Partial<Character>;
+    delete old.reservedBossId;
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [old] }))).characters;
+    expect(read.reservedBossId).toBeNull();
+  });
+
+  it('지정한 보스는 그대로 읽고 목록에 없는 보스·숫자가 아닌 값은 지정 없음이다', () => {
+    const read = (value: unknown) =>
+      normalizeRoster({ characters: [{ ...character('a'), reservedBossId: value } as Character] }).characters[0].reservedBossId;
+    expect(read(PINK_BEAN)).toBe(PINK_BEAN);
+    expect(read(9999999)).toBeNull();
+    expect(read(String(PINK_BEAN))).toBeNull();
+    expect(read(null)).toBeNull();
+  });
+
+  it('합칠 때 더 자란 쪽 지정을 쓰고 다시 합쳐도 같다', () => {
+    const file = roster([character('a', { activeSeconds: 100, reservedBossId: null })]);
+    const local = roster([character('a', { activeSeconds: 50, reservedBossId: PINK_BEAN })]);
+    expect(mergeRosters(file, local).characters[0].reservedBossId).toBeNull();
+    const grown = roster([character('a', { activeSeconds: 200, reservedBossId: PINK_BEAN })]);
+    expect(mergeRosters(file, grown).characters[0].reservedBossId).toBe(PINK_BEAN);
+    expect(mergeRosters(mergeRosters(file, grown), grown)).toEqual(mergeRosters(file, grown));
+  });
+});

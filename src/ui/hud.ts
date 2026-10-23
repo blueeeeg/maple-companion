@@ -1,7 +1,8 @@
 import type { JobLineId } from '../game/jobs';
 import { cashShopUiUrl, wzImageUrl } from '../maple/api';
-import { loadWithRetry, loadedImage } from './art';
-import { isQuickKeyBlue, keyOutBackground } from './glyph';
+import { applyArt, loadWithRetry, loadedImage } from './art';
+import { PRACTICE_BANNER_URL } from './bossWindow';
+import { type GlyphBox, isQuickKeyBlue, keyOutBackground, keyOutFaint } from './glyph';
 import { JOB_CHOICE_KEY, createNpcDialog, openAdvancementCongratulation, openJobChoice } from './npcDialog';
 
 export interface HudState {
@@ -23,6 +24,7 @@ export interface HudHandlers {
   onOpenSettings(): void;
   onOpenStat(): void;
   onOpenSkill(): void;
+  onOpenBoss(): void;
 }
 
 export interface Hud {
@@ -35,6 +37,8 @@ export interface Hud {
   congratulate(jobLine: JobLineId, tier: number): void;
   /** 떠 있거나 기다리는 NPC 대화를 모두 닫는다 */
   closeDialogs(): void;
+  /** 연습전 동안 보스 게이지 아래에 원작 연습 모드 표시를 띄운다. null 이면 내린다 */
+  setPractice(bossName: string | null): void;
 }
 
 const NOTICE_MS = 4000;
@@ -46,8 +50,20 @@ const QUICK_KEY_INSIDE = { x: 3, y: 3, width: 22, height: 14 };
  * 빅뱅 전 상태 바의 스탯·스킬 단축 버튼에서 파란 바탕을 빼고 막대그래프·책 그림(16×12, 18×12)만 떼어 낸다.
  * 옆의 캐시샵·⚙️ 버튼처럼 HUD 의 어두운 칸 안에 원본 크기로 넣는다. 못 받으면 글자 버튼으로 남는다
  */
-async function quickKeyGlyph(node: string): Promise<string> {
-  const url = wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`);
+function quickKeyGlyph(node: string): Promise<string> {
+  return cropGlyph(wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`), (pixels, width) =>
+    keyOutBackground(pixels, width, QUICK_KEY_INSIDE, isQuickKeyBlue),
+  );
+}
+
+/**
+ * 원작 메뉴의 「보스」 버튼(StatusBar3.img 커뮤니티 메뉴, 109×26)에서 글자 그림(24×11)만 쓴다.
+ * 바탕에 알파 17 의 옅은 점이 깔려 있어서 그보다 진한 픽셀만 남긴다
+ */
+const BOSS_GLYPH_MIN_ALPHA = 48;
+const BOSS_MENU_GLYPH = wzImageUrl('UI/_Canvas/StatusBar3.img/mainBar/submenu/community/button:boss/normal/0');
+
+async function cropGlyph(url: string, keyOut: (pixels: Uint8ClampedArray, width: number) => GlyphBox | null): Promise<string> {
   await loadWithRetry(url);
   const image = new Image();
   image.crossOrigin = 'anonymous';
@@ -59,8 +75,8 @@ async function quickKeyGlyph(node: string): Promise<string> {
   const context = canvas.getContext('2d')!;
   context.drawImage(image, 0, 0);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const box = keyOutBackground(pixels.data, canvas.width, QUICK_KEY_INSIDE, isQuickKeyBlue);
-  if (!box) throw new Error(`${node} 그림이 비었다`);
+  const box = keyOut(pixels.data, canvas.width);
+  if (!box) throw new Error(`${url} 그림이 비었다`);
   context.putImageData(pixels, 0, 0);
   const glyph = document.createElement('canvas');
   glyph.width = box.width;
@@ -81,6 +97,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <span class="hud-spacer" data-tauri-drag-region></span>
       <button class="hud-stat hud-key" type="button" aria-label="캐릭터 정보" title="캐릭터 정보">스탯</button>
       <button class="hud-skill hud-key" type="button" aria-label="스킬" title="스킬">스킬</button>
+      <button class="hud-boss hud-key" type="button" aria-label="보스 도전" title="보스 도전">보스</button>
       <button class="hud-shop" type="button" aria-label="캐시샵" title="캐시샵">🛍</button>
       <button class="hud-menu-button" type="button" aria-label="메뉴" title="메뉴" aria-haspopup="menu" aria-expanded="false">⚙️</button>
     </header>
@@ -94,6 +111,10 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <span class="exp-text"></span>
     </div>
     <div class="notice" aria-live="polite" hidden></div>
+    <div class="hud-practice" role="status" hidden>
+      <span class="hud-practice-banner">PRACTICE MODE</span>
+      <span class="hud-practice-text"></span>
+    </div>
     `,
   );
   const dialog = createNpcDialog(root);
@@ -148,6 +169,14 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       () => {},
     ),
   );
+  const boss = pick<HTMLButtonElement>('.hud-boss');
+  boss.addEventListener('click', handlers.onOpenBoss);
+  cropGlyph(BOSS_MENU_GLYPH, (pixels, width) => keyOutFaint(pixels, width, BOSS_GLYPH_MIN_ALPHA)).then(
+    (src) => boss.replaceChildren(loadedImage(src)),
+    () => {},
+  );
+  const practice = pick('.hud-practice');
+  const practiceText = pick('.hud-practice-text');
   const shop = pick('.hud-shop');
   shop.addEventListener('click', handlers.onOpenCashShop);
   // 원작 캐시샵의 캐시 동전 그림(13×13)을 받으면 글자 아이콘과 바꾼다
@@ -181,5 +210,11 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     openJobChoice: openChoice,
     congratulate: (jobLine, tier) => openAdvancementCongratulation(dialog, jobLine, tier),
     closeDialogs: dialog.clear,
+    setPractice(bossName) {
+      practice.hidden = bossName === null;
+      if (bossName === null) return;
+      applyArt(pick('.hud-practice-banner'), { banner: PRACTICE_BANNER_URL });
+      practiceText.textContent = `${bossName} 연습전 · 경험치·메소·처치 기록 없음`;
+    },
   };
 }

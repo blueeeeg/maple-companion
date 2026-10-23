@@ -12,7 +12,9 @@ import {
   bossMeso,
   bossXp,
   pickBoss,
+  reservedBoss,
   resolveHunts,
+  scheduledBoss,
 } from './bosses';
 import { KILL_XP, mesoDrop } from './encounters';
 import { TOWNS } from './towns';
@@ -105,5 +107,31 @@ describe('보스 보상', () => {
   it('싸우는 횟수는 정해 둔 범위 안', () => {
     expect(bossHits(fixed(0))).toBe(BOSS_HITS_MIN);
     expect(bossHits(fixed(0.999))).toBe(BOSS_HITS_MAX);
+  });
+});
+
+describe('지정한 보스', () => {
+  const pinkBean = BOSSES.find((boss) => boss.name === '핑크빈')!;
+
+  it('보스 차례에 무작위 대신 지정한 보스가 나온다', () => {
+    expect(scheduledBoss(200, pinkBean.id, fixed(0))).toBe(pinkBean);
+    expect(scheduledBoss(200, null, fixed(0))).toBe(BOSSES[0]);
+  });
+
+  it('레벨이 모자라거나 없는 보스면 무작위로 돌아간다', () => {
+    expect(reservedBoss(100, pinkBean.id)).toBeNull();
+    expect(reservedBoss(200, 1234)).toBeNull();
+    expect(scheduledBoss(100, pinkBean.id, fixed(0))).toBe(BOSSES[0]);
+  });
+
+  it('밀린 사냥을 몰아 치를 때 지정한 보스는 첫 보스 차례에 한 번만 나오고 보상은 같다', () => {
+    const plain = resolveHunts(progress(18, 30), DEFAULT_PACE, 200, henesys, 30, fixed(0));
+    const reserved = resolveHunts(progress(18, 30), DEFAULT_PACE, 200, henesys, 30, fixed(0), pinkBean.id);
+    expect(reserved.reservationUsed).toBe(true);
+    expect(reserved.bosses).toEqual({ 핑크빈: 1, 마노: 1 });
+    expect(plain.bosses).toEqual({ 마노: 2 });
+    expect(plain.reservationUsed).toBe(false);
+    expect(reserved.xp).toBe(plain.xp);
+    expect(reserved.meso).toBe(plain.meso);
   });
 });

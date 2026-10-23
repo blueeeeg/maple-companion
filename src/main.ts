@@ -23,8 +23,10 @@ import {
   bossXp,
   pickBoss,
   resolveHunts,
+  scheduledBoss,
   settleHunt,
 } from './game/bosses';
+import { bossTurn, settleBossFight } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
@@ -57,6 +59,7 @@ import { createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
 import { startUpdateChecks } from './platform/updater';
 import { createScene } from './scene/scene';
+import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui/bossWindow';
 import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
@@ -86,7 +89,7 @@ const roster = gameData.roster;
 writeRoster(roster);
 let settings = gameData.settings;
 
-let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' = selectedCharacter(roster) ? 'map' : 'select';
+let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' | 'boss' = selectedCharacter(roster) ? 'map' : 'select';
 let town: Town | null = null;
 let townLoading = false;
 let townChangedAt = Date.now();
@@ -104,6 +107,8 @@ let availableUpdate: string | null = null;
 let panelVisible = true;
 /** 보스나 보스 맵을 못 받아 온 사냥 번호. 그 차례는 보통 몬스터로 치르고, 모인 보스 몫은 남아 다음 사냥에 다시 보스를 부른다 */
 let bossSkippedAt = -1;
+/** 지금 싸우는 보스가 어떤 싸움인지. 보스 맵에 들어가 마을로 돌아올 때까지 남는다 */
+let bossFight: BossFight['kind'] | null = null;
 let lastCastAt = -Infinity;
 /** 스킬창 아이콘을 미리 받아 둔 직업·차수 */
 let prefetchedSkillBook = '';
@@ -139,6 +144,7 @@ const hud = createHud(root, {
   onOpenSettings: openSettings,
   onOpenStat: openStat,
   onOpenSkill: openSkill,
+  onOpenBoss: openBoss,
 });
 
 const characterSelect = createCharacterSelect(root, {
@@ -209,6 +215,7 @@ const settingsScreen = createSettingsScreen(root, {
 
 const statWindow = createStatWindow(root, { onClose: closeInfoWindow });
 const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
+const bossWindow = createBossWindow(root, { onReserve: reserveBoss, onChallenge: challengeBoss, onClose: closeInfoWindow });
 
 const scene = await createScene(stage, {
   onKill: handleKill,
@@ -317,14 +324,15 @@ function skillState(character: Character): SkillWindowState {
   return { jobLine: character.jobLine, tier: job.tier, huntSkillId: character.huntSkillId };
 }
 
-/** 캐시샵처럼 맵·BGM 을 멈추고 창 안에 캐릭터 정보창·스킬창을 띄운다. HUD 의 스탯·스킬 버튼이 연다 */
-function openInfoWindow(kind: 'stat' | 'skill'): void {
+/** 캐시샵처럼 맵·BGM 을 멈추고 창 안에 캐릭터 정보창·스킬창·보스 도전 창을 띄운다. HUD 의 스탯·스킬·보스 버튼이 연다 */
+function openInfoWindow(kind: 'stat' | 'skill' | 'boss'): void {
   const character = selectedCharacter(roster);
   if (!character || screen !== 'map') return;
   screen = kind;
   syncRunning();
   if (kind === 'stat') statWindow.show(statState(character));
-  else skillWindow.show(skillState(character));
+  else if (kind === 'skill') skillWindow.show(skillState(character));
+  else bossWindow.show(bossState(character));
 }
 
 function openStat(): void {
@@ -335,10 +343,65 @@ function openSkill(): void {
   openInfoWindow('skill');
 }
 
+function openBoss(): void {
+  openInfoWindow('boss');
+}
+
+/** 보스와 싸울 수 없는 까닭. 창이 떠 있는 동안 맵이 멈춰 있어 싸우던 몬스터는 창을 닫아야 끝난다 */
+function challengeBlocked(): string | null {
+  if (bossFight !== null) return '보스와 싸우는 중이에요';
+  if (scene.inEncounter) return '몬스터와 싸우는 중이에요. 창을 닫고 잡은 뒤에 도전할 수 있어요';
+  if (townLoading) return '맵을 옮기는 중이에요. 잠시 뒤 다시 도전해 주세요';
+  if (!town) return '맵을 불러오는 중이에요';
+  return null;
+}
+
+function bossState(character: Character): BossWindowState {
+  return {
+    level: levelInfo(characterXp(character)).level,
+    monsterBook: character.monsterBook,
+    reservedBossId: character.reservedBossId,
+    turn: bossTurn(character, huntPace(settings)),
+    blocked: challengeBlocked(),
+  };
+}
+
+/** 다음 보스 차례에 나올 보스를 정한다. 보상은 어느 보스든 같다 */
+function reserveBoss(bossId: number | null): void {
+  const character = selectedCharacter(roster);
+  if (!character) return;
+  const boss = BOSSES.find((each) => each.id === bossId);
+  if (boss && boss.minLevel > levelInfo(characterXp(character)).level) return;
+  character.reservedBossId = boss ? boss.id : null;
+  writeRoster(roster);
+  bossWindow.update(bossState(character));
+}
+
+/**
+ * 보스 도전 창의 「지금 도전」. 보스 차례가 와 있으면 그 차례를 써서 보통 보스처럼 싸우고, 아니면 보상 없는 연습전이다.
+ * 연습전은 보스 몫·사냥 시계를 건드리지 않는다
+ */
+function challengeBoss(bossId: number, practice: boolean): string | null {
+  const character = selectedCharacter(roster);
+  const boss = BOSSES.find((each) => each.id === bossId);
+  if (!character || !boss) return '보스를 찾지 못했어요';
+  if (boss.minLevel > levelInfo(characterXp(character)).level) return `Lv.${boss.minLevel}부터 도전할 수 있어요`;
+  const blocked = challengeBlocked();
+  if (blocked) return blocked;
+  const ready = bossTurn(character, huntPace(settings)).kind === 'ready';
+  // 창을 연 사이 차례가 바뀌었으면 연습전을 진짜 싸움으로 바꾸지 않고 창에서 다시 고르게 한다
+  if (!practice && !ready) return '보스 차례가 아니에요. 연습전으로 도전할 수 있어요';
+  fightBoss(boss, { kind: practice ? 'practice' : 'challenge' });
+  closeInfoWindow();
+  if (practice) hud.notify(`연습전 · ${boss.name} · 경험치·메소·처치 기록이 없어요`);
+  return null;
+}
+
 function closeInfoWindow(): void {
   screen = 'map';
   statWindow.hide();
   skillWindow.hide();
+  bossWindow.hide();
   syncRunning();
   void tick();
 }
@@ -405,41 +468,61 @@ function handleKill(monster: MonsterSpec): number {
   return meso;
 }
 
-/** counted: 사냥 차례로 센 보스인지. 개발용으로 불러낸 보스는 사냥 횟수에 안 센다 */
-function handleBossKill(boss: BossSpec, counted: boolean): number {
+/**
+ * turn: 사냥 차례로 나온 보스, challenge: 보스 도전 창에서 보스 차례를 써서 부른 보스(둘 다 보통 보스로 정산),
+ * practice: 보상 없는 연습전, dev: 개발용으로 불러낸 보스(사냥 진행을 건드리지 않고 보스 한 번 몫만 준다)
+ */
+type BossFight = { kind: 'turn'; encounterNumber: number } | { kind: 'challenge' | 'practice' | 'dev' };
+
+function handleBossKill(boss: BossSpec, fight: BossFight): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
   const pace = currentPace();
-  // 개발용으로 불러낸 보스는 사냥 진행을 건드리지 않고 보스 한 번 몫만 준다
-  const { xp, meso } = counted
-    ? settleHunt(character, pace, town, true)
-    : { xp: bossXp(pace), meso: bossMeso(town, Math.random, pace) };
-  character.killXp += xp;
-  character.meso += meso;
-  character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
+  if (fight.kind === 'practice') {
+    settleBossFight(character, pace, town, boss, true);
+    hud.notify(`연습전 끝 · ${boss.name} · 경험치·메소·처치 기록 없음`);
+    return 0;
+  }
+  let xp: number;
+  let meso: number;
+  if (fight.kind === 'dev') {
+    xp = bossXp(pace);
+    meso = bossMeso(town, Math.random, pace);
+    character.killXp += xp;
+    character.meso += meso;
+    character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
+  } else ({ xp, meso } = settleBossFight(character, pace, town, boss, false));
   writeRoster(roster);
   hud.notify(`보스 ${boss.name} 처치 · EXP +${Math.round(xp).toLocaleString()} · 메소 +${meso.toLocaleString()}`);
   void tick();
   return meso;
 }
 
-/** encounterNumber: 이 보스가 맡은 사냥 번호. 개발용으로 불러낸 보스는 null */
-function fightBoss(boss: BossSpec, encounterNumber: number | null): void {
+function fightBoss(boss: BossSpec, fight: BossFight): void {
+  const practice = fight.kind === 'practice';
+  bossFight = fight.kind;
+  if (practice) hud.setPractice(boss.name);
+  const done = () => {
+    bossFight = null;
+    hud.setPractice(null);
+  };
   scene
     .startBossFight(boss, bossHits(), {
       // 숨겨진 동안 치른 보스는 장면 없이 정산되니 보스 곡으로 바꾸지 않는다
       onArrive: () => {
         if (isShown()) bgm.setMap(boss.mapId);
       },
-      onDefeat: () => handleBossKill(boss, encounterNumber !== null),
+      onDefeat: () => handleBossKill(boss, fight),
       onReturn: () => {
         // 사냥터에서 부른 보스는 그 사냥터로 돌아온다
         if (field) bgm.setMap(field.mapId);
         else if (town) bgm.setTown(town);
       },
     })
-    .catch(() => {
-      if (encounterNumber !== null) bossSkippedAt = encounterNumber;
+    .then(done, () => {
+      done();
+      // 도전 창에서 고른 보스를 못 불렀으면 보스 차례는 그대로 두고 다음 차례에 다시 나온다
+      if (fight.kind === 'turn') bossSkippedAt = fight.encounterNumber;
       hud.notify(`보스 ${boss.name} 맵을 불러오지 못했어요`);
     });
 }
@@ -448,7 +531,7 @@ function syncRunning(): void {
   const running = isShown() && screen === 'map';
   scene.setRunning(running);
   // 정보창·스킬창도 캐시샵처럼 맵을 멈추는 창이라 BGM 도 캐시샵과 같이 다룬다
-  const bgmScreen = screen === 'stat' || screen === 'skill' ? 'shop' : screen;
+  const bgmScreen = screen === 'stat' || screen === 'skill' || screen === 'boss' ? 'shop' : screen;
   bgm.setEnabled(shouldPlayBgm({ muted: roster.muted, volume: settings.bgmVolume, screen: bgmScreen, windowVisible: isShown() }));
 }
 
@@ -530,7 +613,8 @@ function handleLevelUp(character: Character, from: number, to: number): void {
 function settleMissedHunts(character: Character, count: number, level: number, pace: HuntPace): void {
   if (!town || count <= 0) return;
   // 밀린 차례 중 보스 차례는 보스로 정산한다. 레벨에 맞는 보스가 없으면 보통 몬스터로 친다
-  const result = resolveHunts(character, pace, level, town, count);
+  const result = resolveHunts(character, pace, level, town, count, Math.random, character.reservedBossId);
+  if (result.reservationUsed) character.reservedBossId = null;
   character.killXp += result.xp;
   character.meso += result.meso;
   Object.entries(result.kills).forEach(([name, kills]) => {
@@ -586,6 +670,7 @@ async function tick(): Promise<void> {
   // 열어 둔 정보창은 함께한 시간·경험치가 늘어나는 대로 고친다
   if (screen === 'stat') statWindow.update(statState(character));
   if (screen === 'skill') skillWindow.update(skillState(character));
+  if (screen === 'boss') bossWindow.update(bossState(character));
   if (screen !== 'map') return;
 
   if (lastLevel?.characterId === character.id && info.level > lastLevel.level) {
@@ -634,7 +719,7 @@ async function tick(): Promise<void> {
   if (forcedBoss && !scene.inEncounter && !townLoading) {
     const wanted = forcedBoss;
     forcedBoss = null;
-    fightBoss(BOSSES.find((boss) => String(boss.id) === wanted) ?? pickBoss(info.level) ?? BOSSES[0], null);
+    fightBoss(BOSSES.find((boss) => String(boss.id) === wanted) ?? pickBoss(info.level) ?? BOSSES[0], { kind: 'dev' });
     return;
   }
 
@@ -645,8 +730,8 @@ async function tick(): Promise<void> {
   if (waiting > 1) settleMissedHunts(character, waiting - 1, info.level, pace);
   if (waiting >= 1 && !scene.inEncounter && !townLoading) {
     const next = character.encountersResolved + 1;
-    const boss = bossDue(character, pace) && next !== bossSkippedAt ? pickBoss(info.level) : null;
-    if (boss) fightBoss(boss, next);
+    const boss = bossDue(character, pace) && next !== bossSkippedAt ? scheduledBoss(info.level, character.reservedBossId) : null;
+    if (boss) fightBoss(boss, { kind: 'turn', encounterNumber: next });
     else {
       // 사냥터에서는 그 맵의 실제 몬스터가 나온다. 보상은 마을 기준 그대로다
       const monster = pickMonster(field ? { ...town, monsters: field.monsters } : town);
@@ -704,3 +789,5 @@ if (screen === 'select') openCharacterSelect();
 syncRunning();
 await tick();
 window.setInterval(() => void tick(), TICK_MS);
+// 보스 도전 창의 아이콘 열네 개를 창을 열기 전에 뒤에서 받아 둔다
+prefetchBossWindow();
