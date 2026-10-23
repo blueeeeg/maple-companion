@@ -1,4 +1,4 @@
-import { BOSSES, BOSS_CANDIDATE_POOL } from '../game/bosses';
+import { BOSSES } from '../game/bosses';
 import { RECENT_TOWN_POOL, type Town, unlockedTowns } from '../game/towns';
 import { mapBgmUrl } from '../maple/api';
 import { type BgmCache, createBgmCache } from '../platform/bgmCache';
@@ -24,13 +24,13 @@ export const BGM_PREFETCH_GAP_MS = 3 * 1000;
 /** 미리 받기에 실패한 곡은 이만큼 지나서 다시 받는다. 그동안 다른 곡을 받는다 */
 export const BGM_PREFETCH_RETRY_MS = 5 * 60 * 1000;
 
-/** 이 레벨에서 곧 들어갈 만한 맵. 마을을 돌 때 고르는 최근 마을, 보스 후보, 고정할 수 있는 나머지 마을 순서다 */
+/** 이 레벨에서 곧 들어갈 만한 맵. 마을을 돌 때 고르는 최근 마을, 잡을 수 있는 보스(센 것부터), 고정할 수 있는 나머지 마을 순서다 */
 export function likelyBgmMaps(level: number): number[] {
   const towns = unlockedTowns(level).reverse();
   const bosses = BOSSES.filter((boss) => boss.minLevel <= level).sort((a, b) => b.minLevel - a.minLevel);
   const ordered = [
     ...towns.slice(0, RECENT_TOWN_POOL),
-    ...bosses.slice(0, BOSS_CANDIDATE_POOL),
+    ...bosses,
     ...towns.slice(RECENT_TOWN_POOL),
   ];
   return [...new Set(ordered.map((map) => map.mapId))];

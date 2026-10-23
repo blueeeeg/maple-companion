@@ -15,8 +15,6 @@ export interface BossSpec {
 
 /** 기본값은 사냥 20번째마다(활동 약 1시간) 보스가 나온다. 설정에서 바꾼다 */
 export const BOSS_EVERY_ENCOUNTERS = 20;
-/** 레벨에 맞는 보스 중 가장 높은 몇 마리 안에서 고른다 */
-export const BOSS_CANDIDATE_POOL = 2;
 /** 기본 보스 간격일 때 보통 몬스터 한 마리 경험치의 몇 배를 주는지 */
 export const BOSS_XP_MULTIPLIER = 20;
 /** 기본 보스 간격일 때 보통 몬스터 한 마리 메소(mesoDrop)의 몇 배를 떨어뜨리는지 */
@@ -54,11 +52,9 @@ export interface HuntPace {
 
 export const DEFAULT_PACE: HuntPace = { encounterSeconds: ENCOUNTER_EVERY_ACTIVE_SECONDS, bossEvery: BOSS_EVERY_ENCOUNTERS };
 
-/** 레벨에 맞는 보스 중 가장 높은 BOSS_CANDIDATE_POOL 마리 안에서 고른다. 맞는 보스가 없으면 null */
+/** 레벨에 맞는 보스 전부에서 고른다. 여러 보스를 보는 재미를 위해 센 보스만으로 좁히지 않는다. 맞는 보스가 없으면 null */
 export function pickBoss(level: number, random = Math.random): BossSpec | null {
-  const pool = BOSSES.filter((boss) => boss.minLevel <= level)
-    .sort((a, b) => a.minLevel - b.minLevel)
-    .slice(-BOSS_CANDIDATE_POOL);
+  const pool = BOSSES.filter((boss) => boss.minLevel <= level);
   if (pool.length === 0) return null;
   return pool[Math.floor(random() * pool.length)];
 }

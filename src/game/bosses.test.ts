@@ -44,7 +44,7 @@ describe('보스 차례', () => {
   it('밀린 사냥 중 보스 차례는 보스로 친다', () => {
     // 지금까지 18번 잡았고 5번 밀렸으면 19~23번 중 20번 하나가 보스다
     const result = resolveHunts(progress(18, 5), DEFAULT_PACE, 30, henesys, 5, fixed(0));
-    expect(result.bosses).toEqual({ 머쉬맘: 1 });
+    expect(result.bosses).toEqual({ 마노: 1 });
     expect(Object.values(result.kills).reduce((sum, count) => sum + count, 0)).toBe(5);
     expect(result.xp).toBe(KILL_XP * 4 + BOSS_XP);
   });
@@ -68,9 +68,9 @@ describe('보스 고르기', () => {
     expect(pickBoss(12, fixed(0.99))?.name).toBe('마노');
   });
 
-  it('레벨에 맞는 가장 높은 두 보스 안에서 고른다', () => {
-    const picked = new Set([0, 0.49, 0.5, 0.99].map((value) => pickBoss(30, fixed(value))?.name));
-    expect(picked).toEqual(new Set(['머쉬맘', '스텀피']));
+  it('레벨에 맞는 보스 전부에서 고른다', () => {
+    const picked = new Set([0, 0.4, 0.99].map((value) => pickBoss(30, fixed(value))?.name));
+    expect(picked).toEqual(new Set(['마노', '머쉬맘', '스텀피']));
   });
 
   it('레벨보다 높은 보스는 안 나온다', () => {

@@ -401,7 +401,7 @@ describe('BGM', () => {
 });
 
 describe('likelyBgmMaps', () => {
-  it('최근에 열린 마을 네 곳, 고를 수 있는 보스 두 곳, 나머지 열린 마을 순서다', () => {
+  it('최근에 열린 마을 네 곳, 잡을 수 있는 보스 전부, 나머지 열린 마을 순서다', () => {
     const level = 70;
     const towns = TOWNS.filter((town) => town.minLevel <= level).map((town) => town.mapId);
     const bosses = BOSSES.filter((boss) => boss.minLevel <= level)
@@ -409,8 +409,8 @@ describe('likelyBgmMaps', () => {
       .map((boss) => boss.mapId);
     const maps = likelyBgmMaps(level);
     expect(maps.slice(0, 4)).toEqual(towns.slice(-4).reverse());
-    expect(maps.slice(4, 6)).toEqual(bosses.slice(0, 2));
-    expect(new Set(maps)).toEqual(new Set([...towns, ...bosses.slice(0, 2)]));
+    expect(maps.slice(4, 4 + bosses.length)).toEqual(bosses);
+    expect(new Set(maps)).toEqual(new Set([...towns, ...bosses]));
   });
 
   it('아직 열리지 않은 마을과 보스는 넣지 않는다', () => {
