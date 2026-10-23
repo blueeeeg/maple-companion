@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, Texture, Ticker } from 'pixi.js';
 import type { BossSpec } from '../game/bosses';
 import type { JobView } from '../game/jobs';
 import type { RoutePortal } from '../game/routes';
@@ -52,13 +52,12 @@ import {
 } from '../maple/navigation';
 import type { Point } from '../maple/ground';
 import { createBossGauge } from './bossGauge';
+import { FULL_FPS, IDLE_FPS, targetFps } from './framePolicy';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
 import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
 import { viewportFor } from './viewport';
 
-// 스킬 이펙트 프레임 딜레이가 60ms 라서 15fps 로는 프레임이 빠진다
-const FPS = 30;
 const VIEW_SCALE = 0.65;
 /** 캐릭터 발이 화면 아래에서 이만큼 올라온 곳에 오게 카메라를 둔다 */
 const FEET_SCREEN_Y_FROM_BOTTOM = 38;
@@ -261,6 +260,8 @@ type Behavior =
 interface Effect {
   node: Container;
   update(dtMs: number): boolean;
+  /** 포털처럼 늘 도는 것이면 그 가장 짧은 프레임 딜레이. 이것만 남으면 fps 를 낮출 수 있다 */
+  loopDelayMs?: number;
 }
 
 function readCalibration(mapId: number): Calibration | null {
@@ -408,7 +409,11 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     // 캐릭터·몹이 맵 픽셀 사이 위치에 서도 꼭짓점을 기기 픽셀에 붙여서 도트 칸 폭이 흔들리지 않게 한다
     roundPixels: true,
   });
-  app.ticker.maxFPS = FPS;
+  app.ticker.maxFPS = FULL_FPS;
+  const fullMinFps = app.ticker.minFPS;
+  // 마우스 아래로 몹이 지나갈 때 hover 를 다시 재는 Pixi 시스템 티커가 따로 rAF 를 돌린다. 장면 티커가 프레임마다 대신 돌린다
+  Ticker.system.autoStart = false;
+  Ticker.system.stop();
   host.appendChild(app.canvas);
 
   const sky = new Graphics();
@@ -476,6 +481,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let viewWidth = width / worldScale;
   let cameraX = 0;
   let cameraY = 0;
+  /** 이징이 끝나 맵이 더 움직이지 않는다 */
+  let cameraSettled = true;
 
   world.scale.set(worldScale);
   // 맵과 같이 줄이면 글자 텍스처가 0.65 배로 다시 샘플링돼 흐려진다. 화면 픽셀 그대로 그리고 위치만 맵을 따라간다
@@ -516,9 +523,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
   loadBasicEff();
 
-  function addEffect(node: Container, layer: Container, update: (dtMs: number) => boolean): void {
+  function addEffect(node: Container, layer: Container, update: (dtMs: number) => boolean, loopDelayMs?: number): void {
     layer.addChild(node);
-    effects.push({ node, update });
+    effects.push({ node, update, loopDelayMs });
   }
 
   /** 떠오르며 사라진다 */
@@ -981,6 +988,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     // 이징 중간값을 그대로 쓰면 맵이 기기 픽셀 사이에 걸려 도트가 칸마다 다르게 찍힌다. 이징은 실수로 이어 가고 그릴 위치만 맞춘다
     const resolution = app.renderer.resolution;
     world.position.set(Math.round(cameraX * resolution) / resolution, Math.round(cameraY * resolution) / resolution);
+    // 남은 이징이 기기 픽셀 하나 안쪽이면 10fps 로 마저 따라가도 끊겨 보이지 않는다
+    cameraSettled = Math.abs(-scroll.x - cameraX) * resolution < 1 && Math.abs(-scroll.y - cameraY) * resolution < 1;
     placeNameTag();
   }
 
@@ -1139,7 +1148,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       return !closed;
     };
     update(0);
-    addEffect(node, portalLayer, update);
+    addEffect(node, portalLayer, update, Math.min(...delays));
     return { close: () => (closed = true) };
   }
 
@@ -1297,12 +1306,78 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   // Pixi 티커는 콜백이 던지면 다음 프레임을 요청하지 않아서 창을 숨겼다 다시 열 때까지 화면이 멈춘다. 그 프레임만 버리고 이어 간다
   app.ticker.add((ticker) => {
+    Ticker.system.update(performance.now());
     try {
       step(Math.min(ticker.deltaMS, 250));
     } catch (error) {
       console.error('[scene] 프레임 갱신 실패', error);
     }
+    pace();
   });
+
+  /** 서 있는 동안 rAF 대신 깨우는 타이머 */
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  function stopIdleTimer(): void {
+    if (idleTimer !== null) clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  function fullRate(): void {
+    app.ticker.maxFPS = FULL_FPS;
+    app.ticker.minFPS = fullMinFps;
+  }
+
+  /** 서 있는 동안 바로 그려야 할 일이 생기면 다음 타이머까지 기다리지 않고 rAF 로 돌린다. 그 사이 100ms 안쪽은 흘려보낸다 */
+  function wake(): void {
+    if (!running || app.ticker.started) return;
+    stopIdleTimer();
+    fullRate();
+    app.ticker.start();
+  }
+
+  function stillForMs(): number {
+    if (navMotion || castPose || heroAction !== 'stand') return 0;
+    if (parkedAtPortal) return Infinity;
+    return behavior.kind === 'wander' ? Math.max(0, behavior.pauseMs) : 0;
+  }
+
+  /** 서 있을 때는 rAF 를 멈추고 타이머로 IDLE_FPS 만큼만 그린다. rAF 를 걸어 두기만 해도 WebView 가 매 화면 갱신마다 깨어난다 */
+  function pace(): void {
+    const loops = effects.flatMap((effect) => (effect.loopDelayMs === undefined ? [] : [effect.loopDelayMs]));
+    const fps = targetFps({
+      running,
+      stillForMs: stillForMs(),
+      fighting: encounter !== null,
+      fading: fade.alpha !== fadeTarget,
+      cameraSettled,
+      transientEffects: effects.length - loops.length,
+      shortestLoopDelayMs: Math.min(...loops, ...(heroAnimations?.stand.delays ?? [])),
+    });
+    if (fps !== IDLE_FPS) {
+      if (fps === FULL_FPS && !app.ticker.started) {
+        fullRate();
+        app.ticker.start();
+      }
+      return;
+    }
+    app.ticker.stop();
+    // 간격은 타이머가 정한다. maxFPS 가 남아 있으면 일찍 깬 프레임을 Pixi 가 건너뛰어 다음 타이머를 못 건다.
+    // 타이머가 조금 늦게 깨도 Pixi 가 deltaMS 를 100ms 에서 잘라 시간이 덜 가지 않게 한다
+    app.ticker.maxFPS = 0;
+    app.ticker.minFPS = IDLE_FPS / 2;
+    if (idleTimer !== null) return;
+    const frameMs = 1000 / IDLE_FPS;
+    // 늦게 깬 만큼 다음 깨는 시각이 밀리지 않게 같은 간격의 격자에 맞춘다
+    let delay = frameMs - (performance.now() % frameMs);
+    if (delay < frameMs / 2) delay += frameMs;
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (!running) return;
+      app.ticker.update(performance.now());
+      // 이번 프레임을 Pixi 가 건너뛰었어도 화면이 멈춘 채로 남지 않게 한다
+      if (idleTimer === null && !app.ticker.started) pace();
+    }, delay);
+  }
 
   function step(dtMs: number): void {
     updateHero(dtMs);
@@ -1522,6 +1597,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     },
     setRunning(next) {
       running = next;
+      stopIdleTimer();
+      fullRate();
       if (next) app.ticker.start();
       else {
         app.ticker.stop();
@@ -1543,6 +1620,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (skyColors) paintSky(skyColors);
       bossGauge.resize(width);
       updateCamera(1);
+      // 캔버스 크기를 바꾸면 그림이 지워져서 서 있는 동안에도 다음 타이머까지 기다리지 않고 바로 그린다
+      wake();
     },
     setName(name) {
       const label = nameTagLabel(name);
@@ -1580,6 +1659,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     },
     castSkill(skillId) {
       if (!ground) return Promise.resolve<CastResult>('notReady');
+      wake();
       const motion = readyMotions.get(motionKey(knownActions.get(skillId) ?? [])) ?? readyMotions.get(motionKey([])) ?? null;
       if (motion && heroAnimations) castPose = { animation: motion, clockMs: 0 };
       // 쓰는 동안 걸어가 버리면 이펙트만 제자리에 남는다

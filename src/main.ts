@@ -71,6 +71,8 @@ import { type SkillCheck, type SkillWindowState, createSkillWindow, prefetchSkil
 import { type StatWindowState, createStatWindow } from './ui/statWindow';
 
 const TICK_MS = 2000;
+/** 창을 숨겨 둔 동안의 틱 간격. 사냥 정산은 다시 보일 때 하니 알림·트레이 글자만 조금 늦게 바뀐다 */
+const HIDDEN_TICK_MS = 10 * 1000;
 /** 스킬창에서 스킬을 쓴 뒤 다음 스킬을 쓰기까지 쉬는 시간 */
 const CAST_COOLDOWN_MS = 3000;
 /** 고정한 마을 맵을 못 받아 왔을 때 다시 받기까지 쉬는 시간 */
@@ -595,9 +597,20 @@ function fightBoss(boss: BossSpec, fight: BossFight): void {
     });
 }
 
+let tickTimer = 0;
+let tickShown: boolean | null = null;
+function scheduleTick(): void {
+  window.clearTimeout(tickTimer);
+  tickShown = isShown();
+  tickTimer = window.setTimeout(() => void tick().finally(scheduleTick), tickShown ? TICK_MS : HIDDEN_TICK_MS);
+}
+
 function syncRunning(): void {
   const running = isShown() && screen === 'map';
   scene.setRunning(running);
+  // 숨긴 창에서 HUD 의 무한 CSS 애니메이션이 합성기를 깨우지 않게 멈춘다
+  document.documentElement.toggleAttribute('data-hidden', !isShown());
+  if (tickShown !== null && tickShown !== isShown()) scheduleTick();
   // 정보창·스킬창도 캐시샵처럼 맵을 멈추는 창이라 BGM 도 캐시샵과 같이 다룬다
   const bgmScreen = screen === 'stat' || screen === 'skill' || screen === 'boss' ? 'shop' : screen;
   bgm.setEnabled(shouldPlayBgm({ muted: roster.muted, volume: settings.bgmVolume, screen: bgmScreen, windowVisible: isShown() }));
@@ -887,7 +900,7 @@ applySettings(settings);
 if (screen === 'select') openCharacterSelect();
 syncRunning();
 await tick();
-window.setInterval(() => void tick(), TICK_MS);
+scheduleTick();
 // 보스 도전 창의 아이콘 열네 개를 창을 열기 전에 뒤에서 받아 둔다
 prefetchBossWindow();
 prefetchMusicWindow();

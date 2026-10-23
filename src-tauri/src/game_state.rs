@@ -15,6 +15,8 @@ const VERSION: u32 = 1;
 /// 사냥·틱마다 저장이 몰려와서 잠깐 모았다가 한 번에 쓴다. 앱을 끌 때는 기다리지 않고 바로 쓴다
 const WRITE_DELAY: Duration = Duration::from_millis(300);
 const RETRY_DELAY: Duration = Duration::from_secs(2);
+/// 틱(2초)마다 저장이 와서 매번 쓰면 fsync 가 하루 종일 디스크를 깨운다. 한 번 쓴 뒤 이만큼은 모은다
+const WRITE_GAP: Duration = Duration::from_secs(10);
 
 fn current_version() -> u32 {
     VERSION
@@ -220,6 +222,8 @@ pub fn spawn_writer(store: Arc<GameStateStore>) {
             if let Err(error) = store.flush() {
                 eprintln!("[game-state] 저장 실패: {error}");
                 thread::sleep(RETRY_DELAY);
+            } else {
+                thread::sleep(WRITE_GAP);
             }
         }
     });
