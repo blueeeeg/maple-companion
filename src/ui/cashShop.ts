@@ -20,6 +20,7 @@ import { MESO_HUD_ICON_URL, cashShopUiUrl, characterAnimationUrl, itemIconUrl } 
 import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 import { loadCashItems, loadCashWeaponTypes, warmCashItems } from './cashCatalog';
+import { cashDetail, fitCashGrid, pageContaining } from './cashShopLayout';
 
 export interface CashShopState {
   gender: Gender;
@@ -47,12 +48,31 @@ export interface CashShop {
 
 type Tab = CashSlot | 'owned';
 
-const PAGE_SIZE = 6;
 /**
  * 이만큼 안에 연달아 누른 아이템은 마지막 것만 그려 받는다. 서버가 그림 하나에 1~4초씩 걸려서 앞 것까지 받으면 뒤 것이 늦어진다.
  * 한 번만 누른 것은 기다리지 않고 바로 받는다
  */
 const PREVIEW_DEBOUNCE_MS = 120;
+
+/** 한 번 입어 보면 「누르면 입어 봐요」 안내를 다시 띄우지 않는다. 기기마다 한 번이면 되는 안내라 저장 파일에 넣지 않는다 */
+const TRY_ON_HINT_KEY = 'maple-companion:cash-try-on-hint-seen';
+const TRY_ON_HINT = '아이템을 누르면 입어 봐요';
+
+function tryOnHintSeen(): boolean {
+  try {
+    return localStorage.getItem(TRY_ON_HINT_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function rememberTryOnHint(): void {
+  try {
+    localStorage.setItem(TRY_ON_HINT_KEY, '1');
+  } catch {
+    // 저장소가 막혔으면 이번 실행 동안만 숨긴다
+  }
+}
 
 const buttonArt = (node: string) => ({
   normal: cashShopUiUrl(`${node}/normal/0`),
@@ -63,6 +83,8 @@ const buttonArt = (node: string) => ({
 
 /** 미리보기는 원작 캐시샵 미리보기 배경(366×238)을 원본 크기로 잘라 깐다. 발이 풀밭 윗면에 오게 맞춘 자리다 */
 const PREVIEW_STAGE = cashShopUiUrl('Base/Preview/0');
+/** 아이템 칸은 원작 캐시 인벤토리 판(380×213)에 그려진 46×46 칸 하나를 잘라 쓴다 */
+const ITEM_CELL = cashShopUiUrl('CSInventory/backgrnd');
 
 const won = (meso: number) => meso.toLocaleString();
 
@@ -71,22 +93,34 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     'beforeend',
     `
     <section class="shop" data-tauri-drag-region hidden>
-      <button class="shop-exit art-button" type="button">나가기</button>
-      <nav class="shop-tabs" data-tauri-drag-region></nav>
-      <div class="shop-meso" data-tauri-drag-region><span class="shop-meso-icon"></span><span class="shop-meso-amount"></span></div>
-      <div class="shop-preview" data-tauri-drag-region><img alt="" crossorigin="anonymous" hidden /></div>
-      <p class="shop-pick" aria-live="polite"></p>
-      <button class="shop-buy art-button" type="button">구입하기</button>
-      <button class="shop-wear" type="button" hidden></button>
-      <button class="shop-reset art-button" type="button">원래대로</button>
-      <label class="shop-search"><input type="text" placeholder="이름으로 찾기" autocomplete="off" spellcheck="false" /></label>
-      <span class="shop-count" data-tauri-drag-region></span>
-      <div class="shop-grid"></div>
+      <div class="shop-bar" data-tauri-drag-region>
+        <button class="shop-exit art-button" type="button">나가기</button>
+        <div class="shop-meso" data-tauri-drag-region title="가진 메소"><span class="shop-meso-icon"></span><span class="shop-meso-amount"></span></div>
+      </div>
+      <div class="shop-tools" data-tauri-drag-region>
+        <button class="shop-picker" type="button" aria-haspopup="menu" aria-expanded="false" title="부위 고르기">
+          <span class="shop-picker-label"></span><span class="shop-picker-arrow" aria-hidden="true"></span>
+        </button>
+        <button class="shop-owned" type="button" aria-pressed="false">보유</button>
+        <label class="shop-search"><input type="text" placeholder="이름으로 찾기" aria-label="이름으로 찾기" autocomplete="off" spellcheck="false" /></label>
+      </div>
+      <div class="shop-categories" role="menu" aria-label="부위" hidden></div>
+      <div class="shop-side" data-tauri-drag-region>
+        <div class="shop-preview" data-tauri-drag-region><img alt="" crossorigin="anonymous" hidden /></div>
+        <p class="shop-detail" aria-live="polite"><span class="shop-detail-name"></span><span class="shop-detail-note"></span></p>
+      </div>
+      <div class="shop-grid" aria-label="아이템"></div>
       <div class="shop-status" data-tauri-drag-region hidden><span class="shop-status-art"></span><p></p></div>
+      <div class="shop-actions" data-tauri-drag-region>
+        <button class="shop-buy art-button" type="button">구입하기</button>
+        <button class="shop-wear" type="button" hidden></button>
+        <button class="shop-reset art-button" type="button">원래대로</button>
+      </div>
       <div class="shop-pager" data-tauri-drag-region>
         <button class="shop-page-previous art-button" type="button" aria-label="이전 페이지">◀</button>
         <span class="shop-page-number"></span>
         <button class="shop-page-next art-button" type="button" aria-label="다음 페이지">▶</button>
+        <span class="shop-count" data-tauri-drag-region></span>
       </div>
       <div class="shop-confirm" hidden>
         <div class="shop-confirm-sheet">
@@ -108,12 +142,17 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   const pick = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const screen = pick('.shop');
   const exit = pick<HTMLButtonElement>('.shop-exit');
-  const tabs = pick('.shop-tabs');
+  const picker = pick<HTMLButtonElement>('.shop-picker');
+  const pickerLabel = pick('.shop-picker-label');
+  const ownedButton = pick<HTMLButtonElement>('.shop-owned');
+  const categories = pick('.shop-categories');
   const mesoIcon = pick('.shop-meso-icon');
   const mesoAmount = pick('.shop-meso-amount');
   const preview = pick<HTMLImageElement>('.shop-preview img');
   const stage = pick('.shop-preview');
-  const pickLine = pick('.shop-pick');
+  const detail = pick('.shop-detail');
+  const detailName = pick('.shop-detail-name');
+  const detailNote = pick('.shop-detail-note');
   const buy = pick<HTMLButtonElement>('.shop-buy');
   const wear = pick<HTMLButtonElement>('.shop-wear');
   const reset = pick<HTMLButtonElement>('.shop-reset');
@@ -136,26 +175,37 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
 
   let state: CashShopState | null = null;
   let tab: Tab = CASH_CATEGORIES[0].slot;
+  /** 보유 탭에 있는 동안에도 부위 고르기 버튼에 남겨 둘 마지막 부위 */
+  let lastSlot: CashSlot = CASH_CATEGORIES[0].slot;
   let page = 0;
+  /** 창 크기가 바뀌어 한 페이지 개수가 달라져도 보던 자리를 지키는 아이템 순번. 페이지를 직접 넘기면 그 페이지 첫 아이템으로 바뀐다 */
+  let anchorIndex = 0;
+  /** 칸 영역 크기로 정한 한 페이지 개수. 창이 커지면 늘어난다 */
+  let pageSize = fitCashGrid(214, 181).pageSize;
   let query = '';
   let selectedId: number | null = null;
+  /** 마우스를 올리거나 키보드로 옮겨 간 칸. 설명 줄은 이것을 고른 것보다 먼저 보여 준다 */
+  let hoveredId: number | null = null;
   /** 이번에 상점에 들어와 입어 본 아이템. 입고 있는 것 위에 겹쳐 보이고, 원래대로·나가기로 버린다 */
   let trying: CashEquipped = {};
   let items: CashItem[] = [];
   let loading: 'loading' | 'error' | 'ready' = 'loading';
   let loadToken = 0;
+  let hintSeen = tryOnHintSeen();
+  /** 지금 칸에 깔린 아이템 번호. 같으면 칸을 새로 만들지 않고 표시만 바꿔서 마우스를 올려 둔 칸이 그대로 남는다 */
+  let shownIds = '';
   /** 받은 목록에서 모은 이름. 보유 탭과 확인 창이 쓴다 */
   const names = new Map<number, string>();
   const weaponTypes = new Map<number, string[] | 'loading' | 'error'>();
   /** 다 받아 풀어 둔 아이콘. 다시 그릴 때 이 img 를 옮겨 붙여서 깜빡이지 않는다 */
   const icons = new Map<number, HTMLImageElement>();
   const iconLoads = new Map<number, Promise<HTMLImageElement>>();
-  const tabButtons = new Map<Tab, HTMLButtonElement>();
+  const categoryButtons = new Map<CashSlot, HTMLButtonElement>();
   let previewTimer = 0;
   let previewAskedAt = -Infinity;
   let previewRequest: AbortController | null = null;
 
-  /** 못 받은 아이콘은 잊어서, 그 카드를 다시 그릴 때 다시 받는다 */
+  /** 못 받은 아이콘은 잊어서, 그 칸을 다시 그릴 때 다시 받는다 */
   function loadIcon(itemId: number, priority: number): Promise<HTMLImageElement> {
     let pending = iconLoads.get(itemId);
     if (!pending) {
@@ -181,7 +231,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       return;
     }
     holder.dataset.pending = 'true';
-    // 받는 동안 다시 그렸을 수 있어서 그때 붙어 있는 카드를 찾아 넣는다
+    // 받는 동안 다시 그렸을 수 있어서 그때 붙어 있는 칸을 찾아 넣는다
     const currentHolder = () => grid.querySelector<HTMLElement>(`.shop-card[data-item-id="${itemId}"] .shop-card-icon`);
     loadIcon(itemId, PRIORITY.page).then(
       (image) => {
@@ -203,13 +253,14 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     const slot = cashSlotOf(itemId);
     return slot !== null && state?.equipped[slot] === itemId;
   };
+  const tryingOn = (itemId: number) => Object.values(trying).includes(itemId);
 
   function visibleItems(): CashItem[] {
     const needle = query.trim().toLowerCase();
     return needle ? items.filter((item) => item.name.toLowerCase().includes(needle)) : items;
   }
 
-  const pageCount = () => Math.max(1, Math.ceil(visibleItems().length / PAGE_SIZE));
+  const pageCount = () => Math.max(1, Math.ceil(visibleItems().length / pageSize));
 
   function ownedItems(): CashItem[] {
     return [...(state?.wardrobe ?? [])]
@@ -261,8 +312,10 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   }
 
   function selectTab(next: Tab) {
+    closeCategories();
     if (next === tab && loading !== 'error') return;
     tab = next;
+    if (next !== 'owned') lastSlot = next;
     page = 0;
     loadTab();
   }
@@ -359,12 +412,30 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     }, delay);
   }
 
+  /** 올려 둔 칸이 있으면 그 아이템을, 없으면 고른 아이템을, 둘 다 없으면 처음 한 번만 안내를 보여 준다 */
+  function renderDetail() {
+    const shownId = hoveredId ?? selectedId;
+    if (shownId === null || !state) {
+      detail.dataset.tone = 'hint';
+      detailName.textContent = hintSeen ? '' : TRY_ON_HINT;
+      detailNote.textContent = '';
+      detail.title = '';
+      return;
+    }
+    const info = cashDetail(
+      { id: shownId, name: nameOf(shownId) },
+      { owned: owns(shownId), equipped: wearing(shownId), problem: shownId === selectedId ? problem(shownId) : null },
+    );
+    detail.dataset.tone = info.tone;
+    detailName.textContent = info.name;
+    detailNote.textContent = info.note;
+    detail.title = `${info.name} · ${info.note}`;
+  }
+
   function renderPick() {
     renderPreview();
+    renderDetail();
     if (selectedId === null || !state) {
-      pickLine.textContent = '아이템을 누르면 입혀 봐요';
-      pickLine.title = '';
-      pickLine.classList.remove('is-problem');
       buy.hidden = false;
       buy.disabled = true;
       wear.hidden = true;
@@ -372,9 +443,6 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       return;
     }
     const reason = problem(selectedId);
-    pickLine.textContent = reason ?? nameOf(selectedId);
-    pickLine.title = reason ? `${nameOf(selectedId)} · ${reason}` : nameOf(selectedId);
-    pickLine.classList.toggle('is-problem', reason !== null);
     reset.disabled = false;
     if (owns(selectedId)) {
       buy.hidden = true;
@@ -388,36 +456,65 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   }
 
   function renderTabs() {
-    tabButtons.forEach((button, key) => {
-      const active = key === tab;
+    categoryButtons.forEach((button, slot) => {
+      const active = slot === tab;
       button.classList.toggle('is-active', active);
-      button.setAttribute('aria-pressed', String(active));
+      button.setAttribute('aria-checked', String(active));
     });
+    const shown = categoryButtons.get(lastSlot)!;
+    const onCategory = tab !== 'owned';
+    // 부위 버튼은 고른 부위의 원작 탭 글자 그림을 그대로 빌려 쓴다. 보유 탭에 있으면 흰 글자(Disable)로 둔다
+    const art = shown.style.getPropertyValue(onCategory ? '--on' : '--off');
+    picker.classList.toggle('has-art', art !== '');
+    if (art) picker.style.setProperty('--tab', art);
+    pickerLabel.textContent = cashCategory(lastSlot).label;
+    picker.classList.toggle('is-active', onCategory);
+    ownedButton.classList.toggle('is-active', !onCategory);
+    ownedButton.setAttribute('aria-pressed', String(!onCategory));
+  }
+
+  /** 칸 하나의 표시(고름·입어 봄·보유·착용 중)와 마우스를 올렸을 때 뜨는 이름 */
+  function markCard(button: HTMLButtonElement, itemId: number) {
+    const equipped = wearing(itemId);
+    const owned = owns(itemId);
+    button.classList.toggle('is-selected', itemId === selectedId);
+    button.classList.toggle('is-trying', tryingOn(itemId));
+    button.classList.toggle('is-equipped', equipped);
+    button.classList.toggle('is-owned', owned && !equipped);
+    const { name, note } = cashDetail({ id: itemId, name: nameOf(itemId) }, { owned, equipped });
+    button.title = `${name} · ${note}`;
+    button.setAttribute('aria-label', button.title);
+    button.setAttribute('aria-pressed', String(itemId === selectedId));
   }
 
   function card(item: CashItem): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'shop-card';
-    button.title = item.name;
     button.dataset.itemId = String(item.id);
-    button.innerHTML = `<span class="shop-card-icon"></span><span class="shop-card-name"></span><span class="shop-card-price"></span>`;
+    button.innerHTML = `<span class="shop-card-icon"></span><span class="shop-card-mark" aria-hidden="true"></span>`;
     showIcon(button.querySelector<HTMLElement>('.shop-card-icon')!, item.id);
-    button.querySelector('.shop-card-name')!.textContent = item.name;
-    const price = button.querySelector('.shop-card-price')!;
-    if (wearing(item.id)) {
-      price.textContent = '착용 중';
-      button.classList.add('is-equipped');
-    } else if (owns(item.id)) {
-      price.textContent = '보유';
-      button.classList.add('is-owned');
-    } else {
-      price.textContent = `${won(cashPrice(item.id) ?? 0)} 메소`;
-    }
-    button.classList.toggle('is-selected', item.id === selectedId);
+    markCard(button, item.id);
+    const hover = () => {
+      hoveredId = item.id;
+      renderDetail();
+    };
+    const leave = () => {
+      if (hoveredId !== item.id) return;
+      hoveredId = null;
+      renderDetail();
+    };
+    button.addEventListener('pointerenter', hover);
+    button.addEventListener('pointerleave', leave);
+    button.addEventListener('focus', hover);
+    button.addEventListener('blur', leave);
     button.addEventListener('click', () => {
       selectedId = item.id;
       trying = equipCash(trying, item.id);
+      if (!hintSeen) {
+        hintSeen = true;
+        rememberTryOnHint();
+      }
       checkWeapon(item.id);
       renderGrid();
       renderPick();
@@ -428,10 +525,19 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   function renderGrid() {
     const visible = visibleItems();
     page = Math.min(page, pageCount() - 1);
-    grid.replaceChildren(...visible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(card));
+    if (anchorIndex < page * pageSize || anchorIndex >= (page + 1) * pageSize) anchorIndex = page * pageSize;
+    const pageItems = visible.slice(page * pageSize, (page + 1) * pageSize);
+    const ids = pageItems.map((item) => item.id).join(',');
+    if (ids !== shownIds) {
+      shownIds = ids;
+      if (hoveredId !== null && !pageItems.some((item) => item.id === hoveredId)) hoveredId = null;
+      grid.replaceChildren(...pageItems.map(card));
+    } else {
+      grid.querySelectorAll<HTMLButtonElement>('.shop-card').forEach((button) => markCard(button, Number(button.dataset.itemId)));
+    }
     neighborPages(page, pageCount()).forEach((neighbor) =>
       visible
-        .slice(neighbor * PAGE_SIZE, (neighbor + 1) * PAGE_SIZE)
+        .slice(neighbor * pageSize, (neighbor + 1) * pageSize)
         .forEach((item) => loadIcon(item.id, PRIORITY.prefetch).catch(() => {})),
     );
     count.textContent = loading === 'ready' ? `${visible.length.toLocaleString()}개` : '';
@@ -439,7 +545,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     let message = '';
     let showArt = false;
     if (loading === 'loading' && visible.length === 0) message = '목록을 받는 중…';
-    else if (loading === 'error') message = '목록을 받지 못했어요. 탭을 다시 누르면 다시 받아요';
+    else if (loading === 'error') message = '목록을 받지 못했어요. 부위를 다시 고르면 다시 받아요';
     else if (visible.length === 0 && tab === 'owned' && !query.trim()) message = '아직 산 아이템이 없어요';
     else if (visible.length === 0) {
       message = query.trim() ? `‘${query.trim()}’ 아이템이 없어요` : '판매 중인 상품이 없어요';
@@ -463,6 +569,23 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     renderPick();
   }
 
+  /**
+   * 칸 영역 크기에서 열·행 수를 다시 정한다. clientWidth 는 zoom(--ui-scale) 을 뺀 CSS 픽셀이라 배율과 상관없이
+   * 360×230 창에서는 4×3 이다. 숨겨 둔 동안(0×0)은 앞 값을 그대로 둔다
+   */
+  function measureGrid(): boolean {
+    const { clientWidth, clientHeight } = grid;
+    if (clientWidth === 0 || clientHeight === 0) return false;
+    const fit = fitCashGrid(clientWidth, clientHeight);
+    grid.style.setProperty('--columns', String(fit.columns));
+    grid.style.setProperty('--column-gap', `${fit.columnGap}px`);
+    grid.style.setProperty('--row-gap', `${fit.rowGap}px`);
+    if (fit.pageSize === pageSize) return false;
+    page = pageContaining(anchorIndex, fit.pageSize);
+    pageSize = fit.pageSize;
+    return true;
+  }
+
   function openConfirm() {
     if (selectedId === null || problem(selectedId) !== null || owns(selectedId)) return;
     confirmName.textContent = nameOf(selectedId);
@@ -473,9 +596,23 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     confirmOk.focus();
   }
 
+  function openCategories() {
+    categories.hidden = false;
+    picker.setAttribute('aria-expanded', 'true');
+    (categoryButtons.get(tab === 'owned' ? lastSlot : tab) ?? categories.querySelector('button'))?.focus();
+  }
+
+  function closeCategories() {
+    if (categories.hidden) return;
+    categories.hidden = true;
+    picker.setAttribute('aria-expanded', 'false');
+  }
+
   function dressUp() {
+    // 바탕 판의 오른쪽 위 미리보기 틀을 피해 아래쪽 무늬만 쓴다. 창이 커져도 무늬가 이어진다
     applyArt(screen, { back: cashShopUiUrl('Base/backgrnd') }, 'has-back-art');
     applyArt(stage, { stage: PREVIEW_STAGE });
+    applyArt(grid, { cell: ITEM_CELL });
     applyArt(exit, buttonArt('CSTab/BtExit'));
     applyArt(buy, buttonArt('CSList/BtBuy'));
     applyArt(reset, buttonArt('CSChar/BtDefaultAvatar'));
@@ -486,28 +623,57 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     applyArt(confirmCancel, buttonArt('CSNotice/BtCancel'));
     applyArt(search, { field: cashShopUiUrl('CSLocker/storageSearch/backgrnd') });
     applyArt(statusArt, { empty: cashShopUiUrl('Base/noItem_mini') });
-    tabButtons.forEach((button, key) => {
-      if (key === 'owned') return;
-      const { tabArt } = cashCategory(key);
-      applyArt(button, {
-        on: cashShopUiUrl(`CSTab/SubTab/4/Enable/${tabArt}`),
-        off: cashShopUiUrl(`CSTab/SubTab/4/Disable/${tabArt}`),
-      });
+    categoryButtons.forEach((button, slot) => {
+      const { tabArt } = cashCategory(slot);
+      applyArt(
+        button,
+        {
+          on: cashShopUiUrl(`CSTab/SubTab/4/Enable/${tabArt}`),
+          off: cashShopUiUrl(`CSTab/SubTab/4/Disable/${tabArt}`),
+        },
+        'has-art',
+        () => {
+          if (slot === lastSlot) renderTabs();
+        },
+      );
     });
     if (!mesoIcon.hasChildNodes()) mesoIcon.appendChild(loadedImage(MESO_HUD_ICON_URL));
   }
 
-  [...CASH_CATEGORIES.map((category) => [category.slot, category.label] as const), ['owned', '보유'] as const].forEach(
-    ([key, label]) => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'shop-tab';
-      button.textContent = label;
-      button.addEventListener('click', () => selectTab(key));
-      tabButtons.set(key, button);
-      tabs.appendChild(button);
-    },
-  );
+  CASH_CATEGORIES.forEach(({ slot, label }) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'shop-category';
+    button.setAttribute('role', 'menuitemradio');
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      selectTab(slot);
+      picker.focus();
+    });
+    categoryButtons.set(slot, button);
+    categories.appendChild(button);
+  });
+
+  picker.addEventListener('click', () => (categories.hidden ? openCategories() : closeCategories()));
+  categories.addEventListener('keydown', (event) => {
+    const step = { ArrowDown: 2, ArrowUp: -2, ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const buttons = [...categoryButtons.values()];
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    buttons[(index + step + buttons.length) % buttons.length]?.focus();
+  });
+  ownedButton.addEventListener('click', () => selectTab('owned'));
+  // 부위 목록 밖을 누르면 닫는다. 부위 버튼을 다시 누른 것은 버튼이 직접 닫는다
+  screen.addEventListener('pointerdown', (event) => {
+    const target = event.target as Node;
+    if (!categories.hidden && !categories.contains(target) && !picker.contains(target)) closeCategories();
+  });
+
+  new ResizeObserver(() => {
+    if (screen.hidden) return;
+    if (measureGrid()) renderGrid();
+  }).observe(grid);
 
   exit.addEventListener('click', handlers.onClose);
   searchInput.addEventListener('input', () => {
@@ -559,7 +725,10 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   screen.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (!confirm.hidden) confirm.hidden = true;
-    else handlers.onClose();
+    else if (!categories.hidden) {
+      closeCategories();
+      picker.focus();
+    } else handlers.onClose();
   });
 
   return {
@@ -567,11 +736,14 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       const genderChanged = state?.gender !== next.gender;
       state = next;
       confirm.hidden = true;
+      closeCategories();
       selectedId = null;
+      hoveredId = null;
       trying = {};
       if (genderChanged) page = 0;
       dressUp();
       screen.hidden = false;
+      measureGrid();
       loadTab();
     },
     update(next) {
@@ -582,6 +754,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     hide() {
       screen.hidden = true;
       confirm.hidden = true;
+      closeCategories();
       loadToken += 1;
       window.clearTimeout(previewTimer);
       previewRequest?.abort();

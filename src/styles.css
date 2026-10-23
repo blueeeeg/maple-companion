@@ -880,23 +880,35 @@ body {
   image-rendering: var(--art-rendering);
 }
 
-/* 캐시샵. 360×230 창 안에 왼쪽 부위 탭(78) · 가운데 미리보기(104) · 오른쪽 아이템 6칸(172)을 둔다.
-   원작 그림은 모두 원본 크기로 잘라 쓰고, 큰 버튼(EXIT)·빈 목록 그림만 정확히 절반으로 줄인다 */
+/* 캐시샵. 360×230 창 안에 왼쪽 미리보기 열(132)과 오른쪽 아이템 칸 영역을 두고, 위·아래 20px 줄에 도구와 버튼을 둔다.
+   칸 영역은 창이 커지면 같이 커지고 열·행 수는 cashShopLayout.fitCashGrid 가 정한다(360×230 에서 4×3).
+   원작 그림은 원본 크기로 잘라 쓰고, 큰 버튼(EXIT)·빈 목록 그림은 정확히 절반, 구입하기·원래대로는 한 줄에 들게 0.75배로 줄인다 */
 .shop {
   position: absolute;
   inset: 0;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-rows: 20px minmax(0, 1fr) 20px;
+  grid-template-areas:
+    'bar tools'
+    'side grid'
+    'actions pager';
+  gap: 2px 6px;
+  padding: 2px 4px 3px;
+  box-sizing: border-box;
   background: #2a2a2c;
   color: #f1f1f1;
 }
 
-/* 원작 캐시샵 바탕(1024×768)의 무늬 있는 어두운 판만 원본 크기로 */
+/* 원작 캐시샵 바탕(1024×768)에서 오른쪽 위 미리보기 틀 아래의 무늬 있는 어두운 판(884×426)만 원본 크기로 */
 .shop.has-back-art {
-  background: var(--back) -140px -60px no-repeat, #2a2a2c;
+  background: var(--back) -140px -342px no-repeat, #2a2a2c;
 }
 
 .shop[hidden],
 .shop-confirm[hidden],
 .shop-status[hidden],
+.shop-categories[hidden],
 .shop button[hidden] {
   display: none;
 }
@@ -907,10 +919,16 @@ body {
   color: inherit;
 }
 
+.shop-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .shop-exit {
-  position: absolute;
-  left: 10px;
-  top: 2px;
+  flex: none;
   width: 58px;
   height: 17.5px;
   padding: 0;
@@ -922,59 +940,9 @@ body {
   cursor: pointer;
 }
 
-.shop-tabs {
-  position: absolute;
-  left: 0;
-  top: 21px;
-  width: 78px;
-  height: 209px;
-  background: rgba(0, 0, 0, 0.3);
-}
-
-/* 원작 코디 탭 글자 그림(78×19). 고른 탭은 하늘색(Enable), 나머지는 흰색(Disable) */
-.shop-tab {
-  display: block;
-  width: 78px;
-  height: 19px;
-  padding: 0;
-  border: 0;
-  background: none;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 19px;
-  cursor: pointer;
-}
-
-.shop-tab.has-art {
-  background: var(--off) 0 0 no-repeat;
-  color: transparent;
-}
-
-.shop-tab.is-active {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: #7fe7ff;
-}
-
-.shop-tab.has-art.is-active {
-  background-image: var(--on);
-  color: transparent;
-}
-
-.shop-tab:hover:not(.is-active) {
-  background-color: rgba(255, 255, 255, 0.06);
-}
-
-.shop-tab:focus-visible {
-  outline: 1px solid #ffd23f;
-  outline-offset: -1px;
-}
-
 .shop-meso {
-  position: absolute;
-  left: 80px;
-  top: 2px;
-  width: 104px;
-  height: 18px;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -982,6 +950,8 @@ body {
   color: #ffd23f;
   font-size: 11px;
   font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 메소 아이콘(23×24)은 정확히 절반으로 */
@@ -991,27 +961,220 @@ body {
   height: 12px;
 }
 
-/* 미리보기 배경(Base/Preview/0)의 풀밭 윗면이 칸 바닥에서 22px 위에 오게 원본 크기로 자른다 */
-.shop-preview {
+.shop-tools {
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.shop-picker,
+.shop-owned {
+  flex: none;
+  height: 19px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-picker {
+  display: flex;
+  align-items: center;
+  padding: 0 5px 0 0;
+}
+
+/* 고른 부위의 원작 탭 글자 그림(78×19)에서 글자가 있는 가운데만 잘라 보인다 */
+.shop-picker-label {
+  width: 52px;
+  height: 19px;
+  line-height: 19px;
+  text-align: center;
+}
+
+.shop-picker.has-art .shop-picker-label {
+  background: var(--tab) center / 78px 19px no-repeat;
+  color: transparent;
+}
+
+.shop-picker-arrow {
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid #d9dce3;
+  transition: transform 0.15s;
+}
+
+.shop-picker[aria-expanded='true'] .shop-picker-arrow {
+  transform: rotate(180deg);
+}
+
+.shop-owned {
+  padding: 0 7px;
+}
+
+.shop-picker.is-active,
+.shop-owned.is-active {
+  background: rgba(127, 231, 255, 0.13);
+  color: #7fe7ff;
+}
+
+.shop-picker:hover,
+.shop-owned:hover:not(.is-active) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.shop-picker:focus-visible,
+.shop-owned:focus-visible {
+  outline: 1px solid #ffd23f;
+}
+
+/* 원작 보관함 검색 칸(118×18). 좁아지면 왼쪽(돋보기)과 오른쪽 끝 9px 을 따로 붙여 둥근 끝을 살린다 */
+.shop-search {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 118px;
+  height: 18px;
+  margin-left: auto;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.shop-search.has-art {
+  background: var(--field) 0 0 no-repeat;
+}
+
+.shop-search.has-art::after {
+  content: '';
   position: absolute;
-  left: 80px;
+  top: 0;
+  right: 0;
+  width: 9px;
+  height: 18px;
+  background: var(--field) 100% 0 no-repeat;
+}
+
+.shop-search input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0 8px 0 20px;
+  border: 0;
+  outline: none;
+  background: none;
+  font-size: 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.shop-search input::placeholder {
+  color: #8d929c;
+}
+
+.shop-search:focus-within {
+  box-shadow: 0 0 0 1px #ffd23f;
+}
+
+/* 부위 고르기를 누르면 아이템 칸 위에 원작 탭 글자 그림을 두 줄로 펼친다. 왼쪽 열(132)·간격(6)·창 여백(4) 오른쪽에 붙는다 */
+.shop-categories {
+  position: absolute;
+  z-index: 5;
+  left: 142px;
   top: 22px;
-  width: 104px;
-  height: 138px;
+  display: grid;
+  grid-template-columns: repeat(2, 78px);
+  gap: 1px 4px;
+  padding: 5px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: #1d1d1f;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+  animation: shop-drop 0.12s ease-out;
+}
+
+@keyframes shop-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* 원작 코디 탭 글자 그림(78×19). 고른 부위는 하늘색(Enable), 나머지는 흰색(Disable) */
+.shop-category {
+  width: 78px;
+  height: 19px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  cursor: pointer;
+}
+
+.shop-category.has-art {
+  background: var(--off) 0 0 no-repeat;
+  color: transparent;
+}
+
+.shop-category.is-active {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #7fe7ff;
+}
+
+.shop-category.has-art.is-active {
+  background-image: var(--on);
+  color: transparent;
+}
+
+.shop-category:hover:not(.is-active) {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+.shop-category:focus-visible {
+  outline: 1px solid #ffd23f;
+  outline-offset: -1px;
+}
+
+/* 창이 커져 미리보기가 다 자라면(180) 남는 높이는 아래, 구입하기 줄 위로 보낸다 */
+.shop-side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 0;
+}
+
+/* 미리보기 배경(Base/Preview/0)의 풀밭 윗면이 칸 바닥에서 22px 위에 오게 원본 크기로 자른다.
+   그림 위쪽 끝(180px)보다 높아지면 하늘이 끊기니 그 높이에서 멈춘다 */
+.shop-preview {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 180px;
   overflow: hidden;
   border-radius: 4px;
   background: linear-gradient(180deg, #8fc7e8, #d6efd0 80%, #6b8f4a 80%);
 }
 
 .shop-preview.has-art {
-  background: var(--stage) -131px -42px no-repeat;
+  background: var(--stage) left -110px bottom -58px no-repeat;
 }
 
-/* 발이 그림 정중앙이라 반쪽 크기를 정수로 내려 칸 안 (52, 116) 에 발을 맞춘다 */
+/* 발이 그림 정중앙이라 반쪽 크기를 정수로 내려 칸 가운데, 바닥에서 22px 위에 발을 맞춘다 */
 .shop-preview img {
   position: absolute;
-  left: calc(52px - var(--half-width, 0px));
-  top: calc(116px - var(--half-height, 0px));
+  left: calc(50% - var(--half-width, 0px));
+  top: calc(100% - 22px - var(--half-height, 0px));
   image-rendering: var(--art-rendering);
 }
 
@@ -1021,45 +1184,83 @@ body {
   transition: opacity 0.15s 0.25s;
 }
 
-.shop-pick {
-  position: absolute;
-  left: 80px;
-  top: 161px;
-  width: 104px;
-  height: 15px;
+/* 칸에는 아이콘만 두고, 올리거나 고른 아이템의 이름·값은 여기 한 번만 쓴다 */
+.shop-detail {
+  flex: none;
+  height: 28px;
   margin: 0;
+  padding: 0 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.32);
   font-size: 10px;
-  line-height: 15px;
+  font-weight: 700;
+  line-height: 13px;
   text-align: center;
+}
+
+.shop-detail[data-tone='hint'] {
+  background: none;
+}
+
+.shop-detail-name,
+.shop-detail-note {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #d9dce3;
 }
 
-.shop-pick.is-problem {
+.shop-detail-note {
+  color: #ffd23f;
+}
+
+.shop-detail-note:empty {
+  display: none;
+}
+
+.shop-detail[data-tone='hint'] .shop-detail-name {
+  font-weight: 400;
+  color: #a9adb8;
+}
+
+.shop-detail[data-tone='owned'] .shop-detail-note {
+  color: #9be28c;
+}
+
+.shop-detail[data-tone='equipped'] .shop-detail-note {
+  color: #7fe7ff;
+}
+
+.shop-detail[data-tone='problem'] .shop-detail-note {
   color: #ffb4a6;
+}
+
+.shop-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .shop-buy,
 .shop-wear,
 .shop-reset {
-  position: absolute;
+  flex: none;
   padding: 0;
   border: 0;
-  border-radius: 5px;
-  font-size: 11px;
+  border-radius: 4px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
 }
 
-/* 원작 구입하기(101×24)·원래대로(70×26) 버튼 크기 그대로 */
+/* 원작 구입하기(101×24)·원래대로(70×26)를 0.75배로. 0.5배는 버튼 글자가 6px 로 안 읽힌다 */
 .shop-buy,
 .shop-wear {
-  left: 81px;
-  top: 177px;
-  width: 101px;
-  height: 24px;
+  width: 75.75px;
+  height: 18px;
   background: #5aa02c;
 }
 
@@ -1068,10 +1269,8 @@ body {
 }
 
 .shop-reset {
-  left: 97px;
-  top: 203px;
-  width: 70px;
-  height: 26px;
+  width: 52.5px;
+  height: 19.5px;
   background: rgba(255, 255, 255, 0.14);
 }
 
@@ -1090,106 +1289,77 @@ body {
   filter: brightness(1.15);
 }
 
-/* 원작 보관함 검색 칸(118×18). 왼쪽 돋보기 자리를 비워 둔다 */
-.shop-search {
-  position: absolute;
-  left: 186px;
-  top: 2px;
-  width: 118px;
-  height: 18px;
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.shop-search.has-art {
-  background: var(--field) 0 0 no-repeat;
-}
-
-.shop-search input {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 0 6px 0 20px;
-  border: 0;
-  outline: none;
-  background: none;
-  font-size: 10px;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.shop-search input::placeholder {
-  color: #8d929c;
-}
-
-.shop-search:focus-within {
-  box-shadow: 0 0 0 1px #ffd23f;
-}
-
-.shop-count {
-  position: absolute;
-  left: 306px;
-  top: 2px;
-  width: 52px;
-  height: 18px;
-  font-size: 10px;
-  line-height: 18px;
-  text-align: right;
-  color: #a9adb8;
-}
-
 .shop-grid,
 .shop-status {
-  position: absolute;
-  left: 186px;
-  top: 22px;
-  width: 172px;
-  height: 186px;
+  grid-area: grid;
+  min-width: 0;
+  min-height: 0;
 }
 
+/* 칸 수·간격은 cashShop.ts 가 칸 영역 크기로 정해 --columns·--column-gap·--row-gap 으로 건다 */
 .shop-grid {
   display: grid;
-  grid-template-columns: repeat(2, 85px);
-  grid-auto-rows: 60px;
-  gap: 2px;
+  grid-template-columns: repeat(var(--columns, 4), 46px);
+  grid-auto-rows: 46px;
+  gap: var(--row-gap, 10px) var(--column-gap, 6px);
+  padding: var(--row-gap, 10px) var(--column-gap, 6px);
+  box-sizing: border-box;
   align-content: start;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.24);
 }
 
+/* 원작 캐시 인벤토리 칸(46×46, 판의 x 10 · y 57). 아이콘은 칸 아래 그림자 위에 선다 */
 .shop-card {
   position: relative;
+  width: 46px;
+  height: 46px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.07);
-  text-align: left;
+  border: 0;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #a9c3d6, #e3edf3);
+  image-rendering: var(--art-rendering);
   cursor: pointer;
+  transition:
+    transform 0.12s,
+    box-shadow 0.12s;
+}
+
+.shop-grid.has-art .shop-card {
+  background: var(--cell) -10px -57px no-repeat;
 }
 
 .shop-card:hover {
-  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.shop-card.is-equipped {
+  box-shadow: 0 0 0 1px #4fd6ff;
+}
+
+.shop-card.is-trying {
+  box-shadow: 0 0 0 1px rgba(255, 210, 63, 0.6);
 }
 
 .shop-card.is-selected {
-  border-color: #ffd23f;
-  background: rgba(255, 210, 63, 0.14);
+  box-shadow:
+    0 0 0 1px #ffd23f,
+    0 0 7px rgba(255, 210, 63, 0.6);
 }
 
 .shop-card:focus-visible {
-  outline: 1px solid #ffd23f;
+  outline: 1px dashed #ffd23f;
+  outline-offset: 2px;
 }
 
-/* 아이템 아이콘은 원본 크기(대부분 32px 안팎)로 칸 가운데에 */
 .shop-card-icon {
   position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 36px;
-  height: 36px;
+  inset: 1px 1px 9px;
   display: grid;
   place-items: center;
-  overflow: hidden;
-  border-radius: 4px;
-  background: linear-gradient(180deg, #f3f5f7, #d5dbe1);
+  pointer-events: none;
 }
 
 .shop-card-icon img,
@@ -1197,42 +1367,37 @@ body {
   image-rendering: var(--art-rendering);
 }
 
-.shop-card-name {
+/* 오른쪽 위 점은 보유(초록)·착용 중(하늘), 왼쪽 위 점은 지금 입어 보는 중(노랑) */
+.shop-card-mark,
+.shop-card.is-trying::before {
   position: absolute;
-  left: 41px;
   top: 3px;
-  width: 41px;
-  height: 36px;
-  font-size: 10px;
-  line-height: 12px;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  word-break: keep-all;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 
-.shop-card-price {
-  position: absolute;
-  left: 3px;
+.shop-card-mark {
+  display: none;
   right: 3px;
-  bottom: 3px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #ffd23f;
 }
 
-.shop-card.is-owned .shop-card-price {
-  color: #9be28c;
+.shop-card.is-owned .shop-card-mark {
+  display: block;
+  background: #6fcf5a;
 }
 
-.shop-card.is-equipped .shop-card-price {
-  color: #7fe7ff;
+.shop-card.is-equipped .shop-card-mark {
+  display: block;
+  background: #4fd6ff;
+}
+
+.shop-card.is-trying::before {
+  content: '';
+  left: 3px;
+  background: #ffd23f;
 }
 
 .shop-status {
@@ -1274,11 +1439,8 @@ body {
 }
 
 .shop-pager {
-  position: absolute;
-  left: 186px;
-  top: 210px;
-  width: 172px;
-  height: 18px;
+  grid-area: pager;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1315,8 +1477,19 @@ body {
   color: #d9dce3;
 }
 
+.shop-count {
+  position: absolute;
+  right: 2px;
+  top: 0;
+  line-height: 20px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: #a9adb8;
+}
+
 .shop-confirm {
   position: absolute;
+  z-index: 10;
   inset: 0;
   display: grid;
   place-items: center;
