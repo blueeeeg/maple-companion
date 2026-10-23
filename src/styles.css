@@ -2043,20 +2043,22 @@ body {
 }
 
 /* ── HUD 스탯·스킬 버튼 (ui/hud.ts) ─────────────────────────────
-   원작 상태 바 단축 버튼(StatusBar.img StatKey·SkillKey, 28×20)을 원본 크기로. 그림을 못 받으면 글자 버튼으로 남는다 */
+   옆 캐시샵 버튼과 같은 어두운 칸에, 원작 상태 바 단축 버튼(StatusBar.img StatKey·SkillKey)에서 떼어 낸 그림을 원본 크기로.
+   그림을 못 받으면 글자 버튼으로 남는다 */
 .hud .hud-key {
+  display: inline-grid;
   flex: none;
-  min-width: 28px;
-  height: 20px;
-  padding: 0 4px;
+  place-items: center;
+  min-width: 26px;
+  height: 19px;
+  padding: 2px 4px;
   font-size: 10px;
   font-weight: 700;
-  line-height: 20px;
+  line-height: 15px;
 }
 
-.hud .hud-key.has-art {
-  width: 28px;
-  padding: 0;
+.hud-key img {
+  display: block;
   image-rendering: var(--art-rendering);
 }
 
@@ -2132,19 +2134,41 @@ body {
   position: absolute;
   z-index: 0;
   left: 44px;
-  top: 2px;
+  top: 12px;
   width: 272px;
-  height: 226px;
+  height: 206px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.73);
   box-shadow: inset 0 0 0 1px #cccccc;
 }
 
+/* 원작 창 아래 20px(판 밑의 버튼 줄)은 이 창에 없는 버튼 자리라 빼고, 위 198px(판 아래 구분선까지)과 아래 테두리 8px 만 잇는다 */
 .stat-window.has-frame-art {
   border-radius: 0;
-  background: var(--frame) no-repeat;
+  background: none;
   box-shadow: none;
+}
+
+.stat-window.has-frame-art::before,
+.stat-window.has-frame-art::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  width: 272px;
+  background: var(--frame) no-repeat;
   image-rendering: var(--art-rendering);
+}
+
+.stat-window.has-frame-art::before {
+  top: 0;
+  height: 198px;
+}
+
+.stat-window.has-frame-art::after {
+  bottom: 0;
+  height: 8px;
+  background-position: 0 100%;
 }
 
 .stat-board {
@@ -2347,9 +2371,9 @@ body {
 }
 
 /* ── 스킬창 ─────────────────────────────
-   원작 스킬창(UIWindow2.img/Skill/main). 창 틀 backgrnd(318×361)는 위 198px·아래 32px 띠, 판 backgrnd2(306×333, (5,22))는
-   위 176px·아래 26px 띠만 잘라 230 높이로 잇는다. 차수 탭 Tab/{selected,enabled,disabled}/n 은 (10+26n, 29),
-   직업 띠 backgrnd3(304×45)는 (7,47)에 두되 고른 파란색이 이어지는 가운데 6px 를 빼 36 높이로 쓴다 */
+   원작 스킬창(UIWindow2.img/Skill/main)을 원작 좌표(318×361)로 짜고, skillWindow.ts 의 KEEP 가로 띠만 남겨 230 높이로 쌓는다.
+   창 틀·안쪽 판·직업 띠는 .skill-strip 조각으로 그린다. 아래 좌표는 띠를 빼고 쌓은 뒤의 자리다.
+   글자는 원작 클라이언트의 돋움을 먼저 찾고 없으면 시스템 고딕으로 쓴다 */
 .skill-window {
   position: absolute;
   z-index: 0;
@@ -2360,6 +2384,7 @@ body {
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.73);
   box-shadow: inset 0 0 0 1px #cccccc;
+  font-family: Dotum, '돋움', AppleGothic, 'Apple SD Gothic Neo', sans-serif;
 }
 
 .skill-window.has-frame-art {
@@ -2368,61 +2393,33 @@ body {
   box-shadow: none;
 }
 
-.skill-window.has-frame-art::before,
-.skill-window.has-frame-art::after,
-.skill-board.has-art::before,
-.skill-board.has-art::after,
-.skill-banner.has-art::before,
-.skill-banner.has-art::after {
-  content: '';
+.skill-art {
   position: absolute;
+  inset: 0;
   z-index: -1;
-  left: 0;
-  right: 0;
+  display: none;
+}
+
+.has-frame-art > .skill-art {
+  display: block;
+}
+
+.skill-strip {
+  position: absolute;
   background-repeat: no-repeat;
   image-rendering: var(--art-rendering);
 }
 
-.skill-window.has-frame-art::before {
-  top: 0;
-  height: 198px;
+.skill-strip.is-frame {
   background-image: var(--frame);
 }
 
-.skill-window.has-frame-art::after {
-  bottom: 0;
-  height: 32px;
-  background-image: var(--frame);
-  background-position: 0 100%;
-}
-
-.skill-board {
-  position: absolute;
-  left: 5px;
-  top: 22px;
-  width: 306px;
-  height: 202px;
-  border-radius: 4px;
-  background: #f4f4f4;
-}
-
-.skill-board.has-art {
-  z-index: 0;
-  border-radius: 0;
-  background: none;
-}
-
-.skill-board.has-art::before {
-  top: 0;
-  height: 176px;
+.skill-strip.is-board {
   background-image: var(--board);
 }
 
-.skill-board.has-art::after {
-  bottom: 0;
-  height: 26px;
-  background-image: var(--board);
-  background-position: 0 100%;
+.skill-strip.is-banner {
+  background-image: var(--banner);
 }
 
 .skill-tabs {
@@ -2477,50 +2474,17 @@ body {
   outline: 1px solid #ffd23f;
 }
 
-.skill-banner {
-  position: absolute;
-  left: 7px;
-  top: 47px;
-  width: 304px;
-  height: 36px;
-  border-radius: 0 0 4px 4px;
-  background: linear-gradient(#006699, #4499cc);
-  box-shadow: inset 0 2px 0 #ee7700;
-  cursor: grab;
-}
-
-.skill-banner.has-art {
-  z-index: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-
-.skill-banner.has-art::before {
-  top: 0;
-  height: 30px;
-  background-image: var(--banner);
-}
-
-.skill-banner.has-art::after {
-  top: 30px;
-  height: 6px;
-  background-image: var(--banner);
-  background-position: 0 -36px;
-}
-
-/* 직업 띠 왼쪽 흰 칸(36 폭)에 스킬북 아이콘(32×32)을 원본 크기로 */
+/* 직업 띠 왼쪽 흰 칸(안쪽 33×30)에 스킬북 아이콘(26×30)을 원본 크기로 */
 .skill-book {
   position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 32px;
-  height: 32px;
-  background: #ffffff;
+  left: 14px;
+  top: 52px;
+  width: 26px;
+  height: 30px;
 }
 
 .skill-book.has-art {
-  background: var(--job) no-repeat center;
+  background: var(--job) no-repeat;
   image-rendering: var(--art-rendering);
 }
 
@@ -2530,72 +2494,76 @@ body {
 
 .skill-banner-title {
   position: absolute;
-  left: 44px;
-  top: 4px;
-  right: 8px;
+  left: 50px;
+  top: 58px;
+  right: 16px;
   overflow: hidden;
   color: #ffffff;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 14px;
   white-space: nowrap;
   text-overflow: ellipsis;
   text-shadow: 0 1px 0 rgba(0, 40, 70, 0.6);
+  cursor: grab;
 }
 
-.skill-banner-count {
-  position: absolute;
-  left: 44px;
-  top: 19px;
-  color: #d6efff;
-  font-size: 9px;
-  line-height: 12px;
+.skill-banner-title[hidden],
+.skill-book[hidden],
+.skill-matrix[hidden] {
+  display: none;
 }
 
-/* 원작 스킬 칸(140×35) 두 줄. 판의 머리 띠 구분선(창 y 87~90) 아래로 세 줄이 보이고 나머지는 한 줄씩 내려서 본다 */
-.skill-list {
+/* 5·6차 탭 머리의 원작 V 매트릭스·HEXA 매트릭스 띠(297×35) */
+.skill-matrix {
   position: absolute;
   left: 10px;
-  top: 91px;
-  width: 298px;
-  height: 107px;
+  top: 48px;
+  width: 297px;
+  height: 35px;
+}
+
+.skill-matrix.has-art {
+  background: var(--v) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-matrix.has-art[data-kind='hexa'] {
+  background-image: var(--hexa);
+}
+
+/* 원작 스킬 칸(140×35)을 원작 간격(가로 6, 세로 5)으로 두 줄. 세 칸 높이가 보이고 나머지는 한 칸씩 내려서 본다 */
+.skill-list {
+  position: absolute;
+  left: 12px;
+  top: 88px;
+  width: 286px;
+  height: 115px;
   display: grid;
   grid-template-columns: 140px 140px;
   grid-auto-rows: 35px;
-  gap: 1px 5px;
+  gap: 5px 6px;
   align-content: start;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
+  scrollbar-width: none;
 }
 
 .skill-list::-webkit-scrollbar {
-  width: 7px;
-}
-
-.skill-list::-webkit-scrollbar-track {
-  border-radius: 4px;
-  background: #e2e2e2;
-}
-
-.skill-list::-webkit-scrollbar-thumb {
-  border-radius: 4px;
-  background: #b3b3b3;
+  display: none;
 }
 
 .skill-row {
   position: relative;
-  display: block;
   width: 140px;
   height: 35px;
-  padding: 0;
+  box-sizing: border-box;
   border: 1px solid #d0d0d0;
   border-radius: 2px;
   background: #ffffff;
-  color: #333333;
-  text-align: left;
-  box-sizing: border-box;
+  color: #000000;
   scroll-snap-align: start;
 }
 
@@ -2618,6 +2586,26 @@ body {
   height: 32px;
 }
 
+/* 아이콘을 받는 동안의 자리. 빈 칸 대신 원작 칸 색의 옅은 판을 둔다 */
+.skill-icon[data-pending] {
+  border-radius: 3px;
+  background: linear-gradient(135deg, #ececec, #d9d9d9);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+  animation: skill-icon-wait 1.4s ease-in-out infinite;
+}
+
+@keyframes skill-icon-wait {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skill-icon[data-pending] {
+    animation: none;
+  }
+}
+
 .skill-icon img {
   display: block;
   width: 32px;
@@ -2630,106 +2618,211 @@ body {
   opacity: 0.7;
 }
 
+/* 원작 칸의 점선 위(이름)와 아래(스킬 레벨 자리) */
 .skill-name,
 .skill-state {
   position: absolute;
   left: 38px;
-  width: 99px;
   overflow: hidden;
+  font-size: 11px;
+  line-height: 13px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .skill-name {
-  top: 2px;
-  font-size: 9.5px;
-  font-weight: 700;
-  line-height: 14px;
+  top: 3px;
+  width: 99px;
 }
 
 .skill-state {
-  top: 19px;
+  top: 20px;
+  width: 68px;
+  color: #777777;
+}
+
+.skill-state[data-kind='passive'] {
   color: #8a8a8a;
-  font-size: 9px;
-  line-height: 13px;
 }
 
-.skill-row.is-attack .skill-state {
-  color: #1f7fc8;
-}
-
-.skill-row.is-attack:hover:not(:disabled) {
-  box-shadow: inset 0 0 0 1px #6aa9d8;
-}
-
-.skill-row.is-attack:focus-visible {
-  outline: 1px solid #ffd23f;
-  outline-offset: -1px;
-}
-
-.skill-row:disabled {
-  cursor: progress;
-}
-
-/* 지금 사냥에 쓰는 스킬. 원작 탭·직업 띠의 주황으로 테두리를 두른다. 마우스를 올려도 주황을 지킨다 */
-.skill-row.is-hunting,
-.skill-row.is-hunting.is-attack:hover:not(:disabled) {
-  box-shadow: inset 0 0 0 1px #f08a1c, inset 0 0 0 2px rgba(255, 196, 120, 0.55);
-}
-
-.skill-row.is-hunting .skill-state {
+.skill-state[data-kind='hunting'] {
   color: #d9620b;
   font-weight: 700;
 }
 
-.skill-row.is-hunting .skill-state::before {
-  content: '⚔ ';
-}
-
-.skill-footer {
+/* 원작 레벨 올리기 버튼(BtSpUp, 14×12) 자리에 같은 초록으로 작게 */
+.skill-use {
   position: absolute;
-  left: 11px;
-  top: 201px;
-  width: 296px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  left: 108px;
+  top: 19px;
+  width: 29px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid #3f7d12;
+  border-radius: 2px;
+  background: linear-gradient(#b8e35a, #6cb221);
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-shadow: 0 1px 0 rgba(30, 70, 0, 0.6);
 }
 
+.skill-use:hover:not(:disabled),
+.skill-use:focus-visible {
+  background: linear-gradient(#ccf07a, #7cc52c);
+  outline: none;
+}
+
+.skill-use:active:not(:disabled) {
+  background: linear-gradient(#6cb221, #9ad044);
+}
+
+/* 지금 사냥에 쓰는 스킬은 눌린 버튼처럼 주황으로 */
+.skill-use[aria-pressed='true'] {
+  border-color: #b65a00;
+  background: linear-gradient(#ffb347, #f07f10);
+}
+
+.skill-use:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* 원작 스크롤바(VScr9). 목록 오른쪽 */
+.skill-scroll {
+  position: absolute;
+  left: 298px;
+  top: 88px;
+  width: 11px;
+  height: 115px;
+  border-radius: 3px;
+  background: #dddddd;
+}
+
+.skill-scroll.has-art {
+  border-radius: 0;
+  background: var(--base) repeat-y;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-scroll button,
+.skill-scroll-thumb {
+  position: absolute;
+  left: 0;
+  width: 11px;
+  padding: 0;
+  border: 0;
+  background: #b5b5b5 no-repeat;
+}
+
+.skill-scroll button {
+  height: 12px;
+  cursor: pointer;
+}
+
+.skill-scroll-prev {
+  top: 0;
+}
+
+.skill-scroll-next {
+  bottom: 0;
+}
+
+.skill-scroll-thumb {
+  height: 26px;
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.skill-scroll.has-art button,
+.skill-scroll.has-art .skill-scroll-thumb {
+  border-radius: 0;
+  image-rendering: var(--art-rendering);
+}
+
+.skill-scroll.has-art .skill-scroll-prev {
+  background-image: var(--prev);
+}
+
+.skill-scroll.has-art .skill-scroll-prev:hover {
+  background-image: var(--prev-hover);
+}
+
+.skill-scroll.has-art .skill-scroll-next {
+  background-image: var(--next);
+}
+
+.skill-scroll.has-art .skill-scroll-next:hover {
+  background-image: var(--next-hover);
+}
+
+.skill-scroll.has-art .skill-scroll-thumb {
+  background-image: var(--thumb);
+}
+
+.skill-scroll.has-art .skill-scroll-thumb:hover {
+  background-image: var(--thumb-hover);
+}
+
+.skill-scroll.is-idle .skill-scroll-thumb {
+  display: none;
+}
+
+.skill-scroll.is-idle button {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 원작 아래 띠의 버튼 줄(y 207, 50×16) 자리 */
 .skill-hunt {
-  flex: 1;
-  min-width: 0;
+  position: absolute;
+  left: 12px;
+  top: 207px;
+  width: 238px;
+  height: 16px;
   margin: 0;
   overflow: hidden;
-  color: #444444;
-  font-size: 10px;
+  color: #333333;
+  font-size: 11px;
   font-weight: 700;
+  line-height: 16px;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.skill-window:not(.has-frame-art) .skill-hunt {
+  color: #ffffff;
 }
 
 .skill-hunt.is-problem {
   color: #c8392b;
 }
 
+/* 원작 아래 버튼(하이퍼·매크로 등, 50×16)의 초록 */
 .skill-auto {
-  flex: none;
-  height: 15px;
-  padding: 0 7px;
-  border: 1px solid #b4b4b4;
+  position: absolute;
+  left: 257px;
+  top: 207px;
+  width: 50px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid #4f8a12;
   border-radius: 3px;
-  background: linear-gradient(#ffffff, #e4e4e4);
-  color: #555555;
-  font-size: 9.5px;
-  line-height: 13px;
+  background: linear-gradient(#c3e866, #74b824);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  text-shadow: 0 1px 0 rgba(30, 70, 0, 0.6);
 }
 
 .skill-auto:hover:not(:disabled) {
-  border-color: #6aa9d8;
+  background: linear-gradient(#d3f282, #84c934);
 }
 
 .skill-auto:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: default;
 }

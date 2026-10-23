@@ -35,7 +35,7 @@ export interface StatWindow {
   hide(): void;
 }
 
-// 원작 캐릭터 정보창(UIWindow2.img/UserInfo/character). 창 틀(272×226)·안쪽 판(259×174)·캐릭터 칸(97×165)·이름표(89×19)를
+// 원작 캐릭터 정보창(UIWindow2.img/UserInfo/character). 창 틀(272×226, 아래 버튼 줄을 빼고 206)·안쪽 판(259×174)·캐릭터 칸(97×165)·이름표(89×19)를
 // 원본 크기 그대로 원작 자리에 둔다. 원작 판의 항목(인기도·길드…)은 이 앱에 없는 값이라 그 자리를 같은 모양의 칸으로 덮는다
 const ui = (path: string) => wzImageUrl(`UI/_Canvas/${path}`);
 const ART = {

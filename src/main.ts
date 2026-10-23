@@ -31,6 +31,7 @@ import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encou
 import { advancementTier, describeJob } from './game/jobs';
 import { levelInfo } from './game/progression';
 import { bossRecord, noteAdvancements } from './game/records';
+import { canCast } from './game/skillBook';
 import { newCharacterId } from './game/save';
 import {
   BGM_VOLUME_MAX,
@@ -59,10 +60,12 @@ import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
 import { createSettingsScreen } from './ui/settings';
-import { type SkillCheck, type SkillWindowState, createSkillWindow } from './ui/skillWindow';
+import { type SkillCheck, type SkillWindowState, createSkillWindow, prefetchSkillWindow } from './ui/skillWindow';
 import { type StatWindowState, createStatWindow } from './ui/statWindow';
 
 const TICK_MS = 2000;
+/** 스킬창에서 스킬을 쓴 뒤 다음 스킬을 쓰기까지 쉬는 시간 */
+const CAST_COOLDOWN_MS = 3000;
 /** 고정한 마을 맵을 못 받아 왔을 때 다시 받기까지 쉬는 시간 */
 const PINNED_TOWN_RETRY_MS = 30 * 1000;
 
@@ -100,6 +103,9 @@ let availableUpdate: string | null = null;
 let panelVisible = true;
 /** 보스나 보스 맵을 못 받아 온 사냥 번호. 그 차례는 보통 몬스터로 치르고, 모인 보스 몫은 남아 다음 사냥에 다시 보스를 부른다 */
 let bossSkippedAt = -1;
+let lastCastAt = -Infinity;
+/** 스킬창 아이콘을 미리 받아 둔 직업·차수 */
+let prefetchedSkillBook = '';
 /** 개발용. `?boss=8860000` 이면 그 보스, `?boss=1` 이면 레벨에 맞는 보스와 바로 한 번 싸운다. 사냥 횟수에는 안 센다 */
 let forcedBoss = import.meta.env.DEV ? new URLSearchParams(location.search).get('boss') : null;
 /** 이번 실행에 OS 알림으로 알린 일. 전직은 레벨이 오르는 순간에만 알려서 다시 켜도 같은 일이 또 오지 않는다 */
@@ -201,7 +207,7 @@ const settingsScreen = createSettingsScreen(root, {
 });
 
 const statWindow = createStatWindow(root, { onClose: closeInfoWindow });
-const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onClose: closeInfoWindow });
+const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
 
 const scene = await createScene(stage, {
   onKill: handleKill,
@@ -355,6 +361,26 @@ async function chooseHuntSkill(skillId: number | null): Promise<SkillCheck> {
   character.huntSkillId = skillId;
   writeRoster(roster);
   skillWindow.update(skillState(character));
+  return 'ok';
+}
+
+/**
+ * 스킬창의 「쓰기」. 스킬과 동작 그림을 받아 둔 뒤 창을 닫고 맵에서 한 번 쓴다. 창이 떠 있는 동안은 맵이 멈춰 있어
+ * 창 너머로 쓰면 보이지 않는다. 겉모습뿐이라 사냥·보상과 상관없고, 연달아 눌러 이펙트가 쌓이지 않게 잠깐 쉰다
+ */
+async function castSkill(skillId: number): Promise<SkillCheck> {
+  const character = selectedCharacter(roster);
+  if (!character) return 'failed';
+  const { tier } = characterJob(character, levelInfo(characterXp(character)).level);
+  if (!canCast(character.jobLine, tier, skillId)) return 'failed';
+  if (performance.now() - lastCastAt < CAST_COOLDOWN_MS) return 'cooldown';
+  const prepared = await scene.prepareCast(skillId);
+  if (prepared !== 'ok') return prepared;
+  // 받는 동안 창을 닫았거나 다른 캐릭터로 바꿨으면 쓰지 않는다
+  if (screen !== 'skill' || selectedCharacter(roster) !== character) return 'failed';
+  lastCastAt = performance.now();
+  closeInfoWindow();
+  scene.cast(skillId);
   return 'ok';
 }
 
@@ -535,6 +561,12 @@ async function tick(): Promise<void> {
   const job = characterJob(character, info.level);
   // 전직 날짜는 화면과 상관없이 그 차수가 된 틱에 적는다. 직업을 늦게 골랐으면 고른 틱이 그 날이다
   if (noteAdvancements(character.advancedAt, job.tier, Date.now()).length > 0) writeRoster(roster);
+  // 스킬창을 열 때 아이콘을 기다리지 않게 켤 때와 직업·차수가 바뀔 때 뒤에서 받아 둔다
+  const skillBookKey = `${character.jobLine}|${job.tier}`;
+  if (skillBookKey !== prefetchedSkillBook) {
+    prefetchedSkillBook = skillBookKey;
+    prefetchSkillWindow(character.jobLine, job.tier);
+  }
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
   const trayStatus = job.canChooseJob ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
   if (trayStatus !== lastTrayStatus) {

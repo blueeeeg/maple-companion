@@ -21,6 +21,8 @@ export interface Skill {
   hits: number;
   effect: EffectLayer[];
   hit: EffectLayer[];
+  /** 원작에서 이 스킬을 쓸 때의 캐릭터 동작 이름(alert2·darksight 등). 없으면 빈 목록 */
+  actions: string[];
 }
 
 const MAX_HIT_LINES = 8;
@@ -58,6 +60,7 @@ export function loadSkill(skillId: number, fallbackRange: number): Promise<Skill
       hits: Math.min(MAX_HIT_LINES, Math.max(1, parseInt(info.properties.attackCount ?? '1', 10) || 1)),
       effect: await loadLayers(info.effect),
       hit: await loadLayers(info.hit),
+      actions: info.actions ?? [],
     }));
     pending.catch(() => skills.delete(skillId));
     skills.set(skillId, pending);

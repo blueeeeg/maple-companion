@@ -130,6 +130,7 @@ export interface SkillInfo {
   properties: Record<string, string>;
   effect?: { frames: SkillFrameData[] }[];
   hit?: { frames: SkillFrameData[] }[];
+  actions?: string[];
 }
 
 /** 대미지 숫자·레벨업 같은 공용 이펙트(Effect.wz BasicEff.img). node 는 `NoRed1/0` 처럼 BasicEff.img 아래 경로 */
@@ -148,13 +149,6 @@ export const wzNodeUrl = (path: string) => `https://maplestory.io/api/wz/${REGIO
 export const cashWeaponNodeUrl = (itemId: number) => wzNodeUrl(`Character/Weapon/0${itemId}.img`);
 /** 캐시샵 UI. node 는 `CSList/BtBuy/normal/0` 처럼 CashShop.img 아래 경로 */
 export const cashShopUiUrl = (node: string) => wzImageUrl(`UI/_Canvas/CashShop.img/${node}`);
-
-/**
- * 스킬 아이콘(32×32). img·node 는 skillWzPath 값이다. 대부분 `_Canvas` 의 같은 자리에 있지만 바이퍼 4차처럼
- * 다른 스킬 그림을 가리키는 것은 그 자리에 없다(404). skillIconLinkUrl 은 그 `_outlink` 값(WZ 경로)이다
- */
-export const skillIconUrl = (img: string, node: string) => wzImageUrl(`Skill/_Canvas/${img}.img/skill/${node}/icon`);
-export const skillIconLinkUrl = (img: string, node: string) => wzNodeUrl(`Skill/${img}.img/skill/${node}/icon/_outlink`);
 
 /**
  * 몹 프레임 하나의 기준점(발밑). 렌더 이미지는 원본 캔버스 그대로라 이 값을 그대로 쓰면 원작 위치에 맞는다.

@@ -1,6 +1,7 @@
 import type { JobLineId } from '../game/jobs';
 import { cashShopUiUrl, wzImageUrl } from '../maple/api';
-import { applyArt, loadWithRetry, loadedImage } from './art';
+import { loadWithRetry, loadedImage } from './art';
+import { isQuickKeyBlue, keyOutBackground } from './glyph';
 import { JOB_CHOICE_KEY, createNpcDialog, openAdvancementCongratulation, openJobChoice } from './npcDialog';
 
 export interface HudState {
@@ -38,13 +39,35 @@ export interface Hud {
 
 const NOTICE_MS = 4000;
 
-// 원작(빅뱅 전) 상태 바의 스탯·스킬 단축 버튼(StatusBar.img StatKey·SkillKey, 28×20). HUD 높이에 맞아 원본 크기로 쓴다
-const quickKeyArt = (node: string) => ({
-  normal: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`),
-  hover: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/mouseOver/0`),
-  pressed: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/pressed/0`),
-  disabled: wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/disabled/0`),
-});
+/** StatusBar.img StatKey·SkillKey(28×20)에서 파란 버튼 안쪽만 본다. 바깥 3px 은 버튼 테두리·광택이다 */
+const QUICK_KEY_INSIDE = { x: 3, y: 3, width: 22, height: 14 };
+
+/**
+ * 빅뱅 전 상태 바의 스탯·스킬 단축 버튼에서 파란 바탕을 빼고 막대그래프·책 그림(16×12, 18×12)만 떼어 낸다.
+ * 옆의 캐시샵·⚙️ 버튼처럼 HUD 의 어두운 칸 안에 원본 크기로 넣는다. 못 받으면 글자 버튼으로 남는다
+ */
+async function quickKeyGlyph(node: string): Promise<string> {
+  const url = wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`);
+  await loadWithRetry(url);
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = url;
+  await image.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext('2d')!;
+  context.drawImage(image, 0, 0);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  const box = keyOutBackground(pixels.data, canvas.width, QUICK_KEY_INSIDE, isQuickKeyBlue);
+  if (!box) throw new Error(`${node} 그림이 비었다`);
+  context.putImageData(pixels, 0, 0);
+  const glyph = document.createElement('canvas');
+  glyph.width = box.width;
+  glyph.height = box.height;
+  glyph.getContext('2d')!.drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+  return glyph.toDataURL();
+}
 
 export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   root.insertAdjacentHTML(
@@ -56,8 +79,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <button class="hud-advance" type="button" hidden>전직 가능!</button>
       <span class="hud-rest" data-tauri-drag-region hidden>zZ 휴식 중</span>
       <span class="hud-spacer" data-tauri-drag-region></span>
-      <button class="hud-stat hud-key art-button" type="button" aria-label="캐릭터 정보" title="캐릭터 정보">스탯</button>
-      <button class="hud-skill hud-key art-button" type="button" aria-label="스킬" title="스킬">스킬</button>
+      <button class="hud-stat hud-key" type="button" aria-label="캐릭터 정보" title="캐릭터 정보">스탯</button>
+      <button class="hud-skill hud-key" type="button" aria-label="스킬" title="스킬">스킬</button>
       <button class="hud-shop" type="button" aria-label="캐시샵" title="캐시샵">🛍</button>
       <button class="hud-menu-button" type="button" aria-label="메뉴" title="메뉴" aria-haspopup="menu" aria-expanded="false">⚙️</button>
     </header>
@@ -116,8 +139,15 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   const skill = pick<HTMLButtonElement>('.hud-skill');
   stat.addEventListener('click', handlers.onOpenStat);
   skill.addEventListener('click', handlers.onOpenSkill);
-  applyArt(stat, quickKeyArt('StatKey'));
-  applyArt(skill, quickKeyArt('SkillKey'));
+  ([
+    [stat, 'StatKey'],
+    [skill, 'SkillKey'],
+  ] as const).forEach(([button, node]) =>
+    quickKeyGlyph(node).then(
+      (src) => button.replaceChildren(loadedImage(src)),
+      () => {},
+    ),
+  );
   const shop = pick('.hud-shop');
   shop.addEventListener('click', handlers.onOpenCashShop);
   // 원작 캐시샵의 캐시 동전 그림(13×13)을 받으면 글자 아이콘과 바꾼다
