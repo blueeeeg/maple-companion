@@ -150,6 +150,39 @@ describe('셔플 백 저장', () => {
   });
 });
 
+describe('마을 셔플 백 저장', () => {
+  it('townBag 이 없는 예전 저장은 빈 배열로 읽는다', () => {
+    const old = { ...character('a') } as Partial<Character>;
+    delete old.townBag;
+    delete old.lastTownId;
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [old] }))).characters;
+    expect(read.townBag).toEqual([]);
+    expect(read.lastTownId).toBeNull();
+  });
+
+  it('저장된 townBag 과 lastTownId 는 그대로 읽는다', () => {
+    const saved = character('a', { townBag: ['henesys', 'leafre'], lastTownId: 'orbis' });
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [saved] }))).characters;
+    expect(read.townBag).toEqual(['henesys', 'leafre']);
+    expect(read.lastTownId).toBe('orbis');
+  });
+
+  it('townBag 에 문자열이 아닌 값이 섞이면 걸러낸다', () => {
+    const corrupted = { ...character('a'), townBag: ['henesys', 42, null, 'leafre'] } as unknown as Character;
+    const [read] = normalizeRoster({ characters: [corrupted] }).characters;
+    expect(read.townBag).toEqual(['henesys', 'leafre']);
+  });
+
+  it('합칠 때 더 자란 쪽 townBag 과 lastTownId 를 쓴다', () => {
+    const file = roster([character('a', { activeSeconds: 100, townBag: ['orbis'], lastTownId: 'henesys' })]);
+    const local = roster([character('a', { activeSeconds: 50, townBag: [], lastTownId: null })]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.townBag).toEqual(['orbis']);
+    expect(merged.lastTownId).toBe('henesys');
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
+  });
+});
+
 describe('보스 지정 저장', () => {
   const PINK_BEAN = 8820001;
 

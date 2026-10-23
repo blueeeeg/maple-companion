@@ -42,6 +42,10 @@ export interface Character {
   bossBag: number[];
   /** 직전에 잡은 보스 몹 ID. 새 주기 첫 보스가 같은 보스로 연속되지 않게 쓴다 */
   lastBossId: number | null;
+  /** 셔플 백: 이번 주기에 아직 방문하지 않은 마을 ID 순서. 비면 열린 마을을 섞어 새 주기로 채운다 */
+  townBag: string[];
+  /** 직전에 방문한 마을 ID. 새 주기 첫 마을이 같은 마을로 연속되지 않게 쓴다 */
+  lastTownId: string | null;
   /** 전직한 날. 이 기록을 시작하기 전에 이미 한 전직은 null(날짜 모름)이다 */
   advancedAt: AdvancementLog;
 }
@@ -88,6 +92,8 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     reservedBossId: null,
     bossBag: [],
     lastBossId: null,
+    townBag: [],
+    lastTownId: null,
     advancedAt: {},
   };
 }

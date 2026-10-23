@@ -20,7 +20,7 @@ import { characterJob, createCharacter, summarizeCharacter } from './characters'
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS, KILL_XP, averageMesoDrop, mesoDrop } from './encounters';
 import { describeJob } from './jobs';
 import { totalXpForLevel } from './progression';
-import { unlockedTowns } from './towns';
+import { TOWNS, rewardTown, unlockedTowns } from './towns';
 import { parseRoster } from './save';
 
 // 전사 2차: 흑룡포(한벌옷 1050011)·모자 1002023·신발 1072039·검 1302000
@@ -268,12 +268,11 @@ describe('메소 벌이', () => {
   const HOURS_PER_DAY = 4;
   const killsPerDay = (HOURS_PER_DAY * 3600) / ENCOUNTER_EVERY_ACTIVE_SECONDS;
   /**
-   * 마을 이동은 최근에 열린 네 곳을 고루 돈다(pickNextTown). 사냥 BOSS_EVERY_ENCOUNTERS 번 중 한 번은
-   * 레벨에 맞는 보스가 있으면 보스로 바뀌고 메소를 BOSS_MESO_MULTIPLIER 배 준다
+   * 메소 보상은 레벨 기준 최고 마을(rewardTown)으로 계산한다. 어느 마을을 표시해도 같다.
+   * 사냥 BOSS_EVERY_ENCOUNTERS 번 중 한 번은 레벨에 맞는 보스가 있으면 보스로 바뀌고 메소를 BOSS_MESO_MULTIPLIER 배 준다
    */
   const mesoPerDay = (level: number) => {
-    const pool = unlockedTowns(level).slice(-4);
-    const perKill = pool.reduce((sum, town) => sum + averageMesoDrop(town), 0) / pool.length;
+    const perKill = averageMesoDrop(rewardTown(level));
     const bossShare = pickBoss(level) ? 1 / BOSS_EVERY_ENCOUNTERS : 0;
     return Math.round(killsPerDay * perKill * (1 - bossShare + bossShare * BOSS_MESO_MULTIPLIER));
   };
@@ -293,11 +292,11 @@ describe('메소 벌이', () => {
     expect(mesoDrop(town, () => 0.9999)).toBeLessThanOrEqual(Math.ceil((averageMesoDrop(town) * 4) / 3));
   });
 
-  it('중간 레벨(Lv.60~200)은 싼 부위를 하루 1~2개 산다', () => {
+  it('중간 레벨(Lv.60~200)은 싼 부위를 하루 1~3개 산다', () => {
     [60, 100, 150, 200].forEach((level) => {
       const items = mesoPerDay(level) / averageCheapPrice;
       expect(items).toBeGreaterThanOrEqual(1);
-      expect(items).toBeLessThanOrEqual(2);
+      expect(items).toBeLessThanOrEqual(3);
     });
   });
 
@@ -305,10 +304,21 @@ describe('메소 벌이', () => {
     [60, 100, 150].forEach((level) => {
       ['overall', 'weapon'].forEach((slot) => {
         const days = price(slot) / mesoPerDay(level);
-        expect(days).toBeGreaterThanOrEqual(2);
+        expect(days).toBeGreaterThanOrEqual(1.5);
         expect(days).toBeLessThanOrEqual(5);
       });
     });
+  });
+
+  it('보상 메소는 표시 마을과 무관하게 레벨 기준 최고 마을로 고정된다', () => {
+    const level = 156;
+    const reward = rewardTown(level);
+    // 무릉(minLevel 130)이 Lv.156 기준 최고 마을이다
+    expect(reward.id).toBe('mureung');
+    // 같은 레벨이면 항상 같은 기준 마을이다
+    expect(rewardTown(level)).toBe(reward);
+    // 헤네시스를 표시해도 보상 기준은 무릉(헤네시스보다 메소가 많다)
+    expect(averageMesoDrop(reward)).toBeGreaterThan(averageMesoDrop(TOWNS[0]));
   });
 
   it('레벨별 하루 벌이', () => {

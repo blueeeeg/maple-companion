@@ -179,11 +179,50 @@ export function unlockedTowns(level: number): Town[] {
   return TOWNS.filter((town) => town.minLevel <= level);
 }
 
-/** 고레벨이 헤네시스만 도는 일이 없게 가장 최근에 열린 마을 네 곳 안에서 고른다 */
-export const RECENT_TOWN_POOL = 4;
+/** 보상 기준 마을: 레벨에 맞는 가장 높은 마을. 표시 중인 마을과 상관없이 메소 보상에 쓴다 */
+export function rewardTown(level: number): Town {
+  const towns = unlockedTowns(level);
+  return towns[towns.length - 1] ?? TOWNS[0];
+}
 
+function shuffleArray<T>(arr: T[], random: () => number): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/**
+ * 셔플 백에서 마을을 하나 꺼낸다. 자격 없는 ID 를 제거하고, 비었으면 열린 마을을 섞어 새 주기로 채운다.
+ * 새 주기 첫 마을이 직전 마을과 같으면(2개 이상일 때) 한 칸 뒤로 밀어 연속을 막는다.
+ */
+export function drawFromTownBag(
+  bag: string[],
+  lastTownId: string | null,
+  level: number,
+  random = Math.random,
+): { town: Town; bag: string[]; lastTownId: string } | null {
+  const eligible = unlockedTowns(level);
+  if (eligible.length === 0) return null;
+  const eligibleIds = new Set(eligible.map((t) => t.id));
+  let remaining = bag.filter((id) => eligibleIds.has(id));
+  if (remaining.length === 0) {
+    remaining = shuffleArray(eligible.map((t) => t.id), random);
+    // 새 주기 첫 마을이 직전 마을과 겹치지 않도록
+    if (eligible.length >= 2 && remaining[0] === lastTownId) {
+      remaining.push(remaining.shift()!);
+    }
+  }
+  const id = remaining[0];
+  const town = TOWNS.find((t) => t.id === id)!;
+  return { town, bag: remaining.slice(1), lastTownId: id };
+}
+
+/** 초기 배치·캐릭터 전환 등 가방을 쓰지 않는 단발 선택. 열린 마을 전체에서 현재 마을 외를 고른다 */
 export function pickNextTown(level: number, currentId: string | null, random = Math.random): Town {
-  const candidates = unlockedTowns(level).slice(-RECENT_TOWN_POOL);
+  const candidates = unlockedTowns(level);
   const others = candidates.filter((town) => town.id !== currentId);
   const pool = others.length > 0 ? others : candidates;
   return pool[Math.floor(random() * pool.length)];

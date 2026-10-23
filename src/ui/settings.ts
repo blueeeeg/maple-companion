@@ -109,7 +109,7 @@ export interface TownStay {
 
 /** 마을 줄의 지금 값대로 캐릭터가 어떻게 움직이는지 한 문장으로. stay 가 null 이면 마을을 돈다 */
 export function townHint(rotateMinutes: number, stay: TownStay | null): string {
-  const rotate = `${rotateMinutes}분마다 최근에 열린 마을을 돌아다녀요`;
+  const rotate = `${rotateMinutes}분마다 열린 마을을 고루 돌아다녀요`;
   if (stay === null) return rotate;
   const { name } = stay;
   if (!stay.open) return `${name}${hasFinalConsonant(name) ? '은' : '는'} 이 캐릭터에게 아직 안 열려서 ${rotate}`;

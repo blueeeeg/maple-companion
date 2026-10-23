@@ -27,7 +27,7 @@ describe('보스 안내', () => {
 
 describe('마을 안내', () => {
   it('돌아다니면 고른 시간과 함께 적는다', () => {
-    expect(townHint(8, null)).toBe('8분마다 최근에 열린 마을을 돌아다녀요');
+    expect(townHint(8, null)).toBe('8분마다 열린 마을을 고루 돌아다녀요');
     expect(townHint(30, null)).toMatch(/^30분마다/);
   });
 
@@ -39,7 +39,7 @@ describe('마을 안내', () => {
 
   it('머물 마을이 아직 안 열린 캐릭터는 돌아다닌다고 적는다', () => {
     expect(townHint(15, { name: '리프레', open: false, hasFields: true })).toBe(
-      '리프레는 이 캐릭터에게 아직 안 열려서 15분마다 최근에 열린 마을을 돌아다녀요',
+      '리프레는 이 캐릭터에게 아직 안 열려서 15분마다 열린 마을을 고루 돌아다녀요',
     );
     expect(townHint(8, { name: '무릉', open: false, hasFields: false })).toMatch(/^무릉은 /);
   });

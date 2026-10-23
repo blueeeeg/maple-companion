@@ -675,7 +675,7 @@ describe('bgmPlayback', () => {
 });
 
 describe('likelyBgmMaps', () => {
-  it('최근에 열린 마을 네 곳, 잡을 수 있는 보스 전부, 나머지 열린 마을 순서다', () => {
+  it('백 없으면 레벨 높은 마을 네 곳 먼저, 잡을 수 있는 보스 전부, 나머지 열린 마을 순서다', () => {
     const level = 70;
     const towns = TOWNS.filter((town) => town.minLevel <= level).map((town) => town.mapId);
     const bosses = BOSSES.filter((boss) => boss.minLevel <= level)
@@ -690,6 +690,16 @@ describe('likelyBgmMaps', () => {
   it('아직 열리지 않은 마을과 보스는 넣지 않는다', () => {
     const maps = likelyBgmMaps(1);
     expect(maps).toEqual(TOWNS.filter((town) => town.minLevel <= 1).map((town) => town.mapId));
+  });
+
+  it('백이 있으면 백 순서로 앞에 둔다', () => {
+    const level = 70;
+    const bag = ['ellinia', 'henesys', 'perion'];
+    const maps = likelyBgmMaps(level, bag);
+    const elliniaMapId = TOWNS.find((t) => t.id === 'ellinia')!.mapId;
+    const henesysMapId = TOWNS.find((t) => t.id === 'henesys')!.mapId;
+    const perionMapId = TOWNS.find((t) => t.id === 'perion')!.mapId;
+    expect(maps.slice(0, 3)).toEqual([elliniaMapId, henesysMapId, perionMapId]);
   });
 });
 

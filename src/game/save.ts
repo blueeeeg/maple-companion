@@ -46,6 +46,10 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
         ? (raw.bossBag as unknown[]).filter((x): x is number => typeof x === 'number' && Number.isInteger(x))
         : [],
       lastBossId: typeof raw.lastBossId === 'number' ? raw.lastBossId : null,
+      townBag: Array.isArray(raw.townBag)
+        ? (raw.townBag as unknown[]).filter((x): x is string => typeof x === 'string')
+        : [],
+      lastTownId: typeof raw.lastTownId === 'string' ? raw.lastTownId : null,
       // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다
       advancedAt: normalizeAdvancements(character.advancedAt, reachedTier(filled)),
     };

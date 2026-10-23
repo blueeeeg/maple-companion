@@ -1,6 +1,6 @@
 import { BOSSES } from '../game/bosses';
 import type { Settings } from '../game/settings';
-import { RECENT_TOWN_POOL, type Town, unlockedTowns } from '../game/towns';
+import { type Town, unlockedTowns } from '../game/towns';
 import { mapBgmNodeUrl, musicUrl } from '../maple/api';
 import { type BgmCache, type BgmCacheEntry, createBgmCache } from '../platform/bgmCache';
 import { loadStoredJson } from '../ui/cashAssets';
@@ -33,15 +33,25 @@ export const BGM_PREFETCH_RETRY_MS = 5 * 60 * 1000;
 export const BGM_CACHE_BUDGET_BYTES = 300 * 1024 * 1024;
 const MAP_TRACK_TIMEOUT_MS = 30 * 1000;
 
-/** 이 레벨에서 곧 들어갈 만한 맵. 마을을 돌 때 고르는 최근 마을, 잡을 수 있는 보스(센 것부터), 고정할 수 있는 나머지 마을 순서다 */
-export function likelyBgmMaps(level: number): number[] {
-  const towns = unlockedTowns(level).reverse();
+/** BGM 미리 받기에서 앞에 둘 마을 수 */
+const BGM_TOWN_PREFETCH = 4;
+
+/**
+ * 이 레벨에서 곧 들어갈 만한 맵.
+ * townBag 가 있으면 그 순서대로 앞 마을, 없으면 가장 최근에 열린 마을 순.
+ * 이어서 잡을 수 있는 보스(센 것부터), 나머지 열린 마을 순서다
+ */
+export function likelyBgmMaps(level: number, townBag: readonly string[] = []): number[] {
+  const allTowns = unlockedTowns(level);
+  const townById = new Map(allTowns.map((t) => [t.id, t]));
+  const bagTowns = townBag.filter((id) => townById.has(id)).map((id) => townById.get(id)!);
+  const priority = bagTowns.length > 0
+    ? bagTowns.slice(0, BGM_TOWN_PREFETCH)
+    : allTowns.slice().reverse().slice(0, BGM_TOWN_PREFETCH);
+  const priorityIds = new Set(priority.map((t) => t.id));
+  const rest = allTowns.filter((t) => !priorityIds.has(t.id));
   const bosses = BOSSES.filter((boss) => boss.minLevel <= level).sort((a, b) => b.minLevel - a.minLevel);
-  const ordered = [
-    ...towns.slice(0, RECENT_TOWN_POOL),
-    ...bosses,
-    ...towns.slice(RECENT_TOWN_POOL),
-  ];
+  const ordered = [...priority, ...bosses, ...rest];
   return [...new Set(ordered.map((map) => map.mapId))];
 }
 

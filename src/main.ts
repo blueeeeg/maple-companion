@@ -48,7 +48,7 @@ import {
 } from './game/settings';
 import { fieldMoveDue, fieldMoves, pickFieldMove, routePortals, townFields } from './game/routes';
 import type { RouteField } from './game/routeCuration';
-import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game/towns';
+import { type MonsterSpec, type Town, drawFromTownBag, pickNextTown, rewardTown, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
 import { warmMaps } from './maple/portal';
@@ -506,7 +506,8 @@ const currentPace = (): HuntPace => huntPace(settings) ?? DEFAULT_PACE;
 function handleKill(monster: MonsterSpec): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
-  const { xp, meso } = settleHunt(character, currentPace(), town, false);
+  const { level } = levelInfo(characterXp(character));
+  const { xp, meso } = settleHunt(character, currentPace(), rewardTown(level), false);
   character.killXp += xp;
   character.meso += meso;
   character.monsterBook[monster.name] = (character.monsterBook[monster.name] ?? 0) + 1;
@@ -526,8 +527,10 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
   const pace = currentPace();
+  const { level: bossLevel } = levelInfo(characterXp(character));
+  const reward = rewardTown(bossLevel);
   if (fight.kind === 'practice') {
-    settleBossFight(character, pace, town, boss, true);
+    settleBossFight(character, pace, reward, boss, true);
     hud.notify(`연습전 끝 · ${boss.name} · 경험치·메소·처치 기록 없음`);
     return 0;
   }
@@ -535,11 +538,11 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
   let meso: number;
   if (fight.kind === 'dev') {
     xp = bossXp(pace);
-    meso = bossMeso(town, Math.random, pace);
+    meso = bossMeso(reward, Math.random, pace);
     character.killXp += xp;
     character.meso += meso;
     character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
-  } else ({ xp, meso } = settleBossFight(character, pace, town, boss, false));
+  } else ({ xp, meso } = settleBossFight(character, pace, reward, boss, false));
   writeRoster(roster);
   hud.notify(`보스 ${boss.name} 처치 · EXP +${Math.round(xp).toLocaleString()} · 메소 +${meso.toLocaleString()}`);
   void tick();
@@ -661,7 +664,8 @@ function handleLevelUp(character: Character, from: number, to: number): void {
 function settleMissedHunts(character: Character, count: number, level: number, pace: HuntPace): void {
   if (!town || count <= 0) return;
   // 밀린 차례 중 보스 차례는 보스로 정산한다. 레벨에 맞는 보스가 없으면 보통 몬스터로 친다
-  const result = resolveHunts(character, pace, level, town, count, Math.random, character.reservedBossId);
+  // 메소 보상은 표시 마을이 아닌 레벨 기준 최고 마을로 계산한다
+  const result = resolveHunts(character, pace, level, rewardTown(level), count, Math.random, character.reservedBossId);
   if (result.reservationUsed) character.reservedBossId = null;
   character.killXp += result.xp;
   character.meso += result.meso;
@@ -693,7 +697,7 @@ async function tick(): Promise<void> {
   const info = levelInfo(characterXp(character));
   // 마을이 열리거나 캐릭터를 바꾸면 목록이 바뀐다. 같은 목록이면 bgm 이 무시한다
   // 지금 마을의 사냥터는 몇 분 안에 들어가서 먼저 받는다
-  bgm.prefetch([...(town ? townFields(town).map((each) => each.mapId) : []), ...likelyBgmMaps(info.level)]);
+  bgm.prefetch([...(town ? townFields(town).map((each) => each.mapId) : []), ...likelyBgmMaps(info.level, character.townBag)]);
 
   const job = characterJob(character, info.level);
   // 전직 날짜는 화면과 상관없이 그 차수가 된 틱에 적는다. 직업을 늦게 골랐으면 고른 틱이 그 날이다
@@ -756,7 +760,13 @@ async function tick(): Promise<void> {
     if (pinned) {
       if (pinned.id !== town.id && Date.now() - townChangedAt > PINNED_TOWN_RETRY_MS) moveTo(pinned);
     } else if (Date.now() - townChangedAt > townRotateMs(settings)) {
-      moveTo(pickNextTown(info.level, town.id));
+      const drawn = drawFromTownBag(character.townBag, character.lastTownId, info.level);
+      if (drawn) {
+        character.townBag = drawn.bag;
+        character.lastTownId = drawn.lastTownId;
+        writeRoster(roster);
+        moveTo(drawn.town);
+      }
     }
   }
 
