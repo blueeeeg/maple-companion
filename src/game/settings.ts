@@ -1,3 +1,4 @@
+import { isTrackPath } from '../audio/bgmTracks';
 import { BOSS_EVERY_ENCOUNTERS, BOSS_MESO_MULTIPLIER, BOSS_XP_MULTIPLIER, type HuntPace } from './bosses';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS, KILL_XP } from './encounters';
 import { XP_PER_ACTIVE_SECOND } from './progression';
@@ -15,8 +16,13 @@ export const LEVEL_UP_EFFECT_OPTIONS = ['original', 'small'] as const;
 /** 「작게」 일 때 레벨업 이펙트 배율. 전직 이펙트는 늘 원본 크기다 */
 export const LEVEL_UP_SMALL_SCALE = 0.65;
 export const BGM_VOLUME_MAX = 100;
+/** map: 맵 따라가기, repeat: 한 곡 반복, shuffle: 즐겨찾기 무작위 */
+export const BGM_MODE_OPTIONS = ['map', 'repeat', 'shuffle'] as const;
+/** 원작 곡(700여 곡)을 다 담아도 남는다. 손으로 고친 저장 파일이 끝없이 커지지 않게만 막는다 */
+const MAX_BGM_FAVORITES = 1000;
 
 export type LevelUpEffect = (typeof LEVEL_UP_EFFECT_OPTIONS)[number];
+export type BgmMode = (typeof BGM_MODE_OPTIONS)[number];
 
 export interface Settings {
   version: typeof SETTINGS_VERSION;
@@ -31,6 +37,11 @@ export interface Settings {
   pinnedTownId: string | null;
   /** 0~100 */
   bgmVolume: number;
+  bgmMode: BgmMode;
+  /** 「한 곡 반복」 으로 고른 곡(`Bgm00/FloralLife`). 다른 방식으로 바꿔도 남겨 둔다 */
+  bgmTrack: string | null;
+  /** 즐겨찾기한 곡 경로. 「즐겨찾기 무작위」 가 이 중에서 튼다 */
+  bgmFavorites: string[];
   levelUpEffect: LevelUpEffect;
   /** 입력이 이만큼 없으면 자리 비움으로 보고 활동 시간을 멈춘다 */
   idleMinutes: (typeof IDLE_MINUTE_OPTIONS)[number];
@@ -46,6 +57,9 @@ export const DEFAULT_SETTINGS: Settings = {
   townRotateMinutes: 8,
   pinnedTownId: null,
   bgmVolume: 35,
+  bgmMode: 'map',
+  bgmTrack: null,
+  bgmFavorites: [],
   levelUpEffect: 'original',
   idleMinutes: 2,
   jobAlerts: true,
@@ -78,6 +92,8 @@ export function normalizeSettings(raw: unknown, level = 1): Settings {
   const saved = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<Record<keyof Settings | 'townRotate', unknown>>;
   const fallback = DEFAULT_SETTINGS;
   const volume = Number(saved.bgmVolume);
+  const bgmTrack = isTrackPath(saved.bgmTrack) ? saved.bgmTrack : null;
+  const bgmMode = oneOf(BGM_MODE_OPTIONS, saved.bgmMode, fallback.bgmMode);
   return {
     version: SETTINGS_VERSION,
     encounterMinutes: optional(ENCOUNTER_MINUTE_OPTIONS, saved.encounterMinutes, fallback.encounterMinutes),
@@ -89,6 +105,12 @@ export function normalizeSettings(raw: unknown, level = 1): Settings {
       saved.bgmVolume !== undefined && saved.bgmVolume !== null && Number.isFinite(volume)
         ? Math.min(BGM_VOLUME_MAX, Math.max(0, Math.round(volume)))
         : fallback.bgmVolume,
+    // 고른 곡이 없는 「한 곡 반복」 은 틀 곡이 없다
+    bgmMode: bgmMode === 'repeat' && bgmTrack === null ? 'map' : bgmMode,
+    bgmTrack,
+    bgmFavorites: Array.isArray(saved.bgmFavorites)
+      ? [...new Set(saved.bgmFavorites.filter(isTrackPath))].slice(0, MAX_BGM_FAVORITES)
+      : [],
     levelUpEffect: oneOf(LEVEL_UP_EFFECT_OPTIONS, saved.levelUpEffect, fallback.levelUpEffect),
     idleMinutes: oneOf(IDLE_MINUTE_OPTIONS, saved.idleMinutes, fallback.idleMinutes),
     jobAlerts: typeof saved.jobAlerts === 'boolean' ? saved.jobAlerts : fallback.jobAlerts,

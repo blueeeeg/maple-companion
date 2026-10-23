@@ -230,6 +230,42 @@ describe('설정 저장', () => {
     const settings = withSettings({ encounterMinutes: null, pinnedTownId: 'ellinia', bgmVolume: 0, idleMinutes: 5 });
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
   });
+});
+
+describe('BGM 고르기 설정', () => {
+  const favorites = ['Bgm41/Gravity Lord', "Bgm42/Demon's eye"];
+
+  it('예전 판 저장(BGM 고르기 전)은 맵 따라가기에 고른 곡·즐겨찾기 없음', () => {
+    const old = { version: 1, encounterMinutes: 5, bgmVolume: 50 };
+    expect(normalizeSettings(old)).toMatchObject({ bgmMode: 'map', bgmTrack: null, bgmFavorites: [], encounterMinutes: 5, bgmVolume: 50 });
+    expect(DEFAULT_SETTINGS).toMatchObject({ bgmMode: 'map', bgmTrack: null, bgmFavorites: [] });
+  });
+
+  it('고른 방식·곡·즐겨찾기를 저장했다 읽으면 그대로다', () => {
+    const settings = withSettings({ bgmMode: 'shuffle', bgmTrack: 'Bgm00/FloralLife', bgmFavorites: favorites });
+    expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
+  });
+
+  it('다른 설정을 고쳐 다시 읽어도 BGM 고르기 값은 남는다', () => {
+    const saved = withSettings({ bgmMode: 'repeat', bgmTrack: 'Bgm41/Gravity Lord', bgmFavorites: favorites });
+    expect(normalizeSettings({ ...saved, idleMinutes: 10 })).toEqual({ ...saved, idleMinutes: 10 });
+  });
+
+  it('목록에 없는 방식은 맵 따라가기, 고른 곡이 없는 한 곡 반복도 맵 따라가기', () => {
+    expect(normalizeSettings({ bgmMode: 'loop' }).bgmMode).toBe('map');
+    expect(normalizeSettings({ bgmMode: 'repeat' }).bgmMode).toBe('map');
+    expect(normalizeSettings({ bgmMode: 'repeat', bgmTrack: '../../etc' })).toMatchObject({ bgmMode: 'map', bgmTrack: null });
+  });
+
+  it('즐겨찾기가 비어도 「즐겨찾기 무작위」 는 고른 대로 남긴다. 트는 쪽이 맵 따라가기로 튼다', () => {
+    expect(normalizeSettings({ bgmMode: 'shuffle', bgmFavorites: [] }).bgmMode).toBe('shuffle');
+  });
+
+  it('즐겨찾기는 곡 경로만, 겹치면 하나로', () => {
+    const raw = [...favorites, favorites[0], 42, null, 'nope', 'Bgm00/a/b'];
+    expect(normalizeSettings({ bgmFavorites: raw }).bgmFavorites).toEqual(favorites);
+    expect(normalizeSettings({ bgmFavorites: 'Bgm00/FloralLife' }).bgmFavorites).toEqual([]);
+  });
 
   it('예전 판의 「자동」 끔(고정 없음)은 지금 캐릭터에게 가장 최근에 열린 마을에 머물기로 옮긴다', () => {
     const legacy = { townRotate: false, pinnedTownId: null };

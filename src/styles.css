@@ -3388,3 +3388,454 @@ body {
     0 0 2px #000000,
     0 0 2px #000000;
 }
+
+/* ── BGM 고르기 (ui/musicWindow.ts) ─────────────────────────────
+   원작 의자 BGM 고르기 창(UIWindow6.img/BgmChairUI, 214×249)을 352×226 으로 잘라 붙인다. 창 몸통은 원래 반투명이라 멈춘 맵이 어둡게 비친다.
+   목록 칸(183×32)·재생 중 칸·닫기·스크롤바(Basic.img/VScr107)는 원작 그림 원본 크기다. 그림을 못 받으면 같은 배치의 어두운 창으로 남는다 */
+/* 창 그림이 반투명이라 뒤 HUD 의 전직 버튼 같은 밝은 색이 제목 띠에 비치지 않게 다른 정보창보다 어둡게 깐다 */
+.music-screen {
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.music-window {
+  position: absolute;
+  z-index: 0;
+  left: 4px;
+  top: 2px;
+  width: 352px;
+  height: 226px;
+  border-radius: 6px;
+  background: rgba(20, 22, 28, 0.92);
+  box-shadow: inset 0 0 0 1px #6b7280;
+  color: #e4e8ef;
+  font-family: Dotum, '돋움', AppleGothic, 'Apple SD Gothic Neo', sans-serif;
+}
+
+.music-window.has-frame-art {
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.music-art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: none;
+}
+
+.has-frame-art > .music-art {
+  display: block;
+}
+
+.music-strip {
+  position: absolute;
+  background-image: var(--frame);
+  background-repeat: no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.music-title {
+  position: absolute;
+  left: 9px;
+  top: 0;
+  height: 30px;
+  margin: 0;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 30px;
+}
+
+/* 원작 창 그림에 「PLAYLIST」 제목이 들어 있다 */
+.has-frame-art > .music-title {
+  color: transparent;
+}
+
+/* 제목 띠 오른쪽, 닫기 버튼 앞까지. 지금 트는 곡 */
+.music-now {
+  position: absolute;
+  left: 76px;
+  top: 7px;
+  width: 242px;
+  height: 18px;
+  margin: 0;
+  overflow: hidden;
+  color: #9fe7ff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* .info-screen button 의 font 를 이긴다 */
+.music-window .music-close {
+  position: absolute;
+  left: 325px;
+  top: 7px;
+  z-index: 2;
+  width: 21px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 10px;
+}
+
+.music-close.has-art {
+  image-rendering: var(--art-rendering);
+}
+
+/* 원작 창의 위쪽 작은 판(의자 이름 자리, y 33~66). 트는 방식 세 가지 */
+.music-modes {
+  position: absolute;
+  left: 13px;
+  top: 39px;
+  width: 326px;
+  height: 22px;
+  display: flex;
+  gap: 4px;
+}
+
+.music-window .music-mode {
+  flex: 1;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #0d1118;
+  border-radius: 4px;
+  background: linear-gradient(#4b505b, #2b2f37);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #d7dbe2;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.65);
+}
+
+.music-mode:hover:not(:disabled) {
+  filter: brightness(1.15);
+}
+
+.music-mode:focus-visible,
+.music-filter:focus-visible,
+.music-search:focus-visible {
+  outline: 1px solid #9fe7ff;
+  outline-offset: 1px;
+}
+
+.music-mode:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 원작 재생 중 칸의 하늘색 */
+.music-mode[aria-checked='true'] {
+  border-color: #13627a;
+  background: linear-gradient(#66eeff, #44bbdd);
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 60, 90, 0.7);
+}
+
+/* 원작 목록 자리(x 12, y 77 부터 32 간격). 휠은 칸 단위로 맞춘다 */
+.music-list {
+  position: absolute;
+  left: 12px;
+  top: 76px;
+  width: 183px;
+  height: 128px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+}
+
+.music-list::-webkit-scrollbar {
+  display: none;
+}
+
+.music-row {
+  position: relative;
+  height: 32px;
+  scroll-snap-align: start;
+}
+
+.music-play {
+  position: absolute;
+  inset: 0 0 1px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 30px 0 22px;
+  border: 0;
+  border-radius: 3px;
+  background: #eeeeee;
+  color: #333333;
+  text-align: left;
+}
+
+.music-play:hover {
+  background: #ffffff;
+}
+
+.music-list.has-art .music-play {
+  bottom: 0;
+  border-radius: 0;
+  background: var(--normal) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.music-list.has-art .music-play:hover {
+  background-image: var(--hover);
+}
+
+.music-list.has-art .music-play:active {
+  background-image: var(--pressed);
+}
+
+.music-play:focus-visible {
+  outline: 1px solid #44bbdd;
+  outline-offset: -2px;
+}
+
+.music-row-label,
+.music-row-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-row-label {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 13px;
+}
+
+.music-row-sub {
+  color: #8a8a8a;
+  font-size: 9px;
+  line-height: 10px;
+}
+
+.music-row.is-playing .music-play {
+  background: #44bbdd;
+  color: #ffffff;
+}
+
+.music-row.is-playing .music-row-sub {
+  color: #e6f9ff;
+}
+
+/* 원작 재생 중 애니메이션 아홉 장. 받는 중에는 첫 장에 멈춰 둔다 */
+.music-list.has-art .music-row.is-playing .music-play {
+  background-image: var(--play0);
+  animation: music-playing 0.9s steps(1) infinite;
+}
+
+.music-list.has-art .music-row.is-loading .music-play {
+  animation: none;
+}
+
+@keyframes music-playing {
+  0% { background-image: var(--play0); }
+  11.1% { background-image: var(--play1); }
+  22.2% { background-image: var(--play2); }
+  33.3% { background-image: var(--play3); }
+  44.4% { background-image: var(--play4); }
+  55.5% { background-image: var(--play5); }
+  66.6% { background-image: var(--play6); }
+  77.7% { background-image: var(--play7); }
+  88.8% { background-image: var(--play8); }
+}
+
+.music-window .music-fav {
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: #c4c4c4;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.music-fav:hover {
+  color: #8a8a8a;
+}
+
+.music-fav.is-on {
+  color: #ffb400;
+  text-shadow: 0 0 1px #8a5a00;
+}
+
+.music-row.is-playing .music-fav:not(.is-on) {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.music-fav:focus-visible {
+  outline: 1px solid #44bbdd;
+}
+
+/* 원작 스크롤바 자리(x 198, y 76). 기둥·버튼·손잡이 모두 6px 폭 */
+.music-scroll {
+  position: absolute;
+  left: 198px;
+  top: 76px;
+  width: 6px;
+  height: 128px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.music-scroll.has-art {
+  border-radius: 0;
+  background: var(--base) repeat-y;
+  image-rendering: var(--art-rendering);
+}
+
+.music-scroll button,
+.music-scroll-thumb {
+  position: absolute;
+  left: 0;
+  width: 6px;
+  padding: 0;
+  border: 0;
+  background: #9aa0aa no-repeat;
+}
+
+.music-scroll button {
+  height: 8px;
+  cursor: pointer;
+}
+
+.music-scroll-prev {
+  top: 0;
+}
+
+.music-scroll-next {
+  bottom: 0;
+}
+
+.music-scroll-thumb {
+  height: 29px;
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.music-scroll.has-art button,
+.music-scroll.has-art .music-scroll-thumb {
+  border-radius: 0;
+  image-rendering: var(--art-rendering);
+}
+
+.music-scroll.has-art .music-scroll-prev {
+  background-image: var(--prev);
+}
+
+.music-scroll.has-art .music-scroll-next {
+  background-image: var(--next);
+}
+
+.music-scroll.has-art .music-scroll-thumb {
+  background-image: var(--thumb);
+}
+
+.music-scroll.has-art .music-scroll-thumb:hover {
+  background-image: var(--thumb-hover);
+}
+
+.music-scroll.is-idle .music-scroll-thumb {
+  display: none;
+}
+
+.music-scroll.is-idle button {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* 목록 판 오른쪽 빈 자리(창을 넓혀 생긴 곳). 찾기·목록 고르기·안내 */
+.music-side {
+  position: absolute;
+  left: 212px;
+  top: 76px;
+  width: 127px;
+  height: 136px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.music-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid #5d6470;
+  border-radius: 3px;
+  background: #eeeeee;
+  color: #333333;
+  font: inherit;
+  font-size: 11px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.music-search::placeholder {
+  color: #8a8a8a;
+}
+
+.music-filters {
+  display: flex;
+  gap: 3px;
+}
+
+.music-window .music-filter {
+  flex: 1;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #0d1118;
+  border-radius: 3px;
+  background: #2b2f37;
+  color: #b9c0cb;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.music-filter[aria-checked='true'] {
+  border-color: #13627a;
+  background: #44bbdd;
+  color: #ffffff;
+}
+
+.music-count,
+.music-hint {
+  margin: 0;
+  font-size: 9.5px;
+  line-height: 12px;
+}
+
+.music-count {
+  color: #9aa0aa;
+}
+
+.music-hint {
+  color: #d7dbe2;
+  word-break: keep-all;
+}
+
+.music-hint.is-problem {
+  color: #ffd27a;
+}

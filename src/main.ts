@@ -1,5 +1,5 @@
 import './styles.css';
-import { createBgm, likelyBgmMaps, shouldPlayBgm } from './audio/bgm';
+import { bgmPlayback, createBgm, likelyBgmMaps, shouldPlayBgm } from './audio/bgm';
 import {
   type Character,
   MAX_CHARACTERS,
@@ -64,6 +64,7 @@ import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui
 import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
+import { type MusicWindowState, createMusicWindow, prefetchMusicWindow } from './ui/musicWindow';
 import { createSettingsScreen } from './ui/settings';
 import { type SkillCheck, type SkillWindowState, createSkillWindow, prefetchSkillWindow } from './ui/skillWindow';
 import { type StatWindowState, createStatWindow } from './ui/statWindow';
@@ -90,7 +91,7 @@ const roster = gameData.roster;
 writeRoster(roster);
 let settings = gameData.settings;
 
-let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' | 'boss' = selectedCharacter(roster) ? 'map' : 'select';
+let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' | 'boss' | 'music' =selectedCharacter(roster) ? 'map' : 'select';
 let town: Town | null = null;
 let townLoading = false;
 let townChangedAt = Date.now();
@@ -143,6 +144,7 @@ const hud = createHud(root, {
   onOpenCharacterSelect: openCharacterSelect,
   onOpenCashShop: openCashShop,
   onOpenSettings: openSettings,
+  onOpenMusic: openMusic,
   onOpenStat: openStat,
   onOpenSkill: openSkill,
   onOpenBoss: openBoss,
@@ -217,6 +219,25 @@ const settingsScreen = createSettingsScreen(root, {
 const statWindow = createStatWindow(root, { onClose: closeInfoWindow });
 const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
 const bossWindow = createBossWindow(root, { onReserve: reserveBoss, onChallenge: challengeBoss, onClose: closeInfoWindow });
+const musicWindow = createMusicWindow(root, {
+  onPlay: (track) => applyMusic({ bgmMode: 'repeat', bgmTrack: track }),
+  onToggleFavorite(track) {
+    const favorites = settings.bgmFavorites.includes(track)
+      ? settings.bgmFavorites.filter((each) => each !== track)
+      : [...settings.bgmFavorites, track];
+    applyMusic({ bgmFavorites: favorites });
+  },
+  onMode(mode) {
+    // 고른 곡 없이 「한 곡 반복」 을 누르면 지금 곡을 반복한다
+    const track = mode === 'repeat' ? (settings.bgmTrack ?? bgm.nowPlaying().track) : settings.bgmTrack;
+    if (mode === 'repeat' && !track) return;
+    applyMusic({ bgmMode: mode, bgmTrack: track });
+  },
+  onClose: closeMusic,
+});
+bgm.onChange(() => {
+  if (screen === 'music') musicWindow.update(musicState());
+});
 
 const scene = await createScene(stage, {
   onKill: handleKill,
@@ -247,6 +268,7 @@ function applySettings(next: Settings): void {
   scene.setDamageNumbers(settings.damageNumbers);
   scene.setLevelUpScale(levelUpScale(settings));
   bgm.setVolume(settings.bgmVolume / BGM_VOLUME_MAX);
+  bgm.setPlayback(bgmPlayback(settings));
   activity.setIdleLimit(idleLimitSeconds(settings));
 }
 
@@ -268,6 +290,31 @@ function openSettings(): void {
 function closeSettings(): void {
   screen = 'map';
   settingsScreen.hide();
+  syncRunning();
+  void tick();
+}
+
+function musicState(): MusicWindowState {
+  return { mode: settings.bgmMode, favorites: settings.bgmFavorites, nowPlaying: bgm.nowPlaying(), muted: isMuted() };
+}
+
+/** BGM 고르기 창에서 고친 것은 확인 없이 바로 저장하고 튼다. 들어 보며 고르는 창이다 */
+function applyMusic(change: Partial<Settings>): void {
+  applySettings({ ...settings, ...change });
+  musicWindow.update(musicState());
+}
+
+/** 다른 정보창처럼 맵은 멈추지만 BGM 은 그대로 튼다. HUD ⚙️ 메뉴 「BGM 고르기」가 연다 */
+function openMusic(): void {
+  if (!selectedCharacter(roster) || screen !== 'map') return;
+  screen = 'music';
+  syncRunning();
+  musicWindow.show(musicState());
+}
+
+function closeMusic(): void {
+  screen = 'map';
+  musicWindow.hide();
   syncRunning();
   void tick();
 }
@@ -806,3 +853,4 @@ await tick();
 window.setInterval(() => void tick(), TICK_MS);
 // 보스 도전 창의 아이콘 열네 개를 창을 열기 전에 뒤에서 받아 둔다
 prefetchBossWindow();
+prefetchMusicWindow();

@@ -15,7 +15,13 @@ export const mapRenderUrl = (mapId: number) => `${BASE}/map/${mapId}/render/0`;
  */
 export const mapLayerRenderUrl = (mapId: number, layer: number, minX: number, minY: number) =>
   `${BASE}/map/${mapId}/render/layer/${layer}/0?minX=${minX}&minY=${minY}`;
-export const mapBgmUrl = (mapId: number) => `${BASE}/map/${mapId}/bgm`;
+/** 원작 BGM 한 곡. path 는 `Bgm00/FloralLife` 처럼 Sound.wz 의 폴더/이름이다. 이름에 빈칸·따옴표가 있는 곡이 있다 */
+export const musicUrl = (path: string) => `${BASE}/music/${path.split('/').map(encodeURIComponent).join('/')}`;
+/** 맵에 걸린 BGM 경로(WZ `info/bgm`, 값이 `Bgm00/FloralLife`). 곡을 받지 않고 어느 곡인지만 본다 */
+export function mapBgmNodeUrl(mapId: number): string {
+  const padded = String(mapId).padStart(9, '0');
+  return `https://maplestory.io/api/wz/${REGION}/${VERSION}/Map/Map/Map${padded[0]}/${padded}.img/info/bgm`;
+}
 export const mobInfoUrl = (mobId: number) => `${BASE}/mob/${mobId}`;
 export const mobFrameUrl = (mobId: number, action: string, frame: number) =>
   `${BASE}/mob/${mobId}/render/${action}/${frame}`;

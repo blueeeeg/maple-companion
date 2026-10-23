@@ -22,6 +22,7 @@ export interface HudHandlers {
   onOpenCharacterSelect(): void;
   onOpenCashShop(): void;
   onOpenSettings(): void;
+  onOpenMusic(): void;
   onOpenStat(): void;
   onOpenSkill(): void;
   onOpenBoss(): void;
@@ -103,6 +104,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     </header>
     <div class="hud-menu" role="menu" hidden>
       <button class="hud-mute" type="button" role="menuitem"></button>
+      <button class="hud-music" type="button" role="menuitem">🎵 BGM 고르기</button>
       <button class="hud-settings" type="button" role="menuitem">⚙️ 설정</button>
       <button class="hud-characters" type="button" role="menuitem">👤 캐릭터 선택</button>
     </div>
@@ -133,7 +135,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
 
   advance.addEventListener('click', openChoice);
 
-  // HUD 가 좁아서(긴 직업 이름·휴식 중·스탯·스킬 버튼이면 이미 꽉 찬다) 소리·설정·캐릭터 선택은 버튼 하나의 메뉴로 묶는다
+  // HUD 가 좁아서(긴 직업 이름·휴식 중·스탯·스킬 버튼이면 이미 꽉 찬다) 소리·BGM·설정·캐릭터 선택은 버튼 하나의 메뉴로 묶는다
   const menuButton = pick<HTMLButtonElement>('.hud-menu-button');
   const menu = pick('.hud-menu');
   const setMenuOpen = (open: boolean) => {
@@ -154,6 +156,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       action();
     });
   menuItem('.hud-mute', handlers.onToggleMute);
+  menuItem('.hud-music', handlers.onOpenMusic);
   menuItem('.hud-settings', handlers.onOpenSettings);
   menuItem('.hud-characters', handlers.onOpenCharacterSelect);
   const stat = pick<HTMLButtonElement>('.hud-stat');

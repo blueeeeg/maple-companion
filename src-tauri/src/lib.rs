@@ -375,6 +375,8 @@ pub fn run() {
             bgm_cache::has_bgm,
             bgm_cache::write_bgm,
             bgm_cache::remove_bgm,
+            bgm_cache::list_bgm,
+            bgm_cache::rename_bgm,
             updater::check_update,
             notification::show_notification
         ])
