@@ -13,6 +13,15 @@ export interface BossSpec {
   sky: [top: number, bottom: number];
 }
 
+function shuffleArray<T>(arr: T[], random: () => number): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
 /** 기본값은 사냥 20번째마다(활동 약 1시간) 보스가 나온다. 설정에서 바꾼다 */
 export const BOSS_EVERY_ENCOUNTERS = 20;
 /** 기본 보스 간격일 때 보통 몬스터 한 마리 경험치의 몇 배를 주는지 */
@@ -59,6 +68,33 @@ export function pickBoss(level: number, random = Math.random): BossSpec | null {
   return pool[Math.floor(random() * pool.length)];
 }
 
+/**
+ * 셔플 백에서 보스를 한 마리 꺼낸다. 자격 없는 ID 를 제거하고, 비었으면 자격 있는 보스를 섞어 새 주기로 채운다.
+ * 새 주기 첫 보스가 직전 보스와 같으면(2마리 이상일 때) 한 칸 뒤로 밀어 연속을 막는다.
+ * 자격 있는 보스가 없으면 null
+ */
+export function drawFromBag(
+  bag: number[],
+  lastBossId: number | null,
+  level: number,
+  random = Math.random,
+): { boss: BossSpec; bag: number[]; lastBossId: number } | null {
+  const eligible = BOSSES.filter((b) => b.minLevel <= level);
+  if (eligible.length === 0) return null;
+  const eligibleIds = new Set(eligible.map((b) => b.id));
+  let remaining = bag.filter((id) => eligibleIds.has(id));
+  if (remaining.length === 0) {
+    remaining = shuffleArray(eligible.map((b) => b.id), random);
+    // 새 주기 첫 보스가 직전 보스와 겹치지 않도록
+    if (eligible.length >= 2 && remaining[0] === lastBossId) {
+      remaining.push(remaining.shift()!);
+    }
+  }
+  const id = remaining[0];
+  const boss = BOSSES.find((b) => b.id === id)!;
+  return { boss, bag: remaining.slice(1), lastBossId: id };
+}
+
 /** 보스 도전 창에서 다음 보스로 지정해 둔 보스. 지정이 없거나, 없는 보스거나, 아직 레벨이 모자라면 null */
 export function reservedBoss(level: number, reservedBossId: number | null): BossSpec | null {
   const boss = BOSSES.find((each) => each.id === reservedBossId);
@@ -90,6 +126,10 @@ export interface HuntProgress extends HuntClock {
   /** 지금까지 치른 사냥 수(보스 포함) */
   encountersResolved: number;
   bossChargeSeconds: number;
+  /** 셔플 백: 이번 주기에 아직 나오지 않은 보스 ID. 없으면 pickBoss 폴백(테스트·구버전 호환) */
+  bossBag?: number[];
+  /** 직전에 잡은 보스 ID. 새 주기 첫 보스 연속 방지에 쓴다 */
+  lastBossId?: number | null;
 }
 
 /** 다음 사냥이 보스 차례인지. 사냥 bossEvery 번 몫의 시간이 모이면 그 마지막 사냥이 보스다 */
@@ -169,7 +209,21 @@ export function resolveHunts(
     const due = bossDue(progress, pace);
     const reserved = due && !result.reservationUsed ? reservedBoss(level, reservedBossId) : null;
     if (reserved) result.reservationUsed = true;
-    const boss = due ? (reserved ?? pickBoss(level, random)) : null;
+    let boss: BossSpec | null = null;
+    if (due) {
+      if (reserved) {
+        boss = reserved;
+      } else if (progress.bossBag !== undefined) {
+        const drawn = drawFromBag(progress.bossBag, progress.lastBossId ?? null, level, random);
+        if (drawn) {
+          progress.bossBag = drawn.bag;
+          progress.lastBossId = drawn.lastBossId;
+          boss = drawn.boss;
+        }
+      } else {
+        boss = pickBoss(level, random);
+      }
+    }
     const name = boss ? boss.name : pickMonster(town, random).name;
     const reward = settleHunt(progress, pace, town, boss !== null, random);
     result.kills[name] = (result.kills[name] ?? 0) + 1;

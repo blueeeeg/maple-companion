@@ -38,6 +38,10 @@ export interface Character {
   huntSkillId: number | null;
   /** 보스 도전 창에서 지정한 다음 보스(몹 ID). 다음 보스 차례에 무작위 대신 이 보스가 나오고, 잡으면 지운다. 보상은 같다 */
   reservedBossId: number | null;
+  /** 셔플 백: 이번 주기에 아직 나오지 않은 보스 ID 순서. 비면 자격 있는 보스를 모두 섞어 새 주기로 채운다 */
+  bossBag: number[];
+  /** 직전에 잡은 보스 몹 ID. 새 주기 첫 보스가 같은 보스로 연속되지 않게 쓴다 */
+  lastBossId: number | null;
   /** 전직한 날. 이 기록을 시작하기 전에 이미 한 전직은 null(날짜 모름)이다 */
   advancedAt: AdvancementLog;
 }
@@ -82,6 +86,8 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     cashEquipped: {},
     huntSkillId: null,
     reservedBossId: null,
+    bossBag: [],
+    lastBossId: null,
     advancedAt: {},
   };
 }

@@ -21,9 +21,10 @@ import {
   bossHits,
   bossMeso,
   bossXp,
+  drawFromBag,
   pickBoss,
+  reservedBoss,
   resolveHunts,
-  scheduledBoss,
   settleHunt,
 } from './game/bosses';
 import { bossTurn, settleBossFight } from './game/bossChallenge';
@@ -730,7 +731,21 @@ async function tick(): Promise<void> {
   if (waiting > 1) settleMissedHunts(character, waiting - 1, info.level, pace);
   if (waiting >= 1 && !scene.inEncounter && !townLoading) {
     const next = character.encountersResolved + 1;
-    const boss = bossDue(character, pace) && next !== bossSkippedAt ? scheduledBoss(info.level, character.reservedBossId) : null;
+    let boss: BossSpec | null = null;
+    if (bossDue(character, pace) && next !== bossSkippedAt) {
+      const reserved = reservedBoss(info.level, character.reservedBossId);
+      if (reserved) {
+        boss = reserved;
+      } else {
+        const drawn = drawFromBag(character.bossBag, character.lastBossId, info.level);
+        if (drawn) {
+          character.bossBag = drawn.bag;
+          character.lastBossId = drawn.lastBossId;
+          writeRoster(roster);
+          boss = drawn.boss;
+        }
+      }
+    }
     if (boss) fightBoss(boss, { kind: 'turn', encounterNumber: next });
     else {
       // 사냥터에서는 그 맵의 실제 몬스터가 나온다. 보상은 마을 기준 그대로다

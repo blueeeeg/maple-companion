@@ -117,6 +117,39 @@ describe('사냥 스킬·전직 기록 저장', () => {
   });
 });
 
+describe('셔플 백 저장', () => {
+  it('bossBag 이 없는 예전 저장은 빈 배열로 읽는다', () => {
+    const old = { ...character('a') } as Partial<Character>;
+    delete old.bossBag;
+    delete old.lastBossId;
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [old] }))).characters;
+    expect(read.bossBag).toEqual([]);
+    expect(read.lastBossId).toBeNull();
+  });
+
+  it('저장된 bossBag 과 lastBossId 는 그대로 읽는다', () => {
+    const saved = character('a', { bossBag: [2220000, 6130101], lastBossId: 8820001 });
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [saved] }))).characters;
+    expect(read.bossBag).toEqual([2220000, 6130101]);
+    expect(read.lastBossId).toBe(8820001);
+  });
+
+  it('bossBag 에 숫자가 아닌 값이 섞이면 걸러낸다', () => {
+    const corrupted = { ...character('a'), bossBag: [2220000, 'bad', null, 6130101] } as unknown as Character;
+    const [read] = normalizeRoster({ characters: [corrupted] }).characters;
+    expect(read.bossBag).toEqual([2220000, 6130101]);
+  });
+
+  it('합칠 때 더 자란 쪽 bossBag 과 lastBossId 를 쓰고 다시 합쳐도 같다', () => {
+    const file = roster([character('a', { activeSeconds: 100, bossBag: [2220000], lastBossId: 6130101 })]);
+    const local = roster([character('a', { activeSeconds: 50, bossBag: [], lastBossId: null })]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.bossBag).toEqual([2220000]);
+    expect(merged.lastBossId).toBe(6130101);
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
+  });
+});
+
 describe('보스 지정 저장', () => {
   const PINK_BEAN = 8820001;
 

@@ -35,11 +35,17 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       ...normalizeCashData(character),
     };
     const { huntSkillId } = character;
+    const raw = character as Partial<Character>;
     return {
       ...filled,
       huntSkillId: typeof huntSkillId === 'number' && Number.isInteger(huntSkillId) ? huntSkillId : null,
       // 보스 지정이 생기기 전 저장이거나 지금은 없는 보스면 지정 없음(무작위)이다
       reservedBossId: normalizeReservedBoss(character.reservedBossId),
+      // 셔플 백이 없거나 깨진 저장이면 빈 배열로 시작한다
+      bossBag: Array.isArray(raw.bossBag)
+        ? (raw.bossBag as unknown[]).filter((x): x is number => typeof x === 'number' && Number.isInteger(x))
+        : [],
+      lastBossId: typeof raw.lastBossId === 'number' ? raw.lastBossId : null,
       // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다
       advancedAt: normalizeAdvancements(character.advancedAt, reachedTier(filled)),
     };

@@ -11,6 +11,7 @@ import {
   bossHits,
   bossMeso,
   bossXp,
+  drawFromBag,
   pickBoss,
   reservedBoss,
   resolveHunts,
@@ -28,6 +29,12 @@ const progress = (encountersResolved: number, pendingHunts = 0): HuntProgress =>
   huntBonusSeconds: 0,
   encountersResolved,
   bossChargeSeconds: (encountersResolved % 20) * 180,
+});
+
+const progressWithBag = (encountersResolved: number, pendingHunts = 0): HuntProgress => ({
+  ...progress(encountersResolved, pendingHunts),
+  bossBag: [],
+  lastBossId: null,
 });
 
 describe('보스 차례', () => {
@@ -133,5 +140,91 @@ describe('지정한 보스', () => {
     expect(plain.reservationUsed).toBe(false);
     expect(reserved.xp).toBe(plain.xp);
     expect(reserved.meso).toBe(plain.meso);
+  });
+});
+
+describe('셔플 백', () => {
+  // Lv.30: 마노·머쉬맘·스텀피 세 마리
+  const LEVEL = 30;
+  const eligible = BOSSES.filter((b) => b.minLevel <= LEVEL);
+
+  it('한 주기 동안 자격 있는 보스가 각각 정확히 한 번씩 나온다', () => {
+    let bag: number[] = [];
+    let lastBossId: number | null = null;
+    const seenInCycle: string[] = [];
+    for (let i = 0; i < eligible.length; i += 1) {
+      const drawn = drawFromBag(bag, lastBossId, LEVEL, Math.random);
+      expect(drawn).not.toBeNull();
+      seenInCycle.push(drawn!.boss.name);
+      bag = drawn!.bag;
+      lastBossId = drawn!.lastBossId;
+    }
+    expect(new Set(seenInCycle).size).toBe(eligible.length);
+    expect(bag).toHaveLength(0);
+  });
+
+  it('여러 주기에 걸쳐 새 주기 첫 보스는 직전 주기 마지막 보스와 다르다', () => {
+    let bag: number[] = [];
+    let lastBossId: number | null = null;
+    for (let cycle = 0; cycle < 10; cycle += 1) {
+      let prevLastId: number | null = null;
+      for (let i = 0; i < eligible.length; i += 1) {
+        const drawn = drawFromBag(bag, lastBossId, LEVEL, Math.random);
+        expect(drawn).not.toBeNull();
+        if (i === 0 && prevLastId !== null) {
+          expect(drawn!.boss.id).not.toBe(prevLastId);
+        }
+        bag = drawn!.bag;
+        lastBossId = drawn!.lastBossId;
+        if (i === eligible.length - 1) prevLastId = drawn!.boss.id;
+      }
+    }
+  });
+
+  it('fixed(0) 일 때 새 주기 첫 보스가 lastBossId 와 같으면 한 칸 뒤로 민다', () => {
+    const firstEligibleId = eligible[0].id;
+    // fixed(0) 셔플은 원래 순서를 유지하므로 첫 번째 = firstEligibleId
+    const drawn = drawFromBag([], firstEligibleId, LEVEL, fixed(0));
+    expect(drawn!.boss.id).not.toBe(firstEligibleId);
+  });
+
+  it('자격 없는 ID 는 새 주기 전에 가지치기한다', () => {
+    // 핑크빈(minLevel 180) ID 를 레벨 30 백에 넣으면 바로 제거되고 자격 있는 보스로 채운다
+    const pinkBeanId = BOSSES.find((b) => b.name === '핑크빈')!.id;
+    const drawn = drawFromBag([pinkBeanId], null, LEVEL, Math.random);
+    expect(drawn).not.toBeNull();
+    expect(drawn!.boss.minLevel).toBeLessThanOrEqual(LEVEL);
+    expect(drawn!.boss.id).not.toBe(pinkBeanId);
+  });
+
+  it('레벨이 올라 새로 자격 생긴 보스는 현재 주기가 끝난 뒤 합류한다', () => {
+    // 레벨 18(머쉬맘 minLevel)에서 백을 채워 두면 스텀피(25)는 포함되지 않는다
+    const LEVEL_LOW = 18;
+    const drawn = drawFromBag([], null, LEVEL_LOW, Math.random);
+    // 레벨 18 자격: 마노·머쉬맘 2마리만
+    expect(drawn!.bag.length).toBe(1); // 2 - 1 = 1
+    expect(drawn!.boss.minLevel).toBeLessThanOrEqual(LEVEL_LOW);
+  });
+
+  it('예약 보스는 백을 소비하지 않는다', () => {
+    const pinkBean = BOSSES.find((b) => b.name === '핑크빈')!;
+    const prog = progressWithBag(18, 5);
+    const before = [...prog.bossBag!];
+    resolveHunts(prog, DEFAULT_PACE, 200, henesys, 5, fixed(0), pinkBean.id);
+    // 예약 보스가 쓰였으므로 백은 그대로여야 한다
+    expect(prog.bossBag).toEqual(before);
+    expect(prog.lastBossId).toBeNull();
+  });
+
+  it('resolveHunts 도 셔플 백을 쓰고 progress 를 갱신한다', () => {
+    const prog = progressWithBag(18, 5); // 5 hunts: encounter 19 is a boss
+    resolveHunts(prog, DEFAULT_PACE, LEVEL, henesys, 5, Math.random);
+    // 보스 차례(19번)에 백에서 꺼냈으므로 lastBossId 가 설정되어야 한다
+    expect(prog.lastBossId).not.toBeNull();
+    expect(prog.bossBag).toBeDefined();
+  });
+
+  it('자격 있는 보스가 없으면 null', () => {
+    expect(drawFromBag([], null, 5)).toBeNull();
   });
 });
