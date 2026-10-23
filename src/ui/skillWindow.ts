@@ -110,13 +110,14 @@ const iconUrl = (entry: SkillEntry) => wzImageUrl(skillIconPath(entry));
 
 /**
  * 스킬창 그림과 이 직업 길의 스킬 아이콘을 뒤에서 미리 받아 둔다. 아이콘은 캐시샵처럼 기기(IndexedDB)에 남겨서
- * 다음 실행부터는 네트워크 없이 바로 그린다. 창을 열면 지금 탭 아이콘이 미리 받기보다 먼저 받아진다
+ * 다음 실행부터는 네트워크 없이 바로 그린다. 창을 열면 지금 탭 아이콘이 미리 받기보다 먼저 받아진다. 아이콘을 다 받으면 끝난다
  */
-export function prefetchSkillWindow(jobLine: JobLineId | null, tier: number): void {
-  iconPrefetchOrder(jobLine, tier).forEach((entry) => loadImageAsset(iconUrl(entry), PRIORITY.prefetch).catch(() => {}));
+export async function prefetchSkillWindow(jobLine: JobLineId | null, tier: number): Promise<void> {
+  const icons = iconPrefetchOrder(jobLine, tier).map((entry) => loadImageAsset(iconUrl(entry), PRIORITY.prefetch));
   [...Object.values(ART), ...Object.values(ROW_ART), ...Object.values(SCROLL_ART), ...SKILL_TIERS.flatMap((each) => Object.values(tabArt(each)))].forEach(
     (url) => loadWithRetry(url).catch(() => {}),
   );
+  await Promise.allSettled(icons);
 }
 
 function tierTitle(jobLine: JobLineId | null, tier: number): string {

@@ -31,7 +31,7 @@ import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encou
 import { advancementTier, describeJob } from './game/jobs';
 import { levelInfo } from './game/progression';
 import { bossRecord, noteAdvancements } from './game/records';
-import { canCast } from './game/skillBook';
+import { canCast, findSkill, skillDataPrefetchOrder } from './game/skillBook';
 import { newCharacterId } from './game/save';
 import {
   BGM_VOLUME_MAX,
@@ -49,7 +49,8 @@ import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
 import { warmMaps } from './maple/portal';
-import { canDrawSkill, loadSkill } from './maple/skills';
+import { canDrawSkill, loadSkill, prefetchSkillData } from './maple/skills';
+import { SKILL_STORE_CAP_BYTES } from './maple/skillStore';
 import { createActivitySource } from './platform/activity';
 import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
 import { createNotifier } from './platform/notification';
@@ -365,8 +366,9 @@ async function chooseHuntSkill(skillId: number | null): Promise<SkillCheck> {
 }
 
 /**
- * 스킬창의 「쓰기」. 스킬과 동작 그림을 받아 둔 뒤 창을 닫고 맵에서 한 번 쓴다. 창이 떠 있는 동안은 맵이 멈춰 있어
- * 창 너머로 쓰면 보이지 않는다. 겉모습뿐이라 사냥·보상과 상관없고, 연달아 눌러 이펙트가 쌓이지 않게 잠깐 쉰다
+ * 스킬창의 「쓰기」. 누르는 즉시 창을 닫고 받아 둔 동작으로 쓰기 시작한다. 창이 떠 있는 동안은 맵이 멈춰 있어 창 너머로는
+ * 안 보여서다. 이펙트는 기기에 남긴 데이터나 받는 대로 얹는다. 겉모습뿐이라 사냥·보상과 상관없고, 연달아 눌러 이펙트가
+ * 쌓이지 않게 잠깐 쉰다
  */
 async function castSkill(skillId: number): Promise<SkillCheck> {
   const character = selectedCharacter(roster);
@@ -374,13 +376,15 @@ async function castSkill(skillId: number): Promise<SkillCheck> {
   const { tier } = characterJob(character, levelInfo(characterXp(character)).level);
   if (!canCast(character.jobLine, tier, skillId)) return 'failed';
   if (performance.now() - lastCastAt < CAST_COOLDOWN_MS) return 'cooldown';
-  const prepared = await scene.prepareCast(skillId);
-  if (prepared !== 'ok') return prepared;
-  // 받는 동안 창을 닫았거나 다른 캐릭터로 바꿨으면 쓰지 않는다
-  if (screen !== 'skill' || selectedCharacter(roster) !== character) return 'failed';
   lastCastAt = performance.now();
   closeInfoWindow();
-  scene.cast(skillId);
+  const name = findSkill(character.jobLine, skillId)?.name ?? '스킬';
+  void scene.castSkill(skillId).then((result) => {
+    if (result === 'noArt') hud.notify(`${name} · 그릴 이펙트가 없어 동작만 했어요`);
+    else if (result === 'failed') hud.notify(`${name} 이펙트를 받지 못했어요. 다시 누르면 다시 받아요`);
+    else if (result === 'late') hud.notify(`${name} 이펙트를 받는 데 오래 걸려 이번엔 동작만 했어요. 다음엔 바로 나와요`);
+    else if (result === 'notReady') hud.notify('맵을 불러오는 중이라 쓰지 못했어요');
+  });
   return 'ok';
 }
 
@@ -565,7 +569,11 @@ async function tick(): Promise<void> {
   const skillBookKey = `${character.jobLine}|${job.tier}`;
   if (skillBookKey !== prefetchedSkillBook) {
     prefetchedSkillBook = skillBookKey;
-    prefetchSkillWindow(character.jobLine, job.tier);
+    const { jobLine } = character;
+    // 아이콘을 다 받은 뒤에 스킬창에서 쓰거나 사냥에 쓸(자동 포함) 스킬 데이터를 작은 것부터 하나씩 받아 기기에 남긴다
+    void prefetchSkillWindow(jobLine, job.tier).then(() =>
+      prefetchSkillData(skillDataPrefetchOrder(jobLine, job.tier, job.skillId, SKILL_STORE_CAP_BYTES / 1024)),
+    );
   }
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
   const trayStatus = job.canChooseJob ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;

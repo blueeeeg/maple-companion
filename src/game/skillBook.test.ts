@@ -7,6 +7,7 @@ import {
   autoHuntSkill,
   canCast,
   iconPrefetchOrder,
+  skillDataPrefetchOrder,
   skillIconPath,
   findSkill,
   hasUsableEffect,
@@ -148,5 +149,26 @@ describe('스킬 아이콘', () => {
     expect(order.slice(0, tierSkills('magician', 4).length)).toEqual(tierSkills('magician', 4));
     expect(order).toHaveLength(SKILL_TIERS.reduce<number>((sum, tier) => sum + tierSkills('magician', tier).length, 0));
     expect(iconPrefetchOrder(null, 0)).toEqual(tierSkills(null, 0));
+  });
+});
+
+describe('스킬 데이터 미리 받기', () => {
+  it('지금 차수 탭의 쓸 수 있는 스킬과 사냥 스킬을 작은 것부터, 제한보다 큰 것은 빼고', () => {
+    const order = skillDataPrefetchOrder('magician', 4, 2001008, 5000);
+    const sizes = order.map((id) => findSkill('magician', id)!.kb!);
+    expect(sizes).toEqual([...sizes].sort((a, b) => a - b));
+    expect(sizes.every((kb) => kb <= 5000)).toBe(true);
+    expect(order).toContain(2121004); // 인피니티
+    expect(order).toContain(2001008); // 고른 사냥 스킬(1차)
+    expect(order).not.toContain(2101001); // 2차 메디테이션은 지금 탭이 아니다
+    expect(order).not.toContain(2100007); // 패시브
+  });
+
+  it('쓸 수 있거나 사냥에 고를 수 있는 스킬은 모두 크기를 안다', () => {
+    LINES.forEach((line) =>
+      learnedSkills(line, 6)
+        .filter((entry) => !entry.noArt && entry.type !== 'passive')
+        .forEach((entry) => expect(entry.kb).toBeGreaterThan(0)),
+    );
   });
 });

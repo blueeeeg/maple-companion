@@ -65,6 +65,16 @@ export function writeStored(key: string, value: unknown): void {
   });
 }
 
+export function deleteStored(key: string): void {
+  void openDatabase().then((db) => {
+    try {
+      db?.transaction(STORE, 'readwrite').objectStore(STORE).delete(key);
+    } catch {
+      // 못 지우면 다음 버전 DB 로 바뀔 때 통째로 지워진다
+    }
+  });
+}
+
 /**
  * 동시에 limit 개까지만 돌리고, 기다리는 것은 priority 가 큰 것부터(같으면 먼저 온 것부터) 꺼낸다.
  * 다음 페이지 아이콘을 미리 받는 동안 지금 페이지 아이콘·미리보기가 뒤로 밀리지 않게 한다

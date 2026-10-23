@@ -68,8 +68,8 @@ const NO_ART_ATTACK_MS = 800;
 const STILL_FRAME_MS = 600;
 /** 캐릭터 그림·스킬을 다 못 받았을 때 다시 받기까지 쉬는 시간 */
 const LOOK_RETRY_MS = 30_000;
-/** 스킬창에서 쓴 스킬의 동작 그림을 기다리는 시간 */
-const CAST_MOTION_WAIT_MS = 4000;
+/** 스킬창에서 쓴 스킬의 이펙트가 이보다 늦게 오면 이번엔 건너뛴다. 받은 데이터는 남아 다음엔 바로 나온다 */
+const CAST_EFFECT_LATE_MS = 10_000;
 /** 동작 그림 없이 쓸 때 제자리에 서 있는 시간 */
 const CAST_HOLD_MS = 900;
 /** 사냥이 이보다 오래 안 끝나면 마무리한다. 끝나지 않은 사냥은 다음 몬스터·마을 이동을 모두 막는다. 보스도 보통 1분 안에 끝난다 */
@@ -159,11 +159,15 @@ export interface Scene {
   travel(mapId: number, label: string, exitX: number, arrivalX: number): Promise<void>;
   /** 맵 id 별로 늘 띄워 둘 포털(맵 월드 좌표). 지금 맵에도 바로 건다 */
   setRoutePortals(portals: Map<number, RoutePortal[]>): void;
-  /** 스킬창에서 쓸 스킬과 그 동작 그림을 받아 둔다. 맵에 그릴 이펙트가 없으면 noArt, 못 받으면 failed */
-  prepareCast(skillId: number): Promise<'ok' | 'noArt' | 'failed'>;
-  /** 받아 둔 스킬을 캐릭터 자리에서 한 번 쓴다. 겉모습뿐이라 사냥·보상과 상관없다. 못 쓰면 false */
-  cast(skillId: number): boolean;
+  /**
+   * 스킬창에서 고른 스킬을 캐릭터 자리에서 한 번 쓴다. 받아 둔 동작으로 바로 시작하고 이펙트는 받는 대로 얹는다.
+   * 이펙트를 맵에 그릴 수 없으면 noArt, 못 받으면 failed, 너무 늦게 받아 이번엔 건너뛰었으면 late, 맵을 아직 못 받았으면
+   * notReady. 겉모습뿐이다
+   */
+  castSkill(skillId: number): Promise<CastResult>;
 }
+
+export type CastResult = 'ok' | 'noArt' | 'failed' | 'late' | 'notReady';
 
 type HeroAction = 'stand' | 'walk' | 'attack';
 type HeroAnimations = Record<HeroAction, Animation>;
@@ -374,7 +378,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   /** 스킬창에서 쓴 스킬의 동작. 끝나면 원래 동작으로 돌아간다 */
   let castPose: { animation: Animation; clockMs: number } | null = null;
   const castMotions = new Map<string, Promise<Animation | null>>();
-  const preparedCasts = new Map<number, { skill: Skill; motion: Animation | null }>();
+  /** 다 받은 동작 그림. 스킬을 쓰는 순간 기다리지 않고 꺼내 쓴다 */
+  const readyMotions = new Map<string, Animation | null>();
+  /** 한 번 받아 본 스킬의 원작 동작 이름 */
+  const knownActions = new Map<number, string[]>();
   let facing: -1 | 1 = -1;
   let behavior: Behavior = { kind: 'wander', targetX: 0, pauseMs: 1000 };
   let encounter: Encounter | null = null;
@@ -746,16 +753,22 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
    * 스킬 동작 그림. 스킬 데이터의 동작(alert2 등)을 먼저, 그 동작을 캐릭터 API 가 못 그리면 원작 전투 대기 동작 alert 로 대신한다.
    * 둘 다 못 받으면 동작 없이 이펙트만 쓴다
    */
+  const motionKey = (actions: string[]) => `${heroLook.join(',')}|${actions[0] ?? ''}`;
+
   function castMotion(actions: string[]): Promise<Animation | null> {
     const look = heroLook;
-    const key = `${look.join(',')}|${actions[0] ?? ''}`;
+    const key = motionKey(actions);
     let pending = castMotions.get(key);
     if (!pending) {
       pending = [...actions.slice(0, 1), 'alert']
         .reduce<Promise<Animation | null>>(
           (previous, action) => previous.then((found) => found ?? loadHeroAction(look, action).then(({ animation }) => animation, () => null)),
           Promise.resolve(null),
-        );
+        )
+        .then((animation) => {
+          readyMotions.set(key, animation);
+          return animation;
+        });
       castMotions.set(key, pending);
     }
     return pending;
@@ -1122,6 +1135,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     setJob(job) {
       heroTier = job.tier;
       heroLook = job.look;
+      // 스킬창에서 스킬을 누르는 순간 바로 움직이게 공용 동작(alert)을 모습이 바뀔 때마다 받아 둔다
+      void castMotion([]);
       fallbackRange = job.fallbackRange;
       const key = `${job.look.join(',')}|${job.attackAction}|${job.skillId}`;
       if (key === lookKey && performance.now() < lookRetryAt) return;
@@ -1334,31 +1349,31 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       routePortals = portals;
       if (portalStage) placePortals(portalStage);
     },
-    async prepareCast(skillId) {
-      let cast: Skill;
-      try {
-        cast = await loadSkill(skillId, fallbackRange);
-      } catch {
-        return 'failed';
-      }
-      if (!canDrawSkill(cast)) return 'noArt';
-      // 동작 그림은 서버가 처음 그릴 때 오래 걸리기도 해서 잠깐만 기다리고, 늦으면 이펙트만 쓴다. 받은 것은 다음에 쓴다
-      const motion = await Promise.race([
-        castMotion(cast.actions),
-        new Promise<null>((resolve) => window.setTimeout(() => resolve(null), CAST_MOTION_WAIT_MS)),
-      ]);
-      preparedCasts.set(skillId, { skill: cast, motion });
-      return 'ok';
-    },
-    cast(skillId) {
-      const prepared = preparedCasts.get(skillId);
-      if (!prepared || !ground) return false;
-      playLayers(prepared.skill.effect, hero.x, hero.y, facing);
-      if (prepared.motion && heroAnimations) castPose = { animation: prepared.motion, clockMs: 0 };
+    castSkill(skillId) {
+      if (!ground) return Promise.resolve<CastResult>('notReady');
+      const motion = readyMotions.get(motionKey(knownActions.get(skillId) ?? [])) ?? readyMotions.get(motionKey([])) ?? null;
+      if (motion && heroAnimations) castPose = { animation: motion, clockMs: 0 };
       // 쓰는 동안 걸어가 버리면 이펙트만 제자리에 남는다
-      const holdMs = prepared.motion ? totalMs(prepared.motion) : CAST_HOLD_MS;
+      const holdMs = motion ? totalMs(motion) : CAST_HOLD_MS;
       if (behavior.kind === 'wander') behavior = { kind: 'wander', targetX: hero.x, pauseMs: Math.max(behavior.pauseMs, holdMs) };
-      return true;
+      const startedAt = performance.now();
+      return loadSkill(skillId, fallbackRange).then(
+        (cast): CastResult => {
+          // 이 스킬만의 원작 동작은 다음에 쓸 때 바로 꺼내게 받아 둔다
+          knownActions.set(skillId, cast.actions);
+          void castMotion(cast.actions);
+          if (!canDrawSkill(cast)) return 'noArt';
+          if (!ground) return 'notReady';
+          if (performance.now() - startedAt > CAST_EFFECT_LATE_MS) return 'late';
+          playLayers(cast.effect, hero.x, hero.y, facing);
+          performance.mark(`cast-effect:${skillId}`);
+          return 'ok';
+        },
+        (error: unknown): CastResult => {
+          console.warn(`[scene] 스킬 ${skillId} 를 받지 못했다`, error);
+          return 'failed';
+        },
+      );
     },
   };
 }

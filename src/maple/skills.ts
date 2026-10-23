@@ -1,6 +1,7 @@
 import type { Texture } from 'pixi.js';
 import { hasUsableEffect } from '../game/skillBook';
-import { type SkillFrameData, type SkillInfo, fetchJson, skillUrl } from './api';
+import { type SkillFrameData, type SkillInfo, fetchWithin, skillUrl } from './api';
+import { readStoredSkill, storeSkill, trimSkillInfo } from './skillStore';
 import { textureFromBase64 } from './textures';
 
 export interface EffectFrame {
@@ -49,15 +50,64 @@ const loadLayers = (layers: { frames: SkillFrameData[] }[] | undefined): Promise
     ),
   );
 
-/** 스킬 하나에 수백 KB~수 MB 라서 같은 스킬은 한 번만 받는다 */
+const infoLoads = new Map<number, Promise<SkillInfo>>();
+
+/**
+ * 스킬 데이터. 기기에 남긴 것이 있으면 그것을, 없으면 받아서 그리는 데 쓰는 것만 남겨 기기에 둔다.
+ * 같은 스킬을 동시에 두 번 받지 않는다. 받은 데이터는 그림으로 풀고 나면 놓아서 큰 JSON 이 메모리에 남지 않는다
+ */
+function skillInfo(skillId: number): Promise<SkillInfo> {
+  let pending = infoLoads.get(skillId);
+  if (!pending) {
+    pending = readStoredSkill(skillId)
+      .then(
+        (stored) => stored,
+        () => undefined,
+      )
+      .then(async (stored) => {
+        if (stored) return stored;
+        const text = await fetchWithin(skillUrl(skillId), (response) => {
+          if (!response.ok) throw new Error(`${response.status} ${skillUrl(skillId)}`);
+          return response.text();
+        });
+        const info = trimSkillInfo(JSON.parse(text) as SkillInfo);
+        void storeSkill(skillId, info, JSON.stringify(info).length).catch(() => {});
+        return info;
+      })
+      .finally(() => infoLoads.delete(skillId));
+    infoLoads.set(skillId, pending);
+  }
+  return pending;
+}
+
+/**
+ * 스킬 데이터를 하나씩 받아 기기에 남겨 둔다. 그림으로 풀지는 않는다. 맵·BGM 을 받는 것과 다투지 않게 한 번에 하나다.
+ * 이미 남긴 것은 건너뛴다
+ */
+export async function prefetchSkillData(skillIds: number[]): Promise<void> {
+  await skillIds.reduce(
+    (previous, skillId) =>
+      previous.then(() =>
+        skills.has(skillId)
+          ? undefined
+          : skillInfo(skillId).then(
+              () => undefined,
+              () => undefined,
+            ),
+      ),
+    Promise.resolve(),
+  );
+}
+
+/** 스킬 하나에 수백 KB~수 MB 라서 같은 스킬은 한 번만 받고, 받은 것은 기기에 남긴다(skillStore.ts) */
 export function loadSkill(skillId: number, fallbackRange: number): Promise<Skill> {
   let pending = skills.get(skillId);
   if (!pending) {
-    pending = fetchJson<SkillInfo>(skillUrl(skillId)).then(async (info) => ({
+    pending = skillInfo(skillId).then(async (info) => ({
       id: skillId,
-      name: info.description.name,
-      range: frontRange(info.properties.lt) ?? fallbackRange,
-      hits: Math.min(MAX_HIT_LINES, Math.max(1, parseInt(info.properties.attackCount ?? '1', 10) || 1)),
+      name: info.description?.name ?? '',
+      range: frontRange(info.properties?.lt) ?? fallbackRange,
+      hits: Math.min(MAX_HIT_LINES, Math.max(1, parseInt(info.properties?.attackCount ?? '1', 10) || 1)),
       effect: await loadLayers(info.effect),
       hit: await loadLayers(info.hit),
       actions: info.actions ?? [],
