@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Foothold } from './api';
-import { type AlphaMap, calibrateFootholds, groundY, mainGround } from './ground';
+import { type AlphaMap, calibrateFootholds, correctCalibration, groundY, mainGround } from './ground';
+import { type Pixels, alignOverlay } from './layers';
 
 const foothold = (
   id: number,
@@ -72,5 +73,35 @@ describe('맵 이미지에 발판 맞추기', () => {
     const result = calibrateFootholds(image, footholds);
     expect(Math.abs(result.dx - truth.dx)).toBeLessThanOrEqual(8);
     expect(Math.abs(result.dy - truth.dy)).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('레이어 그림으로 보정 맞추기', () => {
+  // 월드 좌표 (x, y) 를 그림 (x + dx, y + dy) 에 찍는다. 픽셀마다 색이 달라 겹치는 자리가 하나뿐이다
+  const paint = (width: number, height: number, dx: number, dy: number): Pixels => {
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let y = -6; y <= 6; y += 1) {
+      for (let x = -20; x <= 30; x += 1) {
+        const [px, py] = [x + dx, y + dy];
+        if (px < 0 || py < 0 || px >= width || py >= height) continue;
+        data.set([(x * 7 + 140) & 255, (y * 31 + 90) & 255, (x * y + 60) & 255, 255], (py * width + px) * 4);
+      }
+    }
+    return { width, height, data };
+  };
+
+  it('어림한 원점으로 받은 바닥 레이어가 겹친 자리만큼 보정을 고친다', () => {
+    const pad = 24;
+    // 전체 렌더는 월드 (0, 0) 을 그림 (40, 30) 에 그렸다. 투명도로 어림한 보정은 dx 33, dy 41 로 틀렸다
+    const render = paint(120, 100, 40, 30);
+    const rough = { dx: 33, dy: 41, score: 10 };
+    // 레이어 그림은 원점(minX = -dx - pad, minY = -dy - pad)을 정해 받아서 월드 좌표가 정확하다
+    const layer = paint(100, 90, rough.dx + pad, rough.dy + pad);
+    const at = alignOverlay(render, layer, { x: -pad, y: -pad }, pad)!;
+    expect(correctCalibration(rough, at, pad)).toEqual({ dx: 40, dy: 30, score: 10, exact: true });
+  });
+
+  it('어림이 맞았으면 그대로다', () => {
+    expect(correctCalibration({ dx: 5, dy: -7, score: 3 }, { x: -24, y: -24 }, 24)).toEqual({ dx: 5, dy: -7, score: 3, exact: true });
   });
 });

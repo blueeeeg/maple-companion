@@ -43,10 +43,16 @@ function opaqueSamples(image: Pixels): Point[] {
  * overlay 의 왼쪽 위를 base 의 어디에 놓아야 그림이 겹치는지 찾는다. guess 둘레 radius 안에서만 찾고, 못 맞추면 null.
  * overlay 는 base 를 그릴 때 맨 위에 올라간 레이어들이라 불투명한 픽셀은 base 에 같은 색으로 남아 있다
  */
-export function alignOverlay(base: Pixels, overlay: Pixels, guess: Point, radius: number): Point | null {
+export function alignOverlay(
+  base: Pixels,
+  overlay: Pixels,
+  guess: Point,
+  radius: number,
+  minMatchRatio = MIN_MATCH_RATIO,
+): Point | null {
   const samples = opaqueSamples(overlay);
   if (samples.length === 0) return null;
-  const allowedMisses = Math.floor(samples.length * (1 - MIN_MATCH_RATIO));
+  const allowedMisses = Math.floor(samples.length * (1 - minMatchRatio));
   let best: Point | null = null;
   let bestMisses = allowedMisses + 1;
 

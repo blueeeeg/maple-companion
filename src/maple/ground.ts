@@ -79,6 +79,8 @@ export interface Calibration {
   dx: number;
   dy: number;
   score: number;
+  /** 원점을 정해 받은 레이어 그림을 전체 렌더에 겹쳐 맞춘 값. 없으면 투명도만 보고 어림한 값이다 */
+  exact?: boolean;
 }
 
 const SAMPLE_STEP = 12;
@@ -123,6 +125,15 @@ export function calibrateFootholds(image: AlphaMap, footholds: Foothold[]): Cali
     }
   }
   return best;
+}
+
+/**
+ * 투명도로 어림한 보정은 위아래로 10px 넘게 틀리기도 한다. 풀·배경 오브젝트 때문에 점수가 넓은 범위에서 거의 같아서다.
+ * 어림한 보정으로 원점(minX = -dx - pad, minY = -dy - pad)을 정해 받은 레이어 그림이 전체 렌더의 at 에 겹치면
+ * 원작 좌표가 그림에 놓인 자리를 정확히 안다. 어림이 맞았다면 at 은 (-pad, -pad) 다
+ */
+export function correctCalibration(rough: Calibration, at: Point, pad: number): Calibration {
+  return { dx: rough.dx + at.x + pad, dy: rough.dy + at.y + pad, score: rough.score, exact: true };
 }
 
 /** 마을 바닥은 가로로 가장 긴 발판 묶음이다 */

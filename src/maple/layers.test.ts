@@ -55,4 +55,16 @@ describe('앞 레이어 위치 맞추기', () => {
     const overlay = cutOut(noise(200, 120, 99), 37, 52, 90, 40);
     expect(alignOverlay(base, overlay, { x: 37, y: 52 }, 5)).toBeNull();
   });
+
+  it('위 레이어에 일부 가려진 바닥 레이어는 맞는 비율을 낮춰야 찾는다', () => {
+    const overlay = cutOut(base, 37, 52, 90, 40);
+    // 전체 렌더에서 왼쪽 1/5 이 다른 그림에 덮였다
+    const covered = { ...base, data: Uint8ClampedArray.from(base.data) };
+    const cover = noise(200, 120, 7).data as Uint8ClampedArray;
+    for (let y = 52; y < 92; y += 1) {
+      for (let x = 37; x < 55; x += 1) covered.data.set(cover.subarray((y * 200 + x) * 4, (y * 200 + x) * 4 + 4), (y * 200 + x) * 4);
+    }
+    expect(alignOverlay(covered, overlay, { x: 30, y: 58 }, 10)).toBeNull();
+    expect(alignOverlay(covered, overlay, { x: 30, y: 58 }, 10, 0.75)).toEqual({ x: 37, y: 52 });
+  });
 });

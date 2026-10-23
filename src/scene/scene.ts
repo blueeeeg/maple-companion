@@ -32,7 +32,7 @@ import {
   loadBossMob,
   preloadBossGauge,
 } from '../maple/bossMob';
-import { type Calibration, type GroundPath, calibrateFootholds, groundY, mainGround } from '../maple/ground';
+import { type Calibration, type GroundPath, calibrateFootholds, correctCalibration, groundY, mainGround } from '../maple/ground';
 import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
 import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/skills';
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture } from '../maple/textures';
@@ -71,6 +71,15 @@ const MAX_STAND_DISTANCE = 300;
 const FRAME_MARGIN = 60;
 /** 발판 맞추기로 구한 맵 원점은 몇 픽셀 틀릴 수 있어서, 앞 레이어는 이만큼 바깥까지 그려 받고 이 범위 안에서 위치를 다시 맞춘다 */
 const FRONT_SEARCH = 24;
+/** 바닥 레이어 그림으로 보정을 맞출 때 이만큼만 기다린다. 못 받으면 어림한 보정으로 들어가고 다음에 그 맵에 갈 때 다시 맞춘다 */
+const EXACT_CALIBRATION_WAIT_MS = 30_000;
+/** 어림한 보정은 가로로 25px 넘게 틀린 맵도 있어서(츄츄 알록달록 숲지대1) 앞 레이어보다 넓게 찾는다 */
+const CALIBRATION_SEARCH = 48;
+/**
+ * 바닥 레이어는 앞 레이어와 달리 위 레이어에 가려진 곳이 있어 다 맞지는 않는다(리프레는 1할 넘게 가려진다).
+ * 제자리가 아니면 대부분 어긋나서(400점 중 300점 넘게) 이 정도로 낮춰도 다른 자리를 고르지 않는다
+ */
+const CALIBRATION_MATCH_RATIO = 0.75;
 /** 공격 동작의 이 지점에서 대미지가 들어간다 */
 const HIT_POINT_RATIO = 0.5;
 const ATTACK_COOLDOWN_MS = 300;
@@ -305,6 +314,24 @@ async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnima
 }
 
 const totalMs = (animation: Animation) => animation.delays.reduce((sum, delay) => sum + delay, 0);
+
+/**
+ * 바닥 발판 레이어의 타일을 어림한 원점으로 받아 전체 렌더에 겹쳐 보정을 정확히 맞춘다. 타일이 없거나 위 레이어에 많이
+ * 가려 못 맞추면 같은 레이어의 오브젝트로 한 번 더 해 본다(리스항구). 못 받거나 못 맞추면 null
+ */
+async function exactCalibration(mapId: number, groundLayer: number, rough: Calibration, base: Pixels): Promise<Calibration | null> {
+  const minX = Math.round(-rough.dx) - FRONT_SEARCH;
+  const minY = Math.round(-rough.dy) - FRONT_SEARCH;
+  const tiles = groundLayer * 2 + 1;
+  for (const layers of [[tiles], [tiles - 1], [tiles - 1, tiles]]) {
+    const stack = await loadLayerStack(layers.map((layer) => mapLayerRenderUrl(mapId, layer, minX, minY)));
+    if (!stack) continue;
+    const at = alignOverlay(base, stack.pixels, { x: -FRONT_SEARCH, y: -FRONT_SEARCH }, CALIBRATION_SEARCH, CALIBRATION_MATCH_RATIO);
+    stack.texture.destroy(true);
+    if (at) return correctCalibration(rough, at, FRONT_SEARCH);
+  }
+  return null;
+}
 
 /**
  * 캐릭터보다 높은 레이어의 타일·오브젝트만 따로 받아 한 장으로 겹친다. 전체 렌더에도 같은 그림이 맨 위에 있으니
@@ -808,6 +835,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       stepNavMotion(dtMs);
       return;
     }
+    // 아래에서 hero.y 를 바닥 높이로 맞추면 윗층 포털에 선 캐릭터가 화면이 어두워지는 동안 바닥으로 떨어져 보인다
+    if (parkedAtPortal) {
+      setHeroAction('stand');
+      updateHeroSprite(dtMs);
+      return;
+    }
     const moveToward = (targetX: number): boolean => {
       const distance = targetX - hero.x;
       if (Math.abs(distance) < 3) return true;
@@ -948,15 +981,20 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   async function prepareStage(mapId: number, label: string): Promise<Stage> {
     const [info, image] = await Promise.all([fetchJson<MapInfo>(mapInfoUrl(mapId)), loadMapImage(mapRenderUrl(mapId))]);
     const footholds = Object.values(info.footholds);
-    let calibration = readCalibration(mapId);
-    if (!calibration) {
-      calibration = calibrateFootholds(image.alpha, footholds);
-      storeCalibration(mapId, calibration);
-    }
     const worldGround = mainGround(footholds);
     if (!worldGround) {
       image.texture.destroy(true);
       throw new Error(`${label}: 걸을 바닥을 못 찾음`);
+    }
+    let calibration = readCalibration(mapId);
+    if (!calibration?.exact) {
+      const rough = calibration ?? calibrateFootholds(image.alpha, footholds);
+      const exact = await Promise.race([
+        exactCalibration(mapId, worldGround.layer, rough, image.pixels).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), EXACT_CALIBRATION_WAIT_MS)),
+      ]);
+      calibration = exact ?? rough;
+      storeCalibration(mapId, calibration);
     }
     const { dx, dy } = calibration;
     let nav: NavGraph | null = null;
@@ -1079,6 +1117,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     });
   }
 
+  /** 마지막 길 따라가기가 멈춘 발판 */
+  let navStoppedAt: NavPoint | null = null;
   type NavPoseAnimations = Record<Exclude<NavAction, 'walk' | 'stand'>, Animation>;
   let navAnimations: { look: string; animations: NavPoseAnimations } | null = null;
   let navMotion: {
@@ -1121,8 +1161,24 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     if (pose.done || motion.elapsedMs > PORTAL_WALK_LIMIT_MS) {
       navMotion = null;
       frontSprite.visible = true;
+      navStoppedAt = motion.runner.position;
       motion.resolve(pose.done);
     }
+  }
+
+  /** 포털에 들어가고 나오며 화면이 어두워지고 밝아지는 동안 그 자리에 세워 둔다 */
+  let parkedAtPortal = false;
+
+  /** 포털 자리에 세운다. 바닥보다 높은 레이어 발판이면 앞 레이어에 그 발판 그림이 있어 캐릭터를 가리니 앞 레이어를 숨긴다 */
+  function parkAtPortal(stage: Stage, at: NavPoint | null): void {
+    parkedAtPortal = true;
+    const nav = stage.nav;
+    frontSprite.visible = !(nav && at && nav.platforms[at.platform].layer > nav.platforms[nav.main].layer);
+  }
+
+  function unpark(): void {
+    parkedAtPortal = false;
+    frontSprite.visible = true;
   }
 
   /** 길을 따라 움직인다. 다 가면 true, 시간이 다 되면 false */
@@ -1132,14 +1188,18 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     });
   }
 
-  /** 사냥하는 바닥에서 포털까지 간다. 길을 못 찾으면 바닥에서 포털에 가장 가까운 곳까지 걷는다 */
-  async function goToPortal(stage: Stage, exit: Point): Promise<void> {
+  /** 사냥하는 바닥에서 포털까지 간다. 길을 못 찾으면 바닥에서 포털에 가장 가까운 곳까지 걷는다. 멈춘 발판을 돌려준다 */
+  async function goToPortal(stage: Stage, exit: Point): Promise<NavPoint | null> {
     const { nav } = stage;
     const target = nav && platformUnder(nav, exit);
     const start = nav && { platform: nav.main, x: hero.x - stage.calibration.dx };
     const steps = nav && target && start && findPath(nav, start, target);
-    if (steps && start) await runNav(stage, start, steps);
-    else await walkTo(clampToGround(exit.x + stage.calibration.dx));
+    if (steps && start) {
+      await runNav(stage, start, steps);
+      return navStoppedAt;
+    }
+    await walkTo(clampToGround(exit.x + stage.calibration.dx));
+    return null;
   }
 
   /** 옮겨 간 맵의 포털 자리에 세운다. 포털이 윗층이면 그 발판 위치를 돌려준다 */
@@ -1449,17 +1509,23 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       const from = home;
       const stage = await prepareStage(mapId, label);
       void loadNavAnimations();
-      await goToPortal(from.stage, exit);
-      await fadeTo(1);
-      home = { stage, town: from.town };
-      enterStage(stage, from.town);
-      const arrived = standAtPortal(stage, arrival);
-      behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1500 };
-      updateCamera(1);
-      await fadeTo(0);
-      showBanner(stage.name);
-      // 사냥은 바닥에서만 해서, 윗층 포털로 나왔으면 바닥까지 내려온 뒤에 끝난다
-      if (arrived) await returnToGround(stage, arrived);
+      try {
+        parkAtPortal(from.stage, await goToPortal(from.stage, exit));
+        await fadeTo(1);
+        home = { stage, town: from.town };
+        enterStage(stage, from.town);
+        const arrived = standAtPortal(stage, arrival);
+        parkAtPortal(stage, arrived);
+        behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1500 };
+        updateCamera(1);
+        await fadeTo(0);
+        showBanner(stage.name);
+        unpark();
+        // 사냥은 바닥에서만 해서, 윗층 포털로 나왔으면 바닥까지 내려온 뒤에 끝난다
+        if (arrived) await returnToGround(stage, arrived);
+      } finally {
+        unpark();
+      }
     },
     setRoutePortals(portals) {
       routePortals = portals;
