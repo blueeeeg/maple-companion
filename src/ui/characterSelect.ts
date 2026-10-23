@@ -145,47 +145,49 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
     'beforeend',
     `
     <section class="select" data-tauri-drag-region hidden>
-      <div class="select-slots" data-tauri-drag-region></div>
-      <button class="select-page select-page-previous art-button" type="button" aria-label="이전 페이지">◀</button>
-      <button class="select-page select-page-next art-button" type="button" aria-label="다음 페이지">▶</button>
-      <button class="select-create art-button" type="button">캐릭터 생성</button>
-      <button class="select-delete art-button" type="button">캐릭터 삭제</button>
-      <div class="select-info" data-tauri-drag-region>
-        <span class="select-info-band is-top"></span>
-        <span class="select-info-band is-name"></span>
-        <span class="select-info-band is-detail"></span>
-        <span class="select-info-band is-bottom"></span>
-        <strong class="select-info-name" data-tauri-drag-region></strong>
-        <span class="select-info-detail" data-tauri-drag-region>
-          <span class="select-info-level"></span>
-          <span class="select-info-job"></span>
-        </span>
-      </div>
-      <button class="select-start art-button" type="button">게임 시작</button>
-      <div class="select-page-number" data-tauri-drag-region></div>
-      <form class="create" data-tauri-drag-region hidden>
-        <div class="create-preview" data-tauri-drag-region><img alt="" crossorigin="anonymous" hidden /></div>
-        <p class="create-error" aria-live="polite"></p>
-        <div class="create-fields">
-          <span class="create-band is-header"></span>
-          <span class="create-band is-paper"></span>
-          <span class="create-band is-frame"></span>
-          <span class="create-band is-plank"></span>
-          <input class="create-name" type="text" maxlength="${NAME_MAX_LENGTH}" placeholder="이름 (${NAME_MIN_LENGTH}~${NAME_MAX_LENGTH}자)" autocomplete="off" spellcheck="false" />
-          <div class="create-parts"></div>
-          <div class="create-buttons">
-            <button class="create-submit art-button" type="submit">만들기</button>
-            <button class="create-cancel art-button" type="button">취소</button>
-          </div>
+      <div class="select-frame" data-tauri-drag-region>
+        <div class="select-slots" data-tauri-drag-region></div>
+        <button class="select-page select-page-previous art-button" type="button" aria-label="이전 페이지">◀</button>
+        <button class="select-page select-page-next art-button" type="button" aria-label="다음 페이지">▶</button>
+        <button class="select-create art-button" type="button">캐릭터 생성</button>
+        <button class="select-delete art-button" type="button">캐릭터 삭제</button>
+        <div class="select-info" data-tauri-drag-region>
+          <span class="select-info-band is-top"></span>
+          <span class="select-info-band is-name"></span>
+          <span class="select-info-band is-detail"></span>
+          <span class="select-info-band is-bottom"></span>
+          <strong class="select-info-name" data-tauri-drag-region></strong>
+          <span class="select-info-detail" data-tauri-drag-region>
+            <span class="select-info-level"></span>
+            <span class="select-info-job"></span>
+          </span>
         </div>
-      </form>
-      <div class="select-confirm" hidden>
-        <div class="select-confirm-sheet">
-          <p class="select-confirm-text"></p>
-          <small>삭제한 캐릭터는 되돌릴 수 없어요</small>
-          <div class="select-confirm-buttons">
-            <button class="select-confirm-delete art-button" type="button">삭제</button>
-            <button class="select-confirm-cancel art-button" type="button">취소</button>
+        <button class="select-start art-button" type="button">게임 시작</button>
+        <div class="select-page-number" data-tauri-drag-region></div>
+        <form class="create" data-tauri-drag-region hidden>
+          <div class="create-preview" data-tauri-drag-region><img alt="" crossorigin="anonymous" hidden /></div>
+          <p class="create-error" aria-live="polite"></p>
+          <div class="create-fields">
+            <span class="create-band is-header"></span>
+            <span class="create-band is-paper"></span>
+            <span class="create-band is-frame"></span>
+            <span class="create-band is-plank"></span>
+            <input class="create-name" type="text" maxlength="${NAME_MAX_LENGTH}" placeholder="이름 (${NAME_MIN_LENGTH}~${NAME_MAX_LENGTH}자)" autocomplete="off" spellcheck="false" />
+            <div class="create-parts"></div>
+            <div class="create-buttons">
+              <button class="create-submit art-button" type="submit">만들기</button>
+              <button class="create-cancel art-button" type="button">취소</button>
+            </div>
+          </div>
+        </form>
+        <div class="select-confirm" hidden>
+          <div class="select-confirm-sheet">
+            <p class="select-confirm-text"></p>
+            <small>삭제한 캐릭터는 되돌릴 수 없어요</small>
+            <div class="select-confirm-buttons">
+              <button class="select-confirm-delete art-button" type="button">삭제</button>
+              <button class="select-confirm-cancel art-button" type="button">취소</button>
+            </div>
           </div>
         </div>
       </div>

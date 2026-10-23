@@ -53,6 +53,7 @@ import { createBossGauge } from './bossGauge';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
 import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
+import { viewportFor } from './viewport';
 
 // 스킬 이펙트 프레임 딜레이가 60ms 라서 15fps 로는 프레임이 빠진다
 const FPS = 30;
@@ -169,7 +170,10 @@ export interface Scene {
   /** 레벨업 이펙트 배율. 전직 이펙트는 늘 원본 크기다 */
   setLevelUpScale(scale: number): void;
   setRunning(running: boolean): void;
-  /** 화면 좌표는 그대로 두고, 늘려 보여 줄 배율만큼 더 촘촘하게 그려서 흐려지지 않게 한다 */
+  /**
+   * 창 배율에 맞춰 화면 크기를 바꾼다. 1 이상은 맵 배율을 그대로 두고 더 넓게 비춘다.
+   * 1 아래는 360×230 을 그대로 두고, 줄여 보여 줄 배율만큼 촘촘하게 그려서 흐려지지 않게 한다
+   */
   setDisplayScale(scale: number): void;
   /** 캐릭터 발밑 이름표. 비어 있으면 이름표를 숨긴다 */
   setName(name: string): void;
@@ -358,8 +362,9 @@ async function loadFront(
 }
 
 export async function createScene(host: HTMLElement, callbacks: SceneCallbacks): Promise<Scene> {
-  const width = host.clientWidth;
-  const height = host.clientHeight;
+  // 창 크기(트레이 「창 크기」)에 따라 setDisplayScale 이 바꾼다
+  let width = host.clientWidth;
+  let height = host.clientHeight;
 
   const app = new Application();
   await app.init({
@@ -437,7 +442,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let effects: Effect[] = [];
   let townLoads = 0;
   const worldScale = VIEW_SCALE;
-  const viewWidth = width / worldScale;
+  let viewWidth = width / worldScale;
   let cameraX = 0;
   let cameraY = 0;
 
@@ -592,7 +597,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     });
   }
 
+  let skyColors: Pick<Town, 'sky'> | null = null;
   function paintSky(town: Pick<Town, 'sky'>): void {
+    skyColors = town;
     sky.clear();
     const bands = 12;
     const bandHeight = Math.ceil(height / bands);
@@ -1491,10 +1498,17 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       }
     },
     setDisplayScale(scale) {
-      app.renderer.resize(width, height, window.devicePixelRatio * scale);
+      const { view, zoom } = viewportFor(scale);
+      width = view.width;
+      height = view.height;
+      viewWidth = width / worldScale;
+      app.renderer.resize(width, height, window.devicePixelRatio * zoom);
       // autoDensity 가 캔버스 CSS 크기를 논리 크기로 되돌린다. 화면에서는 창 크기만큼 늘려 둬야
       // Pixi 가 (캔버스 픽셀 / 화면 크기) 비율로 클릭 좌표를 논리 좌표로 되돌린다
-      Object.assign(app.canvas.style, { width: `${width * scale}px`, height: `${height * scale}px` });
+      Object.assign(app.canvas.style, { width: `${width * zoom}px`, height: `${height * zoom}px` });
+      fade.clear().rect(0, 0, width, height).fill(0x000000);
+      if (skyColors) paintSky(skyColors);
+      bossGauge.resize(width);
       updateCamera(1);
     },
     setName(name) {

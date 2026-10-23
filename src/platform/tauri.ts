@@ -9,7 +9,7 @@ export interface DesktopBridge {
   onVisibilityChange(handler: (visible: boolean) => void): void;
   onModeChange(handler: (mode: DisplayMode) => void): void;
   initialMode(): Promise<DisplayMode>;
-  /** 360x230 기준 화면을 몇 배로 키워 보여 줄지. 트레이 메뉴 「크기」에서 고른다 */
+  /** 창 크기 배율(360x230 기준). 트레이 메뉴 「창 크기」에서 고른다. 1 이상은 맵을 넓게 보여 주고, 1 아래는 화면을 통째로 줄인다 */
   onScaleChange(handler: (scale: number) => void): void;
   initialScale(): Promise<number>;
   setTrayStatus(text: string): void;

@@ -215,11 +215,16 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
     overlay.style.zoom = '';
     const height = dialogHeight(rows);
     windowEl.style.height = `${height}px`;
-    // root 는 창 배율만큼 커져 있다. zoom 이 걸린 overlay 로 재야 배율과 무관한 360x230 기준 값이 나온다
+    // root 는 75% 창에서 줄어 있다. zoom 이 걸린 overlay 로 재야 배율과 무관한 값이 나온다
     windowEl.style.top = `${Math.floor((overlay.clientHeight - height) / 2)}px`;
     windowEl.style.left = `${Math.floor((overlay.clientWidth - DIALOG_WIDTH) / 2)}px`;
     textBox.style.bottom = '';
   }
+
+  // 창 크기를 바꾸면 떠 있던 대화창이 한쪽에 남지 않게 다시 가운데에 둔다
+  new ResizeObserver(() => {
+    if (!overlay.hidden) layout();
+  }).observe(overlay);
 
   function renderText(target: HTMLElement, text: string) {
     target.replaceChildren(

@@ -60,6 +60,7 @@ import { createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
 import { startUpdateChecks } from './platform/updater';
 import { createScene } from './scene/scene';
+import { frameOffset, viewportFor } from './scene/viewport';
 import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui/bossWindow';
 import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
@@ -77,6 +78,22 @@ const PINNED_TOWN_RETRY_MS = 30 * 1000;
 
 const root = document.querySelector<HTMLElement>('#app')!;
 const stage = document.querySelector<HTMLElement>('#stage')!;
+
+/** DOM 크기를 창 배율에 맞춘다. 360×230 으로 짠 팝업은 --frame-x·y 만큼 옮겨 가운데에 둔다 */
+function applyLayoutScale(scale: number): void {
+  const { view, zoom } = viewportFor(scale);
+  const frame = frameOffset(view);
+  const style = document.documentElement.style;
+  style.setProperty('--ui-scale', String(zoom));
+  style.setProperty('--view-width', `${view.width}px`);
+  style.setProperty('--view-height', `${view.height}px`);
+  style.setProperty('--frame-x', `${frame.x}px`);
+  style.setProperty('--frame-y', `${frame.y}px`);
+  // Windows 125%·150% 디스플레이는 UI 100% 여도 실제 픽셀 배율이 정수가 아니다
+  document.documentElement.toggleAttribute('data-fractional-scale', !Number.isInteger(zoom * window.devicePixelRatio));
+}
+// 화면을 그리기 전에 창 크기에 맞춰 둬야 큰 창에서 첫 화면이 360×230 으로 떴다가 커지지 않는다
+applyLayoutScale(await desktop.initialScale());
 
 const activity = createActivitySource();
 const bgm = createBgm();
@@ -843,9 +860,7 @@ startUpdateChecks({
   },
 });
 const applyScale = (scale: number) => {
-  document.documentElement.style.setProperty('--ui-scale', String(scale));
-  // Windows 125%·150% 디스플레이는 UI 100% 여도 실제 픽셀 배율이 정수가 아니다
-  document.documentElement.toggleAttribute('data-fractional-scale', !Number.isInteger(scale * window.devicePixelRatio));
+  applyLayoutScale(scale);
   scene.setDisplayScale(scale);
 };
 desktop.onScaleChange(applyScale);

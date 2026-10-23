@@ -52,6 +52,22 @@ describe('카메라 스크롤', () => {
     expect(cameraScroll({ x: 0, y: 0 }, 0.65, view, map, 38)).toEqual({ x: 0, y: 0 });
     expect(cameraScroll({ x: 2000, y: 600 }, 0.65, view, map, 38)).toEqual({ x: 2000 * 0.65 - 360, y: 600 * 0.65 - 230 });
   });
+
+  it('큰 창에서도 같은 맵 배율로 비출 곳을 가운데에 둔다', () => {
+    const wide = { width: 720, height: 460 };
+    const tall = { width: 2000, height: 1000 };
+    expect(cameraScroll({ x: 1000, y: 900 }, 0.65, wide, tall, 38)).toEqual({ x: 650 - 360, y: 900 * 0.65 - (460 - 38) });
+  });
+
+  it('맵이 화면보다 좁으면 가로 가운데에 둔다', () => {
+    const scroll = cameraScroll({ x: 0, y: 300 }, 0.65, { width: 720, height: 230 }, { width: 800, height: 600 }, 38);
+    expect(scroll.x).toBe((800 * 0.65 - 720) / 2);
+  });
+
+  it('맵이 화면보다 낮으면 맵 아래끝을 화면 아래에 둔다', () => {
+    const scroll = cameraScroll({ x: 1000, y: 0 }, 0.65, { width: 720, height: 460 }, { width: 2000, height: 600 }, 38);
+    expect(scroll.y).toBe(600 * 0.65 - 460);
+  });
 });
 
 describe('보스전 카메라', () => {

@@ -72,13 +72,16 @@ export interface BossGauge {
   setRatio(ratio: number): void;
   update(dtMs: number): void;
   hide(): void;
+  /** 창 크기가 바뀌면 게이지 폭을 다시 맞춘다. 떠 있으면 같은 그림·HP 비율로 다시 그린다 */
+  resize(viewWidth: number): void;
 }
 
 export function createBossGauge(viewWidth: number): BossGauge {
   const node = new Container();
   node.visible = false;
   node.eventMode = 'none';
-  const { icon: iconAt, bar, strip } = bossGaugeLayout(viewWidth);
+  let { icon: iconAt, bar, strip } = bossGaugeLayout(viewWidth);
+  let shownArt: { textures: BossGaugeTextures | null; fallbackIcon: Texture } | null = null;
   let fill: Sprite | Graphics | null = null;
   let target = 1;
   let shown = 1;
@@ -110,9 +113,10 @@ export function createBossGauge(viewWidth: number): BossGauge {
     fill.visible = width > 0;
   }
 
-  return {
+  const gauge: BossGauge = {
     node,
     show(textures, fallbackIcon) {
+      shownArt = { textures, fallbackIcon };
       node.removeChildren().forEach((child) => child.destroy());
       if (textures) {
         sprite(textures.iconFrame, iconAt.x, iconAt.y);
@@ -152,8 +156,14 @@ export function createBossGauge(viewWidth: number): BossGauge {
       node.visible = false;
       node.removeChildren().forEach((child) => child.destroy());
       fill = null;
+      shownArt = null;
       target = 1;
       shown = 1;
     },
+    resize(width) {
+      ({ icon: iconAt, bar, strip } = bossGaugeLayout(width));
+      if (shownArt) gauge.show(shownArt.textures, shownArt.fallbackIcon);
+    },
   };
+  return gauge;
 }

@@ -21,12 +21,20 @@ export function cameraFocus(hero: Point, target: Point | null, viewWidth: number
   return { x: Math.min(hero.x + reach, Math.max(hero.x - reach, middle)), y: Math.max(hero.y, target.y) };
 }
 
-/** focus 가 화면 가로 가운데·발 기준선에 오는 스크롤 값(화면 픽셀). 맵 이미지 바깥은 비추지 않는다 */
+/**
+ * focus 가 화면 가로 가운데·발 기준선에 오는 스크롤 값(화면 픽셀). 맵 이미지 바깥은 비추지 않는다.
+ * 큰 창에서 맵이 화면보다 좁으면 가로 가운데에, 낮으면 맵 아래끝이 화면 아래에 오게 둔다. 남는 곳은 하늘색이 채운다
+ */
 export function cameraScroll(focus: Point, scale: number, view: Size, map: Size, feetFromBottom: number): Point {
-  const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), Math.max(0, max));
+  const mapWidth = map.width * scale;
+  const mapHeight = map.height * scale;
+  const clamp = (value: number, max: number) => Math.min(Math.max(value, 0), max);
   return {
-    x: clamp(focus.x * scale - view.width / 2, map.width * scale - view.width),
-    y: clamp(focus.y * scale - (view.height - feetFromBottom), map.height * scale - view.height),
+    x: mapWidth < view.width ? (mapWidth - view.width) / 2 : clamp(focus.x * scale - view.width / 2, mapWidth - view.width),
+    y:
+      mapHeight < view.height
+        ? mapHeight - view.height
+        : clamp(focus.y * scale - (view.height - feetFromBottom), mapHeight - view.height),
   };
 }
 

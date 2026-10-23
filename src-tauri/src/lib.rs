@@ -305,7 +305,7 @@ fn build_tray(app: &AppHandle, scale_percent: u32) -> tauri::Result<()> {
         })
         .collect::<tauri::Result<Vec<_>>>()?;
     let scale_refs: Vec<&dyn IsMenuItem<_>> = scale_items.iter().map(|item| item as _).collect();
-    let scale = Submenu::with_items(app, "크기", true, &scale_refs)?;
+    let scale = Submenu::with_items(app, "창 크기", true, &scale_refs)?;
     let settings = MenuItem::with_id(app, "settings", "설정", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let separator_top = PredefinedMenuItem::separator(app)?;
