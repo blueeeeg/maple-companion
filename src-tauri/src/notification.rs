@@ -3,8 +3,9 @@ use tauri::AppHandle;
 /// OS 알림을 띄운다. 프론트는 이 명령을 먼저 부르고, 실패하면 플러그인 sendNotification 으로 띄운다.
 ///
 /// macOS 알림 센터는 왼쪽 아이콘을 번들의 icon.icns 로만 그린다. Finder 사용자 아이콘·실행 중 앱 아이콘·
-/// 비공개 `_identityImage` 는 모두 무시돼서(macOS 26.5.1 에서 확인) 왼쪽은 바꿀 수 없다. 대신 오른쪽 그림
-/// (contentImage)에 앱 아이콘과 같은 그림을 넣는다. 플러그인은 이 값을 넘길 길이 없어 직접 보낸다
+/// 비공개 `_identityImage` 는 모두 무시돼서(macOS 26.5.1 에서 확인) 실행 중에는 왼쪽을 바꿀 수 없다. 번들 아이콘이
+/// 기본 그림인 빌드는 대신 오른쪽 그림(contentImage)에 앱 아이콘과 같은 그림을 넣는다. 플러그인은 이 값을 넘길 길이
+/// 없어 직접 보낸다. 릴리스처럼 번들 아이콘이 버섯집이면 왼쪽이 이미 맞아 오른쪽 그림은 넣지 않는다
 #[tauri::command]
 pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -57,7 +58,7 @@ mod mac {
     use super::{image_png, opens_window, sender_bundle_id};
     use crate::tray_icon;
 
-    /// 넥슨 그림이라 저장소·릴리스에 넣지 않고 사용자 app data 에 만든다
+    /// 넥슨 그림이라 저장소에 넣지 않고 사용자 app data 에 만든다
     const IMAGE_FILE: &str = "notification-image.png";
 
     pub fn show(app: &AppHandle, title: String, body: String) -> Result<(), String> {
@@ -69,7 +70,7 @@ mod mac {
             .spawn(move || {
                 // 한 번만 정해진다. 플러그인이 먼저 정했으면 이 호출은 무시된다
                 let _ = mac_notification_sys::set_application(&sender);
-                let image = save_image(&handle);
+                let image = if crate::app_icon::BUNDLED_ICON { None } else { save_image(&handle) };
                 let mut notification = Notification::new();
                 // wait_for_click 이 없으면 보내자마자 응답 없음으로 돌아와 누른 것을 받지 못한다
                 notification.title(&title).message(&body).wait_for_click(true);

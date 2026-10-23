@@ -78,6 +78,23 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # 버섯집 앱 아이콘. 넥슨 그림이라 저장소에 넣지 않고 빌드할 때만 번들 아이콘으로 쓴다(scripts/release-icon.ts).
+      # 그림이 없어도 기본 아이콘으로 빌드를 이어 간다. 그 빌드는 MAPLE_BUNDLED_ICON 이 없어 앱이 실행 중에 붙인다(app_icon.rs)
+      - name: Release icon
+        id: icon
+        shell: bash
+        # 버섯집 PNG 의 base64. 저장소에 그림을 두지 않으려고 시크릿으로 넘긴다. 등록하지 않았으면 빈 문자열이다
+        env:
+          RELEASE_ICON_PNG_BASE64: ${{ secrets.RELEASE_ICON_PNG_BASE64 }}
+        run: |
+          # 설정 파일은 아이콘을 다 만든 뒤 마지막에 쓴다. 없으면 --config 를 넘기지 않는다
+          if node --experimental-strip-types scripts/release-icon.ts && [ -f src-tauri/icons-release/release-icon.conf.json ]; then
+            echo "MAPLE_BUNDLED_ICON=1" >> "$GITHUB_ENV"
+            echo "args=--config src-tauri/icons-release/release-icon.conf.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Release icon::버섯집 아이콘을 만들지 못해 기본 아이콘으로 빌드한다"
+          fi
+
       # 릴리스는 release 잡이 만들어 둔 것에 올린다.
       # 업데이트 파일(.app.tar.gz)을 서명키로 서명하고 latest.json(includeUpdaterJson 기본값)을 올린다
       - name: Build and upload to release
@@ -90,7 +107,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseDraft: false
           prerelease: false
-          args: --target universal-apple-darwin
+          args: --target universal-apple-darwin ${{ steps.icon.outputs.args }}
 
       - name: Upload zipped .app
         env:
@@ -127,6 +144,23 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # 버섯집 앱 아이콘. 넥슨 그림이라 저장소에 넣지 않고 빌드할 때만 번들 아이콘으로 쓴다(scripts/release-icon.ts).
+      # 그림이 없어도 기본 아이콘으로 빌드를 이어 간다. 그 빌드는 MAPLE_BUNDLED_ICON 이 없어 앱이 실행 중에 붙인다(app_icon.rs)
+      - name: Release icon
+        id: icon
+        shell: bash
+        # 버섯집 PNG 의 base64. 저장소에 그림을 두지 않으려고 시크릿으로 넘긴다. 등록하지 않았으면 빈 문자열이다
+        env:
+          RELEASE_ICON_PNG_BASE64: ${{ secrets.RELEASE_ICON_PNG_BASE64 }}
+        run: |
+          # 설정 파일은 아이콘을 다 만든 뒤 마지막에 쓴다. 없으면 --config 를 넘기지 않는다
+          if node --experimental-strip-types scripts/release-icon.ts && [ -f src-tauri/icons-release/release-icon.conf.json ]; then
+            echo "MAPLE_BUNDLED_ICON=1" >> "$GITHUB_ENV"
+            echo "args=--config src-tauri/icons-release/release-icon.conf.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Release icon::버섯집 아이콘을 만들지 못해 기본 아이콘으로 빌드한다"
+          fi
+
       # bundle.targets 가 all 이라 NSIS(-setup.exe)와 MSI 를 둘 다 만든다. 서명은 하지 않는다.
       # tagName 이 비면(수동 실행) 빌드만 하고 릴리스에는 올리지 않는다
       - name: Build (and upload to release on tag)
@@ -141,6 +175,7 @@ jobs:
           prerelease: false
           # 릴리스 안내가 -setup.exe(NSIS)를 먼저 권한다. NSIS 로 깐 앱을 MSI 로 업데이트하지 않게 한다
           updaterJsonPreferNsis: true
+          args: ${{ steps.icon.outputs.args }}
 
       - name: Upload installers as workflow artifacts
         if: github.event_name == 'workflow_dispatch'

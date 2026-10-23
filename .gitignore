@@ -33,3 +33,6 @@ src-tauri/target
 *.pem
 *.key
 secrets/
+
+# 릴리스 CI 가 만드는 앱 아이콘(넥슨 그림). scripts/release-icon.ts
+src-tauri/icons-release

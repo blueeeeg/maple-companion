@@ -200,9 +200,17 @@ NPC 대화창은 `UI/UIWindow2.img/UtilDlgEx` 다. 폭 519 의 위(`t`)·가운�
 
 HUD 의 스탯·스킬 버튼은 옆 캐시샵·⚙️ 버튼과 같은 어두운 칸이다. 안의 그림은 빅뱅 전 상태 바 단축 버튼 `UI/StatusBar.img/StatKey`·`SkillKey`(28×20)에서 파란 바탕을 빼고 떼어 낸 막대그래프(16×12)·책(18×12)을 원본 크기로 넣는다(`src/ui/glyph.ts`, 실행 중에 canvas 로 뗀다). 바탕 판정은 「파랑이 빨강·초록보다 40 넘게 큼」이라 그림의 하늘색 테두리·청록 막대는 남는다. 지금 상태 바(`StatusBar3.img/mainBar/menu`)의 메뉴 버튼은 34×37 파란 버튼이고, 키 설정 아이콘(`StatusBar3.img/KeyConfig/icon`)은 글자 타일이라 그림만 뗄 수 없어 쓰지 않았다.
 
-메뉴바 트레이 아이콘은 아이템 「단풍잎」(4001126) 아이콘이다. 프론트가 받아 Rust 에 넘기고, Rust 는 app data 의 `tray-icon.png` 에 저장해 다음 실행부터 네트워크 없이 바로 쓴다. 못 받으면 기본 아이콘이 남는다. 같은 폴더에 `custom-tray-icon.png` 를 두면 그 그림이 먼저 쓰이고 단풍잎은 내려받아도 덮어쓰지 않는다(36×36 PNG 권장, 지우면 단풍잎으로 돌아간다). 앱·번들 아이콘(`src-tauri/icons`)은 넥슨 그림을 넣어 배포하게 되므로 바꾸지 않는다.
+메뉴바 트레이 아이콘은 아이템 「단풍잎」(4001126) 아이콘이다. 프론트가 받아 Rust 에 넘기고, Rust 는 app data 의 `tray-icon.png` 에 저장해 다음 실행부터 네트워크 없이 바로 쓴다. 못 받으면 기본 아이콘이 남는다. 같은 폴더에 `custom-tray-icon.png` 를 두면 그 그림이 먼저 쓰이고 단풍잎은 내려받아도 덮어쓰지 않는다(36×36 PNG 권장, 지우면 단풍잎으로 돌아간다). 저장소의 번들 아이콘(`src-tauri/icons`)은 Tauri 기본 아이콘 그대로 둔다. 넥슨 그림은 릴리스 빌드에만 넣는다(아래 「릴리스 앱 아이콘」).
 
-앱 아이콘(Finder·Spotlight)은 macOS 에서만 트레이 아이콘과 같은 그림으로 바꾼다. 공개 저장소와 릴리스 파일에 넥슨 그림을 넣지 않으려고, 각자의 컴퓨터에서 실행 중에 붙인다(`src-tauri/src/app_icon.rs`).
+릴리스 앱 아이콘은 버섯집 그림이다. GitHub Actions 릴리스 빌드에서만 넣고, 저장소에는 그림 파일을 두지 않는다.
+
+- 그림은 관리자가 저장소 시크릿 `RELEASE_ICON_PNG_BASE64` 에 넣어 둔다. 값은 PNG 파일의 base64 다. `base64 -i <file> | tr -d '\n'` 로 만들어 GitHub 저장소 Settings → Secrets and variables → Actions 에 붙여 넣는다. PNG 는 8비트 RGBA·RGB·팔레트를 읽는다
+- `macos`·`windows` 잡이 빌드 전에 `scripts/release-icon.ts` 를 돌린다. 시크릿의 그림을 쓰고, 시크릿이 비어 있으면 스크립트의 `SOURCE_URL` 에서 받는다(지금은 비어 있다. 한 번에 30초, 5xx·시간 초과면 4번까지). 그림을 아래 앱 아이콘과 같은 규칙으로 1024×1024 에 늘리고, `tauri icon` 으로 `src-tauri/icons-release/`(.gitignore)에 `icon.icns`·`icon.ico`·PNG 를 만든다
+- 빌드는 `--config src-tauri/icons-release/release-icon.conf.json` 으로 `bundle.icon` 만 바꾼다. `tauri.conf.json` 과 `src-tauri/icons` 는 그대로다. 알림 왼쪽 아이콘·Dock·앱 전환기·Finder·Spotlight·exe·시작 메뉴·설치 프로그램·Windows 알림이 모두 이 아이콘으로 나온다
+- 같은 단계가 `MAPLE_BUNDLED_ICON=1` 을 걸고 빌드한다. 앱은 컴파일할 때 이 값을 읽어(`app_icon::BUNDLED_ICON`) 실행 중에 앱 아이콘을 붙이지 않고 알림 오른쪽 그림도 넣지 않는다
+- 그림이 없거나 못 읽으면 경고만 남기고 기본 아이콘으로 빌드한다. 그 빌드와 로컬 빌드(`pnpm tauri dev`·`pnpm tauri build`)는 기본 아이콘이라 아래처럼 실행 중에 붙인다
+
+번들 아이콘이 기본 그림인 빌드는 앱 아이콘(Finder·Spotlight)을 macOS 에서만 트레이 아이콘과 같은 그림으로 바꾼다. 각자의 컴퓨터에서 실행 중에 붙인다(`src-tauri/src/app_icon.rs`).
 
 - 트레이 그림(`custom-tray-icon.png` 가 있으면 그것, 없으면 `tray-icon.png`)의 투명한 가장자리를 잘라 내고 1024×1024 의 가운데 824px 안에 들어가도록 정수배로 늘린다. 픽셀 그림이라 이웃 픽셀을 섞지 않는다
 - `NSWorkspace.setIcon(_:forFile:)` 으로 설치된 `.app` 에 Finder 사용자 아이콘을 붙인다. 번들 맨 위에 `Icon\r` 파일이 생기고 번들 폴더에 FinderInfo 확장 속성이 붙는다. 실행 중인 앱 아이콘(`NSApplication.applicationIconImage`)도 같은 그림으로 바꾼다
@@ -211,10 +219,10 @@ HUD 의 스탯·스킬 버튼은 옆 캐시샵·⚙️ 버튼과 같은 어두�
 - 코드 서명: `codesign --verify` 는 그대로 통과한다. `--strict` 는 번들 폴더의 FinderInfo 때문에 실패한다. 실행 파일 서명은 바뀌지 않고, 업데이트는 받은 압축 파일의 서명만 확인하므로 영향이 없다
 - Windows 시작 메뉴·작업표시줄 아이콘은 exe 안의 리소스라 실행 중에 바꿀 수 없다. 창 아이콘(Alt+Tab)만 같은 그림으로 바꾼다
 
-OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(`src-tauri/src/notification.rs`). 다만 알림 왼쪽 아이콘은 바꿀 수 없어서 오른쪽 그림으로 넣는다.
+OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(`src-tauri/src/notification.rs`). 번들 아이콘이 기본 그림인 빌드는 알림 왼쪽 아이콘을 바꿀 수 없어서 오른쪽 그림으로 넣는다. 릴리스 빌드는 왼쪽이 이미 버섯집이라 오른쪽 그림을 넣지 않는다.
 
 - macOS 알림 센터는 왼쪽 아이콘을 번들의 `Contents/Resources/icon.icns`(Info.plist 의 `CFBundleIconFile`)로만 그린다. Finder 사용자 아이콘, 실행 중인 앱 아이콘, NSUserNotification 의 비공개 키 `_identityImage`(mac-notification-sys 의 `app_icon`)는 모두 무시된다. macOS 26.5.1 에서 테스트 알림을 띄워 확인했다
-- `icon.icns` 를 실행 중에 바꿔 쓰면 코드 서명의 리소스 봉인이 깨진다(`codesign --verify` 가 「a sealed resource is missing or invalid」로 실패). 업데이트마다 번들이 통째로 바뀌어 다시 써야 하므로 쓰지 않는다. 번들에 넥슨 그림을 넣어 배포할 수도 없다
+- `icon.icns` 를 실행 중에 바꿔 쓰면 코드 서명의 리소스 봉인이 깨진다(`codesign --verify` 가 「a sealed resource is missing or invalid」로 실패). 업데이트마다 번들이 통째로 바뀌어 다시 써야 하므로 쓰지 않는다. 버섯집 아이콘은 릴리스 빌드에서 번들에 넣는다(위 「릴리스 앱 아이콘」)
 - 그래서 알림 오른쪽 그림(`contentImage`)에 앱 아이콘 캔버스(1024×1024, 가운데 824px)를 넣는다. 트레이 그림으로 app data 의 `notification-image.png` 를 만들고, 그림이 바뀌었을 때만 다시 쓴다
 - tauri-plugin-notification 은 macOS 에서 이 그림을 넘길 길이 없어, 프론트는 Rust 명령 `show_notification` 을 부르고 Rust 가 mac-notification-sys 로 직접 보낸다. 보내는 앱은 플러그인과 같다(설치한 앱은 `com.maplecompanion.app`, `pnpm tauri dev` 는 터미널)
 - 알림을 누를 때까지 기다리게 보내야 누른 것을 받는다. 알림마다 스레드 하나가 기다리고, 알림을 누르거나 알림 센터에서 지우면 끝난다. 누르면 창이 열린다
@@ -245,6 +253,7 @@ pnpm dev                       # 브라우저로 화면만 (http://localhost:142
 pnpm test                      # 단위 테스트
 node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더]   # 마을 사냥터 다시 고르기 → src/game/routeData.ts
 node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더]      # 원작 BGM 목록·맵 곡 다시 읽기 → src/audio/bgmCatalog.ts
+node --experimental-strip-types scripts/release-icon.ts [그림 PNG]      # 릴리스 앱 아이콘 → src-tauri/icons-release (CI 는 시크릿으로 돌린다)
 pnpm tauri build --target universal-apple-darwin   # 배포용 .app·.dmg (src-tauri/target/universal-apple-darwin/release/bundle)
 pnpm tauri build               # Windows 에서 실행하면 -setup.exe·.msi (src-tauri/target/release/bundle/nsis·msi)
 ```
@@ -314,14 +323,15 @@ src/
 scripts/
   curate-routes.ts   마을에서 걸어서 가는 사냥터를 maplestory.io 에서 찾아 src/game/routeData.ts 를 쓴다. 응답은 캐시 폴더에 남기고 요청은 하나씩 보낸다
   curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다
+  release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장
   game_state.rs      game-state.json 읽기·쓰기(임시 파일 → rename, .bak 백업). 저장을 잠깐 모았다가 쓰고 종료할 때 마저 쓴다
   tray_icon.rs       트레이 아이콘 PNG 읽기·저장. 메뉴바 높이(레티나 36px)에 맞게 늘리지 않고 가운데 둔다
   bgm_cache.rs       프론트가 받은 BGM 을 app data 의 bgm/ 에 읽기(읽을 때 수정 시각을 지금으로)·있는지 보기·쓰기(임시 파일 → rename)·지우기·목록·이름 바꾸기. 곡은 JSON 이 아니라 바이트로 오간다
-  app_icon.rs        트레이 그림으로 앱 아이콘 만들기(정수배 확대). macOS 는 .app 에 Finder 사용자 아이콘으로 붙이고, Windows 는 창 아이콘만
-  notification.rs    OS 알림 보내기(show_notification). macOS 는 앱 아이콘과 같은 그림을 알림 오른쪽에 넣어 직접 보내고, 누르면 창을 연다
+  app_icon.rs        트레이 그림으로 앱 아이콘 만들기(정수배 확대). macOS 는 .app 에 Finder 사용자 아이콘으로 붙이고, Windows 는 창 아이콘만. 번들 아이콘이 버섯집인 릴리스 빌드는 하지 않는다
+  notification.rs    OS 알림 보내기(show_notification). macOS 는 직접 보내고 누르면 창을 연다. 번들 아이콘이 기본 그림이면 앱 아이콘과 같은 그림을 알림 오른쪽에 넣는다
   updater.rs         업데이트 확인(check_update), 트레이 「업데이트」 항목 글자, 받기·설치·진행 표시, 저장 후 다시 켜기
   lib.rs             트레이(「설정」 포함), 펫·메뉴바 모드 전환, 창 크기, 알림을 누르면 창 열기, 프론트에 여는 명령
 ```
@@ -330,4 +340,10 @@ src-tauri/src/
 
 코드는 [MIT](LICENSE) 다.
 
-메이플스토리의 이름·그림·소리 등 모든 리소스의 권리는 NEXON 에 있다. 이 저장소에는 그 리소스를 하나도 넣지 않았고, 앱이 실행 중에 [maplestory.io](https://maplestory.io) 에서 받아 쓴다. 비공식·비상업 팬 프로젝트이며 NEXON 과 관계가 없다.
+MIT 라이선스는 이 저장소의 코드에만 적용된다. 메이플스토리의 이름·그림·음악 등 모든 리소스는 © NEXON 이고 MIT 라이선스에 포함되지 않는다.
+
+- 이 저장소에는 그 리소스를 하나도 넣지 않았다
+- 릴리스 실행 파일(`.dmg`·`.app`·`-setup.exe`·`.msi`)에는 빌드할 때 넣는 버섯집 아이콘이 들어 있다
+- 그 밖의 리소스(캐릭터·맵·소리 등)는 앱이 실행 중에 maplestory.io 에서 받아 쓴다
+
+비공식·비상업 팬 프로젝트이며 NEXON 과 관계가 없다.

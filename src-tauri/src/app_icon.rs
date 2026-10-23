@@ -6,8 +6,13 @@ use tauri::{AppHandle, Manager};
 
 use crate::tray_icon;
 
-/// 저장소의 번들 아이콘(src-tauri/icons)에는 넥슨 그림을 넣을 수 없어서, 받아 둔 트레이 그림으로
-/// 사용자 컴퓨터에서 앱 아이콘을 바꾼다. 가장자리는 macOS 아이콘 격자(1024 중 824)만큼 비워 다른 앱과 크기를 맞춘다
+/// 릴리스 CI 가 버섯집 그림을 번들 아이콘으로 넣었을 때만 켜진다(scripts/release-icon.ts, release.yml).
+/// 그때는 Dock·Finder·exe·알림 아이콘이 이미 그 그림이라 실행 중에 붙이지 않는다
+pub const BUNDLED_ICON: bool = option_env!("MAPLE_BUNDLED_ICON").is_some();
+
+/// 저장소의 번들 아이콘(src-tauri/icons)에는 넥슨 그림을 넣을 수 없어서, 번들 아이콘이 기본 그림인 빌드(로컬 빌드,
+/// 그림을 못 받은 CI 빌드)는 받아 둔 트레이 그림으로 사용자 컴퓨터에서 앱 아이콘을 바꾼다.
+/// 가장자리는 macOS 아이콘 격자(1024 중 824)만큼 비워 다른 앱과 크기를 맞춘다
 #[cfg(target_os = "macos")]
 pub(crate) const MAC_CANVAS: u32 = 1024;
 #[cfg(target_os = "macos")]
@@ -67,6 +72,9 @@ pub fn bundle_from_exe(exe: &Path) -> Option<PathBuf> {
 
 /// 실행할 때와 새 트레이 그림을 받았을 때 부른다. AppKit 은 메인 스레드에서만 부를 수 있다. 실패해도 앱은 그대로 쓴다
 pub fn sync(app: &AppHandle) {
+    if BUNDLED_ICON {
+        return;
+    }
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         let Some(source) = tray_icon::cached_png(&handle).and_then(|png| image::load_from_memory(&png).ok()) else {
