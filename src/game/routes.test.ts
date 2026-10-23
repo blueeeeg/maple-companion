@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RouteField } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
-import { FIELD_CADENCE, fieldMoveDue, fieldMoves, pickFieldMove } from './routes';
+import { FIELD_CADENCE, fieldMoveDue, fieldMoves, pickFieldMove, routePortals } from './routes';
 import { TOWNS } from './towns';
 
 const field = (mapId: number, fromMapId: number, entryX: number, arrivalX: number): RouteField => ({
@@ -45,6 +45,26 @@ describe('사냥터 오가기', () => {
     const moves = fieldMoves(1, fields, 1);
     expect(pickFieldMove(moves, new Set([10]), () => 0)?.toMapId).toBe(11);
     expect(pickFieldMove(moves, new Set([10, 11]))).toBeNull();
+  });
+});
+
+describe('늘 보이는 포털', () => {
+  it('마을 맵과 사냥터 맵마다 드나드는 포털 자리와 가는 맵 이름을 준다', () => {
+    const portals = routePortals({ mapId: 1, name: '마을' }, fields);
+    expect(portals.get(1)).toEqual([
+      { x: 900, label: '맵10' },
+      { x: -800, label: '맵11' },
+    ]);
+    // 사냥터에 도착한 포털이 그 맵에서 마을로 돌아가는 포털이다
+    expect(portals.get(10)).toEqual([
+      { x: -400, label: '마을' },
+      { x: 700, label: '맵20' },
+    ]);
+    expect(portals.get(20)).toEqual([{ x: -350, label: '맵10' }]);
+  });
+
+  it('사냥터가 없는 마을은 포털이 없다', () => {
+    expect(routePortals({ mapId: 1, name: '마을' }, []).size).toBe(0);
   });
 });
 

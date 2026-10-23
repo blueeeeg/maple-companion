@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import type { BossSpec } from '../game/bosses';
 import type { JobView } from '../game/jobs';
+import type { RoutePortal } from '../game/routes';
 import type { MonsterSpec, Town } from '../game/towns';
 import {
   type MapInfo,
@@ -106,8 +107,8 @@ const BOSS_COIN_STAGGER_MS = 70;
 const BOSS_DAMAGE_CEILING = 110;
 /** 포털까지 걷다가 이보다 오래 걸리면(바닥 끝에 막히는 등) 그 자리에서 들어간다 */
 const PORTAL_WALK_LIMIT_MS = 60_000;
-/** 옮겨 간 맵에서 나온 포털이 남아 있다가 사라지는 시간 */
-const PORTAL_LINGER_MS = 1800;
+/** 포털을 누르면 가는 맵 이름을 이만큼 띄운다 */
+const PORTAL_LABEL_MS = 3000;
 
 export interface BossFightEvents {
   /** 보스 맵으로 바뀌어 화면이 밝아지기 직전 */
@@ -152,6 +153,8 @@ export interface Scene {
    * 맵을 다 받은 뒤에 걷기 시작한다. 못 받아 오면 지금 맵에 남고 실패한다. 보스를 잡으면 이 맵으로 돌아온다
    */
   travel(mapId: number, label: string, exitX: number, arrivalX: number): Promise<void>;
+  /** 맵 id 별로 늘 띄워 둘 포털(맵 월드 좌표). 지금 맵에도 바로 건다 */
+  setRoutePortals(portals: Map<number, RoutePortal[]>): void;
 }
 
 type HeroAction = 'stand' | 'walk' | 'attack';
@@ -334,6 +337,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const nameTagText = new Text({ style: { fontFamily: FONT, fontSize: NAME_TAG_FONT_SIZE, fill: 0xffffff } });
   nameTag.addChild(nameTagBack, nameTagText);
   world.addChild(mapSprite, actors, frontSprite, nameTag, worldEffects);
+  // 포털은 원작처럼 맵 위, 캐릭터·몬스터 뒤에 돈다
+  const portalLayer = new Container();
+  world.addChildAt(portalLayer, world.getChildIndex(actors));
   const overlay = new Container();
   const fade = new Graphics().rect(0, 0, width, height).fill(0x000000);
   app.stage.addChild(sky, world, overlay, fade);
@@ -896,6 +902,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   /** 맵 그림·바닥·하늘을 바꾸고 앞 레이어를 받기 시작한다. 보스 맵에 가 있는 동안에도 마을 그림은 지우지 않는다 */
   function enterStage(stage: Stage, colors: Pick<Town, 'sky'>): void {
     ground = stage.ground;
+    placePortals(stage);
     const previous = mapSprite.texture;
     mapSprite.texture = stage.image.texture;
     if (previous && previous !== stage.image.texture && previous !== home?.stage.image.texture) previous.destroy(true);
@@ -913,25 +920,65 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     paintSky(colors);
   }
 
-  /** 캐릭터 뒤에 원작 포털을 띄운다. lifeMs 가 지나거나 close 하면 사라진다 */
-  function showPortal(frames: EffectLayer, x: number, lifeMs: number): { close(): void } {
+  let routePortals = new Map<number, RoutePortal[]>();
+  let placedPortals: { close(): void }[] = [];
+  let portalStage: Stage | null = null;
+  let portalLoads = 0;
+
+  /** 지금 맵에 드나드는 포털을 늘 띄운다. 캐릭터가 지나가는 포털도 이 그림이다 */
+  function placePortals(stage: Stage): void {
+    placedPortals.forEach((portal) => portal.close());
+    placedPortals = [];
+    portalStage = stage;
+    const load = ++portalLoads;
+    const wanted = routePortals.get(stage.mapId) ?? [];
+    if (wanted.length === 0) return;
+    loadPortalFrames().then(
+      (frames) => {
+        if (load === portalLoads) placedPortals = wanted.map((portal) => addPortal(frames, stage, portal));
+      },
+      () => {
+        // 포털 그림이 없어도 캐릭터는 그 자리까지 걸어가서 옮긴다
+      },
+    );
+  }
+
+  /** 원작 포털 애니메이션을 돌린다. 마우스를 올리거나 누르면 가는 맵 이름이 뜬다 */
+  function addPortal(frames: EffectLayer, stage: Stage, portal: RoutePortal): { close(): void } {
+    const x = portal.x + stage.calibration.dx;
+    const node = new Container();
+    node.position.set(x, groundY(stage.ground, x));
     const sprite = new Sprite(frames[0].texture);
-    const y = ground ? groundY(ground, x) : hero.y;
+    sprite.eventMode = 'static';
+    sprite.cursor = 'pointer';
+    const label = new Text({
+      text: portal.label,
+      style: { fontFamily: FONT, fontSize: 12, fontWeight: '700', fill: 0xffffff, stroke: { color: 0x22304a, width: 3 } },
+    });
+    // 이름표처럼 맵 배율로 줄이지 않고 화면 픽셀로 그려야 글자가 안 흐려진다
+    label.scale.set(1 / worldScale);
+    label.anchor.set(0.5, 1);
+    label.y = -Math.max(...frames.map((frame) => frame.origin.y)) - 4;
+    label.visible = false;
+    node.addChild(sprite, label);
     const delays = frames.map((frame) => frame.delay);
     let elapsedMs = 0;
+    let hovered = false;
+    let labelUntilMs = 0;
     let closed = false;
+    sprite.on('pointerover', () => (hovered = true));
+    sprite.on('pointerout', () => (hovered = false));
+    sprite.on('pointertap', () => (labelUntilMs = elapsedMs + PORTAL_LABEL_MS));
     const update = (dtMs: number) => {
       elapsedMs += dtMs;
-      const index = frameAt(delays, elapsedMs, true);
-      sprite.texture = frames[index].texture;
-      sprite.pivot.set(frames[index].origin.x, frames[index].origin.y);
-      sprite.position.set(x, y);
-      sprite.alpha = Math.max(0, Math.min(1, elapsedMs / 300, (lifeMs - elapsedMs) / 300));
-      return !closed && elapsedMs < lifeMs;
+      const frame = frames[frameAt(delays, elapsedMs, true)];
+      sprite.texture = frame.texture;
+      sprite.pivot.set(frame.origin.x, frame.origin.y);
+      label.visible = hovered || elapsedMs < labelUntilMs;
+      return !closed;
     };
     update(0);
-    addEffect(sprite, actors, update);
-    actors.setChildIndex(sprite, actors.getChildIndex(hero));
+    addEffect(node, portalLayer, update);
     return { close: () => (closed = true) };
   }
 
@@ -1227,22 +1274,21 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 맵을 옮길 수 없음');
       const from = home;
       const stage = await prepareStage(mapId, label);
-      // 포털 그림을 못 받아도 걸어가서 옮긴다
-      const frames = await loadPortalFrames().catch(() => null);
-      const exitAt = clampToGround(exitX + from.stage.calibration.dx);
-      const exitPortal = frames ? showPortal(frames, exitAt, Infinity) : null;
-      await walkTo(exitAt);
+      // 늘 떠 있는 포털 자리까지 걸어가 들어간다
+      await walkTo(clampToGround(exitX + from.stage.calibration.dx));
       await fadeTo(1);
-      exitPortal?.close();
       home = { stage, town: from.town };
       enterStage(stage, from.town);
       hero.x = clampToGround(arrivalX + stage.calibration.dx);
       hero.y = groundY(stage.ground, hero.x);
       behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1500 };
-      if (frames) showPortal(frames, hero.x, PORTAL_LINGER_MS);
       updateCamera(1);
       await fadeTo(0);
       showBanner(stage.name);
+    },
+    setRoutePortals(portals) {
+      routePortals = portals;
+      if (portalStage) placePortals(portalStage);
     },
   };
 }

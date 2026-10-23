@@ -42,7 +42,7 @@ import {
   pinnedTown,
   townRotateMs,
 } from './game/settings';
-import { fieldMoveDue, fieldMoves, pickFieldMove, townFields } from './game/routes';
+import { fieldMoveDue, fieldMoves, pickFieldMove, routePortals, townFields } from './game/routes';
 import type { RouteField } from './game/routeCuration';
 import { type MonsterSpec, type Town, pickNextTown, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
@@ -434,6 +434,7 @@ function moveTo(next: Town): void {
       huntsHere = 0;
       skippedFields.clear();
       bgm.setTown(next);
+      scene.setRoutePortals(routePortals(next, townFields(next)));
       warmMaps(townFields(next).map((each) => each.mapId));
     })
     .catch(() => hud.notify(`${next.name} 맵을 불러오지 못했어요`))

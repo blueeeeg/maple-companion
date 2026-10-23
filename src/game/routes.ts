@@ -33,6 +33,22 @@ export function fieldMoves(townMapId: number, fields: RouteField[], currentMapId
   return [back, ...forward];
 }
 
+/** 맵에 늘 띄워 두는 포털 하나. x 는 맵 월드 좌표, label 은 가는 맵 이름 */
+export interface RoutePortal {
+  x: number;
+  label: string;
+}
+
+/** 마을 맵과 그 사냥터 맵마다 걸어서 드나드는 포털. 원작처럼 옮기지 않을 때도 보인다 */
+export function routePortals(town: Pick<Town, 'mapId' | 'name'>, fields: RouteField[]): Map<number, RoutePortal[]> {
+  const portals = new Map<number, RoutePortal[]>();
+  [town.mapId, ...fields.map((field) => field.mapId)].forEach((mapId) => {
+    const moves = fieldMoves(town.mapId, fields, mapId);
+    if (moves.length > 0) portals.set(mapId, moves.map((move) => ({ x: move.exitX, label: move.field?.name ?? town.name })));
+  });
+  return portals;
+}
+
 export interface FieldCadence {
   /** 한 맵에서 이만큼 사냥하면 옮긴다 */
   hunts: number;
