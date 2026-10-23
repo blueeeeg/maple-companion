@@ -47,7 +47,7 @@ import {
   townRotateMs,
 } from './game/settings';
 import { fieldMoveDue, fieldMoves, pickFieldMove, routePortals, townFields } from './game/routes';
-import type { RouteField } from './game/routeCuration';
+import { type RouteField, isPassage } from './game/routeCuration';
 import { type MonsterSpec, type Town, drawFromTownBag, pickNextTown, rewardTown, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
@@ -632,18 +632,28 @@ function travelField(current: Town): void {
   huntsHere = 0;
   if (!move) return;
   townLoading = true;
-  scene
-    .travel(move.toMapId, move.field?.name ?? current.name, move.exit, move.arrival)
-    .then(() => {
-      field = move.field;
-      arrivedAt = Date.now();
-      if (field) bgm.setMap(field.mapId);
-      else bgm.setTown(current);
-    })
-    .catch(() => {
-      // 돌아가는 길은 이미 다녀온 맵이라 막지 않는다
-      if (move.field && move.field.fromMapId === (field?.mapId ?? current.mapId)) skippedFields.add(move.toMapId);
-    })
+  // 통로 맵은 사냥 없이 지나가며 포털을 이어 탄다. 중간에 못 가면 그때 있는 맵에 남는다
+  move.hops
+    .reduce(
+      (previous, hop) =>
+        previous.then(() =>
+          scene.travel(hop.toMapId, hop.field?.name ?? current.name, hop.exit, hop.arrival).then(
+            () => {
+              field = hop.field;
+              arrivedAt = Date.now();
+              if (field) bgm.setMap(field.mapId);
+              else bgm.setTown(current);
+            },
+            (error: unknown) => {
+              // 돌아가는 길은 이미 다녀온 맵이라 막지 않는다
+              if (hop.field && hop.field.fromMapId === (field?.mapId ?? current.mapId)) skippedFields.add(hop.toMapId);
+              throw error;
+            },
+          ),
+        ),
+      Promise.resolve(),
+    )
+    .catch(() => {})
     .finally(() => (townLoading = false));
 }
 
@@ -787,7 +797,9 @@ async function tick(): Promise<void> {
     }
   }
 
-  if (!scene.inEncounter && !townLoading && fieldMoveDue({ hunts: huntsHere, sinceArrivalMs: Date.now() - arrivedAt })) {
+  // 통로 맵에 남았으면(이어 가다 못 갔으면) 머물지 않고 바로 옮긴다
+  const inPassage = field !== null && isPassage(field);
+  if (!scene.inEncounter && !townLoading && (inPassage || fieldMoveDue({ hunts: huntsHere, sinceArrivalMs: Date.now() - arrivedAt }))) {
     travelField(town);
   }
 
@@ -823,7 +835,7 @@ async function tick(): Promise<void> {
     if (boss) fightBoss(boss, { kind: 'turn', encounterNumber: next });
     else {
       // 사냥터에서는 그 맵의 실제 몬스터가 나온다. 보상은 마을 기준 그대로다
-      const monster = pickMonster(field ? { ...town, monsters: field.monsters } : town);
+      const monster = pickMonster(field && !isPassage(field) ? { ...town, monsters: field.monsters } : town);
       scene.startEncounter(monster, 3 + Math.floor(Math.random() * 3));
     }
   }

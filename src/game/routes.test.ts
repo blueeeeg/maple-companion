@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { RouteField } from './routeCuration';
+import { type RouteField, isPassage } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
-import { FIELD_CADENCE, fieldMoveDue, fieldMoves, pickFieldMove, routePortals } from './routes';
+import { FIELD_CADENCE, type FieldMove, fieldMoveDue, fieldMoves, pickFieldMove, routePortals } from './routes';
 import { TOWNS } from './towns';
 
 const field = (mapId: number, fromMapId: number, entryX: number, arrivalX: number): RouteField => ({
@@ -50,6 +50,53 @@ describe('사냥터 오가기', () => {
   });
 });
 
+describe('통로 맵 지나가기', () => {
+  // 마을 1 → 통로 5 → 사냥터 50·51, 통로 5 → 통로 6 → 사냥터 60
+  const passage = (mapId: number, fromMapId: number, entryX: number, arrivalX: number): RouteField => ({
+    ...field(mapId, fromMapId, entryX, arrivalX),
+    level: 0,
+    monsters: [],
+  });
+  const route = [passage(5, 1, 100, -100), field(50, 5, 200, -200), field(51, 5, 300, -300), passage(6, 5, 400, -400), field(60, 6, 500, -500)];
+  const hopsOf = (move: FieldMove) => move.hops.map((hop) => hop.toMapId);
+
+  it('마을에서 통로 너머 사냥터까지 포털을 이어 타는 이동 하나로 간다', () => {
+    const moves = fieldMoves(1, route, 1);
+    expect(moves.map((move) => [move.toMapId, hopsOf(move)])).toEqual([
+      [50, [5, 50]],
+      [51, [5, 51]],
+      [60, [5, 6, 60]],
+    ]);
+    // 지금 맵에서 걸어 갈 포털은 첫 칸, 나타날 포털은 마지막 칸이다
+    expect(moves[0]).toMatchObject({ exit: { x: 100 }, arrival: { x: -200 }, field: { mapId: 50 } });
+    expect(moves[0].hops[0]).toMatchObject({ toMapId: 5, exit: { x: 100 }, arrival: { x: -100 }, field: { mapId: 5 } });
+  });
+
+  it('통로 너머 사냥터에서는 통로를 지나 마을로 돌아가거나 옆 사냥터로 간다', () => {
+    const moves = fieldMoves(1, route, 50);
+    expect(moves.map((move) => [move.toMapId, hopsOf(move)])).toEqual([
+      [1, [5, 1]],
+      [51, [5, 51]],
+      [60, [5, 6, 60]],
+    ]);
+    expect(moves[0].field).toBeNull();
+    expect(moves[0].hops[0]).toMatchObject({ exit: { x: -200 }, arrival: { x: 200 } });
+    expect(moves[0].hops[1]).toMatchObject({ exit: { x: -100 }, arrival: { x: 100 }, field: null });
+  });
+
+  it('못 받아 온 통로를 지나는 길은 고르지 않는다', () => {
+    const moves = fieldMoves(1, route, 50);
+    expect(pickFieldMove(moves, new Set([6]), () => 0.99)?.toMapId).toBe(51);
+    expect(pickFieldMove(moves, new Set([5]))).toBeNull();
+  });
+
+  it('통로 맵에도 포털 하나에 하나씩 드나드는 포털을 띄운다', () => {
+    const portals = routePortals({ mapId: 1, name: '마을' }, route);
+    expect(portals.get(1)).toEqual([{ x: 100, y: -100, label: '맵5' }]);
+    expect(portals.get(5)?.map((portal) => portal.label)).toEqual(['마을', '맵50', '맵51', '맵6']);
+  });
+});
+
 describe('늘 보이는 포털', () => {
   it('마을 맵과 사냥터 맵마다 드나드는 포털 자리와 가는 맵 이름을 준다', () => {
     const portals = routePortals({ mapId: 1, name: '마을' }, fields);
@@ -92,14 +139,21 @@ describe('사냥터로 옮기는 때', () => {
 });
 
 describe('고른 사냥터 데이터', () => {
-  it('마을마다 사냥터가 셋 이하고 앞 맵이 마을이나 같은 경로의 사냥터다', () => {
+  it('마을마다 사냥터가 셋 이하고 앞 맵이 마을이나 같은 경로의 앞쪽 맵이다', () => {
     TOWNS.forEach((town) => {
       const route = TOWN_ROUTES[town.id] ?? [];
-      expect(route.length).toBeLessThanOrEqual(3);
-      route.forEach((each) => {
-        expect([town.mapId, ...route.map((other) => other.mapId)]).toContain(each.fromMapId);
-        expect(each.monsters.length).toBeGreaterThan(0);
+      expect(route.filter((each) => !isPassage(each)).length).toBeLessThanOrEqual(3);
+      route.forEach((each, index) => {
+        expect([town.mapId, ...route.slice(0, index).map((other) => other.mapId)]).toContain(each.fromMapId);
       });
+    });
+  });
+
+  it('통로는 그 너머에 사냥터가 있을 때만 들어 있다', () => {
+    Object.values(TOWN_ROUTES).forEach((route) => {
+      const reachesField = (mapId: number): boolean =>
+        route.filter((each) => each.fromMapId === mapId).some((each) => !isPassage(each) || reachesField(each.mapId));
+      route.filter(isPassage).forEach((each) => expect(reachesField(each.mapId)).toBe(true));
     });
   });
 });

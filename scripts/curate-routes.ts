@@ -15,9 +15,12 @@ import {
   type RouteField,
   fieldLevel,
   fieldMonsters,
+  isPassage,
+  MAX_PASSAGES,
   MAX_ROUTE_FIELDS,
   levelBand,
   portalAccess,
+  relaxedLevelBand,
   selectRoute,
 } from '../src/game/routeCuration.ts';
 import { TOWNS } from '../src/game/towns.ts';
@@ -26,6 +29,16 @@ import { type LadderRope, type NavGraph, buildNavGraph } from '../src/maple/navi
 const API = 'https://maplestory.io/api/KMS/389';
 const WZ = 'https://maplestory.io/api/wz/KMS/389';
 const MAX_DEPTH = 3;
+/**
+ * 전체 렌더 위 발판 자리를 못 맞추는 맵. 발판 위까지 배경이 불투명해 투명도 어림이 120~330px 틀리고,
+ * 레이어 겹치기(scene.ts exactCalibration)는 어림 둘레 48px 안만 찾아서 캐릭터가 허공·지붕 위에 선다
+ */
+const MISCALIBRATED_MAPS = new Map([
+  [250020000, '초급 수련장'],
+  [250020100, '하급 수련장'],
+  [410000570, '세르니움 서쪽 성문'],
+  [410000580, '세르니움 서쪽 성벽 입구'],
+]);
 const TIMEOUT_MS = 30_000;
 
 const cacheDir = process.argv[2] ?? join(tmpdir(), 'maple-routes-cache');
@@ -156,10 +169,13 @@ interface Exclusion {
   reason: string;
 }
 
-async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<RouteField[]> {
+async function curateTown(
+  townIndex: number,
+  band: [number, number],
+  maxPassages: number,
+  exclusions: Exclusion[],
+): Promise<RouteField[]> {
   const town = TOWNS[townIndex];
-  const next = TOWNS[townIndex + 1] ?? null;
-  const band = levelBand(town.minLevel, next?.minLevel ?? null);
   const links: Link[] = [];
   const fields = new Map<number, CandidateField>();
   const visited = new Set<number>([town.mapId]);
@@ -170,7 +186,8 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
 
   let suitable = 0;
   // 사냥터는 가까운 층부터 고르니, 이번 층까지 셋이 모이면 더 깊이 볼 필요가 없다
-  for (let depth = 0; depth < MAX_DEPTH && frontier.length > 0 && suitable < MAX_ROUTE_FIELDS; depth += 1) {
+  // 통로는 사냥터 깊이에 세지 않는다
+  for (let depth = 0; depth < MAX_DEPTH + maxPassages && frontier.length > 0 && suitable < MAX_ROUTE_FIELDS; depth += 1) {
     const nextFrontier: number[] = [];
     for (const fromId of frontier) {
       const from = (await loadMap(fromId))!;
@@ -179,7 +196,13 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
         if (visited.has(portal.toMap)) continue;
         const target = await loadMap(portal.toMap);
         if (!target) continue;
-        if (target.isTown) continue;
+        // 무릉 사원처럼 앱 마을이 아닌 마을 맵은 통로로 지나갈 수 있다. 앱 마을로는 넘어가지 않는다
+        const isAppTown = TOWNS.some((each) => each.mapId === target.id);
+        if (isAppTown || (target.isTown && maxPassages === 0)) continue;
+        if (MISCALIBRATED_MAPS.has(target.id)) {
+          exclude(fromId, portal.toMap, '렌더에 발판 자리를 못 맞춤(보정 어림이 120px 넘게 틀림)');
+          continue;
+        }
         const exitAccess = portalAccess(navGraph(from), portal);
         if (exitAccess !== 'ok') {
           exclude(fromId, portal.toMap, `나가는 포털 ${portal.name}(${portal.x}, ${portal.y}): ${ACCESS_REASON[exitAccess]}`);
@@ -201,9 +224,11 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
         links.push({ from: fromId, to: portal.toMap, exitX: portal.x, exitY: portal.y, arrivalX: back.x, arrivalY: back.y });
         const details = await loadMobs(target.mobs.map((mob) => mob.id));
         const monsters = fieldMonsters(target.mobs, details);
-        fields.set(target.id, { mapId: target.id, name: target.name, isTown: target.isTown, monsters });
+        fields.set(target.id, { mapId: target.id, name: target.name, isTown: isAppTown, monsters });
         if (monsters.length === 0) {
-          exclude(fromId, portal.toMap, '몬스터 없음');
+          exclude(fromId, portal.toMap, maxPassages > 0 ? '몬스터 없음 (통로로만 지나감)' : '몬스터 없음');
+          // 너머에 고를 사냥터가 없으면 selectRoute 가 통로도 넣지 않는다
+          if (maxPassages > 0) nextFrontier.push(portal.toMap);
           continue;
         }
         const level = fieldLevel(monsters);
@@ -217,7 +242,7 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
     }
     frontier = nextFrontier;
   }
-  return selectRoute(town.mapId, links, fields, band);
+  return selectRoute(town.mapId, links, fields, band, MAX_ROUTE_FIELDS, maxPassages);
 }
 
 const quote = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
@@ -263,9 +288,25 @@ const routes: Record<string, RouteField[]> = {};
 for (let index = 0; index < TOWNS.length; index += 1) {
   const town = TOWNS[index];
   console.log(`${town.name}(${town.mapId}) Lv.${town.minLevel}`);
-  routes[town.id] = await curateTown(index, exclusions);
+  const band = levelBand(town.minLevel, TOWNS[index + 1]?.minLevel ?? null);
+  // 통로를 지나면 포털을 한 번 더 걸어야 하고, 넓힌 폭은 마을 레벨과 먼 몹이 나와서 앞 규칙으로 하나도 못 고를 때만 쓴다
+  const attempts: [band: [number, number], maxPassages: number][] = [
+    [band, 0],
+    [band, MAX_PASSAGES],
+    [relaxedLevelBand(town.minLevel), MAX_PASSAGES],
+  ];
+  let townExclusions: Exclusion[] = [];
+  for (const [attemptBand, maxPassages] of attempts) {
+    townExclusions = [];
+    routes[town.id] = await curateTown(index, attemptBand, maxPassages, townExclusions);
+    if (routes[town.id].length > 0) break;
+    console.log(`  레벨 ${attemptBand[0]}~${attemptBand[1]} · 통로 ${maxPassages}개로는 사냥터가 없다`);
+  }
+  exclusions.push(...townExclusions);
   routes[town.id].forEach((field) =>
-    console.log(`  → ${field.name}(${field.mapId}) Lv.${field.level} ${field.monsters.map((monster) => monster.name).join(', ')}`),
+    console.log(
+      `  → ${field.name}(${field.mapId}) ← ${field.fromMapId} ${isPassage(field) ? '통로' : `Lv.${field.level} ${field.monsters.map((monster) => monster.name).join(', ')}`}`,
+    ),
   );
 }
 console.log('\n제외');

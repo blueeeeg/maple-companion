@@ -1,25 +1,31 @@
 import type { Point } from '../maple/ground';
-import type { RouteField } from './routeCuration';
+import { type RouteField, isPassage } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
 import type { Town } from './towns';
 
-/** 지금 맵에서 포털로 옮겨 갈 한 걸음 */
-export interface FieldMove {
+/** 포털 하나로 옆 맵에 옮겨 가는 한 걸음 */
+export interface FieldHop {
   toMapId: number;
   /** 지금 맵에서 걸어 갈 포털(맵 월드 좌표) */
   exit: Point;
   /** 옮겨 간 맵에서 나타날 포털 */
   arrival: Point;
-  /** 옮겨 간 맵이 사냥터면 그 사냥터. 마을로 돌아가면 null */
+  /** 옮겨 간 맵이 사냥터(또는 통로)면 그 맵. 마을로 돌아가면 null */
   field: RouteField | null;
+}
+
+/** 지금 맵에서 다음 사냥할 맵까지. 사이에 통로 맵이 있으면 포털을 이어 탄다 */
+export interface FieldMove extends FieldHop {
+  /** 처음 포털부터 차례로. 통로가 없으면 한 칸이고 그 칸이 이 이동과 같다 */
+  hops: FieldHop[];
 }
 
 export function townFields(town: Pick<Town, 'id'>): RouteField[] {
   return TOWN_ROUTES[town.id] ?? [];
 }
 
-/** 지금 맵(마을이면 마을 맵)에서 포털 하나로 갈 수 있는 맵들. 사냥터에서는 왔던 맵과 그 너머 사냥터로 간다 */
-export function fieldMoves(townMapId: number, fields: RouteField[], currentMapId: number): FieldMove[] {
+/** 지금 맵에서 포털 하나로 닿는 맵들. 사냥터에서는 왔던 맵과 그 너머 맵으로 간다 */
+function adjacentHops(townMapId: number, fields: RouteField[], currentMapId: number): FieldHop[] {
   const forward = fields
     .filter((field) => field.fromMapId === currentMapId)
     .map((field) => ({
@@ -30,13 +36,25 @@ export function fieldMoves(townMapId: number, fields: RouteField[], currentMapId
     }));
   const here = fields.find((field) => field.mapId === currentMapId);
   if (!here) return forward;
-  const back: FieldMove = {
+  const back: FieldHop = {
     toMapId: here.fromMapId,
     exit: { x: here.arrivalX, y: here.arrivalY },
     arrival: { x: here.entryX, y: here.entryY },
     field: here.fromMapId === townMapId ? null : (fields.find((field) => field.mapId === here.fromMapId) ?? null),
   };
   return [back, ...forward];
+}
+
+/** 지금 맵(마을이면 마을 맵)에서 갈 수 있는 사냥터·마을. 통로 맵에서는 멈추지 않고 왔던 쪽이 아닌 포털로 이어 간다 */
+export function fieldMoves(townMapId: number, fields: RouteField[], currentMapId: number): FieldMove[] {
+  const extend = (hops: FieldHop[], cameFrom: number): FieldMove[] => {
+    const last = hops[hops.length - 1];
+    if (!last.field || !isPassage(last.field)) return [{ ...last, exit: hops[0].exit, hops }];
+    return adjacentHops(townMapId, fields, last.toMapId)
+      .filter((hop) => hop.toMapId !== cameFrom)
+      .flatMap((hop) => extend([...hops, hop], last.toMapId));
+  };
+  return adjacentHops(townMapId, fields, currentMapId).flatMap((hop) => extend([hop], currentMapId));
 }
 
 /** 맵에 늘 띄워 두는 포털 하나. 좌표는 맵 월드 좌표, label 은 가는 맵 이름 */
@@ -48,8 +66,8 @@ export interface RoutePortal extends Point {
 export function routePortals(town: Pick<Town, 'mapId' | 'name'>, fields: RouteField[]): Map<number, RoutePortal[]> {
   const portals = new Map<number, RoutePortal[]>();
   [town.mapId, ...fields.map((field) => field.mapId)].forEach((mapId) => {
-    const moves = fieldMoves(town.mapId, fields, mapId);
-    if (moves.length > 0) portals.set(mapId, moves.map((move) => ({ ...move.exit, label: move.field?.name ?? town.name })));
+    const hops = adjacentHops(town.mapId, fields, mapId);
+    if (hops.length > 0) portals.set(mapId, hops.map((hop) => ({ ...hop.exit, label: hop.field?.name ?? town.name })));
   });
   return portals;
 }
@@ -74,8 +92,8 @@ export function fieldMoveDue(
   return stay.hunts >= cadence.hunts || stay.sinceArrivalMs >= cadence.stayMs;
 }
 
-/** 이번 실행에 맵을 못 받아 온 사냥터는 빼고 고른다. 갈 곳이 없으면 null */
+/** 이번 실행에 맵을 못 받아 온 사냥터·통로를 지나는 길은 빼고 고른다. 갈 곳이 없으면 null */
 export function pickFieldMove(moves: FieldMove[], skipped: ReadonlySet<number>, random = Math.random): FieldMove | null {
-  const open = moves.filter((move) => !skipped.has(move.toMapId));
+  const open = moves.filter((move) => !move.hops.some((hop) => skipped.has(hop.toMapId)));
   return open.length > 0 ? open[Math.floor(random() * open.length)] : null;
 }

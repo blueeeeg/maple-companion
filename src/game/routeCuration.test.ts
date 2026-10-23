@@ -6,8 +6,11 @@ import {
   type MobDetail,
   fieldLevel,
   fieldMonsters,
+  isPassage,
   levelBand,
+  MAX_PASSAGES,
   portalAccess,
+  relaxedLevelBand,
   selectRoute,
 } from './routeCuration';
 import { buildNavGraph } from '../maple/navigation';
@@ -94,10 +97,36 @@ describe('사냥터 고르기', () => {
     expect(route[2]).toMatchObject({ entryX: 30, entryY: -10, arrivalX: 10, arrivalY: -20, level: 10, monsters: [{ id: 20, name: '몹20' }] });
   });
 
-  it('레벨이 안 맞거나 몹이 없는 맵, 다른 마을은 고르지 않고 그 너머로도 가지 않는다', () => {
-    const fields = new Map([field(10, 50), field(11, 0), field(12, 10, true), field(20, 10)].map((each) => [each.mapId, each]));
-    const links = [link(1, 10), link(1, 11), link(1, 12), link(10, 20), link(11, 20), link(12, 20)];
+  it('레벨이 안 맞는 맵, 다른 마을은 고르지 않고 그 너머로도 가지 않는다', () => {
+    const fields = new Map([field(10, 50), field(12, 10, true), field(20, 10)].map((each) => [each.mapId, each]));
+    const links = [link(1, 10), link(1, 12), link(10, 20), link(12, 20)];
     expect(selectRoute(1, links, fields, [1, 20])).toEqual([]);
+  });
+
+  it('몹이 없는 맵은 통로로 지나가 그 너머 사냥터를 고르고, 통로는 사냥터 앞에 한 번만 넣는다', () => {
+    const fields = new Map([field(10, 0), field(20, 10), field(21, 12)].map((each) => [each.mapId, each]));
+    const links = [link(1, 10), link(10, 20), link(10, 21)];
+    const route = selectRoute(1, links, fields, [1, 20]);
+    expect(route.map((each) => [each.mapId, each.fromMapId, isPassage(each)])).toEqual([
+      [10, 1, true],
+      [20, 10, false],
+      [21, 10, false],
+    ]);
+    expect(route[0]).toMatchObject({ entryX: 11, arrivalX: 9, level: 0, monsters: [] });
+  });
+
+  it('통로는 사냥터 수에 안 세고, 너머에 고를 사냥터가 없으면 통로도 넣지 않는다', () => {
+    const fields = new Map([field(10, 10), field(11, 10), field(12, 0), field(13, 0), field(20, 12), field(30, 50)].map((each) => [each.mapId, each]));
+    const links = [link(1, 10), link(1, 11), link(1, 12), link(1, 13), link(12, 20), link(13, 30)];
+    expect(selectRoute(1, links, fields, [1, 20]).map((each) => each.mapId)).toEqual([10, 11, 12, 20]);
+  });
+
+  it(`통로는 ${MAX_PASSAGES}개까지만 이어서 지나고, 0 이면 지나지 않는다`, () => {
+    const chain = [10, 20, 30];
+    const fields = new Map([...chain.map((id) => field(id, 0)), field(40, 10), field(31, 10)].map((each) => [each.mapId, each]));
+    const links = [link(1, 10), link(10, 20), link(20, 30), link(30, 40), link(20, 31)];
+    expect(selectRoute(1, links, fields, [1, 20]).map((each) => each.mapId)).toEqual([10, 20, 31]);
+    expect(selectRoute(1, links, fields, [1, 20], 3, 0)).toEqual([]);
   });
 
   it('한 사냥터를 두 길로 갈 수 있으면 먼저 닿은 길만 쓴다', () => {
@@ -112,5 +141,11 @@ describe('사냥터 고르기', () => {
     expect(levelBand(20, 30)).toEqual([10, 45]);
     expect(levelBand(1, 5)).toEqual([1, 26]);
     expect(levelBand(260, null)).toEqual([250, 300]);
+  });
+
+  it('기본 폭으로 못 고른 마을은 마을 레벨 60 위까지 넓혀 본다', () => {
+    expect(relaxedLevelBand(30)).toEqual([20, 90]);
+    expect(relaxedLevelBand(60)).toEqual([50, 120]);
+    expect(relaxedLevelBand(5)).toEqual([1, 65]);
   });
 });
