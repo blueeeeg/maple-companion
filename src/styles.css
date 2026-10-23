@@ -1905,16 +1905,9 @@ body {
   outline: 1px solid #1f90e2;
 }
 
-.settings-segments[hidden] {
+.settings-segments[hidden],
+.settings-stepper[hidden] {
   display: none;
-}
-
-.settings-note {
-  overflow: hidden;
-  color: #1b7cc8;
-  font-weight: 700;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .settings-stepper {
@@ -1938,9 +1931,13 @@ body {
 
 .settings-step-value {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   color: #333333;
   font-weight: 700;
   text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .settings-slider {
@@ -2000,7 +1997,7 @@ body {
 }
 
 .settings-hint {
-  height: 24px;
+  height: 36px;
   margin: 2px 2px 0;
   overflow: hidden;
   color: #3a3a3a;

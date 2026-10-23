@@ -1,7 +1,7 @@
 import { BOSS_EVERY_ENCOUNTERS, BOSS_MESO_MULTIPLIER, BOSS_XP_MULTIPLIER, type HuntPace } from './bosses';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS, KILL_XP } from './encounters';
 import { XP_PER_ACTIVE_SECOND } from './progression';
-import { TOWNS, type Town } from './towns';
+import { TOWNS, type Town, unlockedTowns } from './towns';
 
 // 설정은 캐릭터마다가 아니라 앱 전체에 하나다. 소리 끄기만 예전부터 캐릭터 목록(Roster.muted)에 있어서 그대로 둔다
 const STORAGE_KEY = 'maple-companion:settings';
@@ -25,9 +25,9 @@ export interface Settings {
   /** 몇 번째 사냥마다 보스인지. null 이면 보스가 안 나온다 */
   bossEvery: (typeof BOSS_EVERY_OPTIONS)[number] | null;
   damageNumbers: boolean;
-  townRotate: boolean;
+  /** 마을을 돌 때 몇 분마다 옮기는지. 한 곳에 머무는 동안에도 값은 남겨 둔다 */
   townRotateMinutes: (typeof TOWN_ROTATE_MINUTE_OPTIONS)[number];
-  /** 이 마을에 머문다. 지금 캐릭터에게 아직 안 열린 마을이면 자동으로 돈다 */
+  /** null 이면 마을을 돈다. 값이 있으면 그 마을(과 그 사냥터)에 머문다. 지금 캐릭터에게 아직 안 열린 마을이면 돈다 */
   pinnedTownId: string | null;
   /** 0~100 */
   bgmVolume: number;
@@ -43,7 +43,6 @@ export const DEFAULT_SETTINGS: Settings = {
   encounterMinutes: 3,
   bossEvery: BOSS_EVERY_ENCOUNTERS,
   damageNumbers: true,
-  townRotate: true,
   townRotateMinutes: 8,
   pinnedTownId: null,
   bgmVolume: 35,
@@ -60,9 +59,23 @@ function optional<T>(options: readonly T[], value: unknown, fallback: T | null):
   return value === null ? null : oneOf<T | null>(options, value, fallback);
 }
 
-/** 저장된 값 중 쓸 수 있는 것만 받고 나머지는 기본값으로 채운다. 손으로 고쳤거나 예전 판 저장이어도 앱이 뜬다 */
-export function normalizeSettings(raw: unknown): Settings {
-  const saved = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<Record<keyof Settings, unknown>>;
+/**
+ * 예전 판은 「자동」 체크를 끄면 그때 있던 마을에 머물렀다. 그 마을은 저장하지 않았고 켤 때마다 최근 마을 중에서 골랐으니
+ * 지금 캐릭터에게 가장 최근에 열린 마을에 머무는 것으로 옮긴다. 고정한 마을이 있었으면 그 마을이 먼저다
+ */
+function legacyPinnedTownId(saved: Record<string, unknown>, level: number): string | null {
+  if (TOWNS.some((town) => town.id === saved.pinnedTownId)) return saved.pinnedTownId as string;
+  if (saved.townRotate !== false) return null;
+  const towns = unlockedTowns(level);
+  return towns[towns.length - 1]?.id ?? null;
+}
+
+/**
+ * 저장된 값 중 쓸 수 있는 것만 받고 나머지는 기본값으로 채운다. 손으로 고쳤거나 예전 판 저장이어도 앱이 뜬다.
+ * level 은 지금 캐릭터 레벨로, 예전 「자동」 끔 저장을 옮길 때만 쓴다
+ */
+export function normalizeSettings(raw: unknown, level = 1): Settings {
+  const saved = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<Record<keyof Settings | 'townRotate', unknown>>;
   const fallback = DEFAULT_SETTINGS;
   const volume = Number(saved.bgmVolume);
   return {
@@ -70,9 +83,8 @@ export function normalizeSettings(raw: unknown): Settings {
     encounterMinutes: optional(ENCOUNTER_MINUTE_OPTIONS, saved.encounterMinutes, fallback.encounterMinutes),
     bossEvery: optional(BOSS_EVERY_OPTIONS, saved.bossEvery, fallback.bossEvery),
     damageNumbers: typeof saved.damageNumbers === 'boolean' ? saved.damageNumbers : fallback.damageNumbers,
-    townRotate: typeof saved.townRotate === 'boolean' ? saved.townRotate : fallback.townRotate,
     townRotateMinutes: oneOf(TOWN_ROTATE_MINUTE_OPTIONS, saved.townRotateMinutes, fallback.townRotateMinutes),
-    pinnedTownId: TOWNS.some((town) => town.id === saved.pinnedTownId) ? (saved.pinnedTownId as string) : null,
+    pinnedTownId: legacyPinnedTownId(saved, level),
     bgmVolume:
       saved.bgmVolume !== undefined && saved.bgmVolume !== null && Number.isFinite(volume)
         ? Math.min(BGM_VOLUME_MAX, Math.max(0, Math.round(volume)))
@@ -83,18 +95,18 @@ export function normalizeSettings(raw: unknown): Settings {
   };
 }
 
-export function parseSettings(text: string | null): Settings {
+export function parseSettings(text: string | null, level = 1): Settings {
   if (!text) return { ...DEFAULT_SETTINGS };
   try {
-    return normalizeSettings(JSON.parse(text));
+    return normalizeSettings(JSON.parse(text), level);
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
-export function loadSettings(): Settings {
+export function loadSettings(level = 1): Settings {
   try {
-    return parseSettings(localStorage.getItem(STORAGE_KEY));
+    return parseSettings(localStorage.getItem(STORAGE_KEY), level);
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -118,13 +130,12 @@ export function idleLimitSeconds(settings: Settings): number {
   return settings.idleMinutes * 60;
 }
 
-/** 자동 이동을 껐으면 null. 핀이 유효한지(열린 마을인지)는 호출한 쪽이 판단한다 */
-export function townRotateMs(settings: Settings): number | null {
-  if (!settings.townRotate) return null;
+/** 마을을 돌 때 옮기는 간격. 머무는 마을이 유효한지(열린 마을인지)는 호출한 쪽이 pinnedTown 으로 본다 */
+export function townRotateMs(settings: Settings): number {
   return settings.townRotateMinutes * 60 * 1000;
 }
 
-/** 고정한 마을이 이 레벨에 열려 있으면 그 마을. 아니면 null(자동) */
+/** 머물기로 한 마을이 이 레벨에 열려 있으면 그 마을. 아니면 null(돈다) */
 export function pinnedTown(settings: Settings, level: number): Town | null {
   return TOWNS.find((town) => town.id === settings.pinnedTownId && town.minLevel <= level) ?? null;
 }

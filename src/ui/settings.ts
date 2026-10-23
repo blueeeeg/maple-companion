@@ -10,15 +10,20 @@ import {
   bossMesoShare,
   hourlyXp,
 } from '../game/settings';
+import { townFields } from '../game/routes';
+import { TOWNS } from '../game/towns';
 import { wzImageUrl } from '../maple/api';
 import { applyArt } from './art';
+import { hasFinalConsonant } from './npcDialog';
 
 export interface SettingsScreenState {
   settings: Settings;
   /** HUD 의 🔊 버튼과 같은 값(Roster.muted) */
   muted: boolean;
-  /** 지금 캐릭터에게 열린 마을. 마을 고정은 이 안에서 고른다 */
+  /** 지금 캐릭터에게 열린 마을. 머물 마을은 이 안에서 고른다 */
   towns: { id: string; name: string }[];
+  /** 지금 서 있는 마을. 「머물기」를 처음 누르면 이 마을부터 보여 준다 */
+  currentTownId?: string | null;
 }
 
 export interface SettingsHandlers {
@@ -75,12 +80,9 @@ const HINTS = {
   encounter: '자주 나오면 한 마리 보상이 줄어서 시간당 EXP·메소는 같아요',
   boss: '자주 나오면 한 번에 덜 줘서 시간당 보상은 같아요',
   damage: '타격할 때 뜨는 대미지 숫자',
-  rotate: '정해 둔 시간마다 최근에 열린 마을 중 하나로 옮겨요',
-  pinned: '마을을 고정하면 자동 이동은 쉬어요. 아직 안 열린 캐릭터는 자동으로 돌아요',
   bgm: '음소거는 HUD ⚙️ 메뉴의 「소리 끄기」와 같아요',
   levelUp: `작게는 ${LEVEL_UP_SMALL_SCALE}배예요. 전직 이펙트는 원본 크기 그대로예요`,
   idle: '키보드·마우스를 쓰는 동안만 성장해요. 입력 없이 이만큼 지나면 자리 비움으로 보고 멈춰요 · 읽기·회의가 많으면 늘려요',
-  rotateOff: '자동 이동을 꺼 둬서 쉬어요 · 「자동」을 켜면 시간을 골라요',
 };
 
 /** 활동 분을 「40분」·「1시간」·「6시간 40분」으로 */
@@ -98,15 +100,20 @@ export function bossHint(bossEvery: number, encounterMinutes: number | null): st
   return `${every}(활동 약 ${formatMinutes(bossEvery * encounterMinutes)}마다) · ${HINTS.boss}`;
 }
 
-/**
- * 마을 이동 시간 버튼이 왜 잠겼고 어떻게 푸는지.
- * 유효한 고정이 먼저다 — 자동을 켜도 고정 중이면 그대로 쉰다.
- * pinEffective: 고정한 마을이 지금 캐릭터에게 열려 있는지
- */
-export function townRotateHint(townRotate: boolean, pinnedTownName: string | null, pinEffective = true): string {
-  if (pinnedTownName !== null && pinEffective) return `${pinnedTownName} 고정 중이라 쉬어요 · 마을 고정을 「자동」으로 바꾸면 골라요`;
-  if (pinnedTownName !== null) return '고정한 마을이 아직 안 열려서 자동으로 돌아요';
-  return townRotate ? HINTS.rotate : HINTS.rotateOff;
+export interface TownStay {
+  name: string;
+  /** 지금 캐릭터에게 열린 마을인지. 설정은 앱 전체에 하나라 다른 캐릭터로 고른 마을이 아직 안 열렸을 수 있다 */
+  open: boolean;
+  hasFields: boolean;
+}
+
+/** 마을 줄의 지금 값대로 캐릭터가 어떻게 움직이는지 한 문장으로. stay 가 null 이면 마을을 돈다 */
+export function townHint(rotateMinutes: number, stay: TownStay | null): string {
+  const rotate = `${rotateMinutes}분마다 최근에 열린 마을을 돌아다녀요`;
+  if (stay === null) return rotate;
+  const { name } = stay;
+  if (!stay.open) return `${name}${hasFinalConsonant(name) ? '은' : '는'} 이 캐릭터에게 아직 안 열려서 ${rotate}`;
+  return stay.hasFields ? `${name}${hasFinalConsonant(name) ? '과' : '와'} 그 사냥터에만 있어요` : `${name}에만 있어요`;
 }
 
 export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandlers): SettingsScreen {
@@ -141,6 +148,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   let draft: Settings | null = null;
   let muted = false;
   let towns: SettingsScreenState['towns'] = [];
+  let currentTownId: string | null = null;
   // 문자열이 아니라 읽는 함수로 둬야 올려 둔 채 값을 바꿀 때 안내도 따라 바뀐다
   let hoveredHint: (() => string) | null = null;
   const renders: (() => void)[] = [];
@@ -238,57 +246,66 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   );
   checkbox(row('데미지', HINTS.damage), '숫자 표시', () => current().damageNumbers, (damageNumbers) => edit({ damageNumbers }));
 
-  const isPinEffective = () => {
-    const pinned = current().pinnedTownId;
-    return pinned !== null && towns.some((t) => t.id === pinned);
+  // 마을을 돌지 한 곳에 머물지는 pinnedTownId 하나로 정한다. 「돌기」를 눌러도 고른 마을은 기억해 두었다가 「머물기」에 다시 보여 준다
+  let lastStayTownId: string | null = null;
+  const stayTown = (): TownStay | null => {
+    const id = current().pinnedTownId;
+    if (id === null) return null;
+    const open = towns.some((town) => town.id === id);
+    return { name: TOWNS.find((town) => town.id === id)?.name ?? id, open, hasFields: townFields({ id }).length > 0 };
   };
-  const rotateHint = () => townRotateHint(current().townRotate, pinnedTownName(), isPinEffective());
-  const rotateControl = row('마을 이동', rotateHint);
-  checkbox(rotateControl, '자동', () => current().townRotate, (townRotate) => edit({ townRotate }));
+  const currentTownHint = () => townHint(current().townRotateMinutes, stayTown());
+  const townControl = row('마을', currentTownHint);
   segments(
-    rotateControl,
+    townControl,
+    [
+      { value: 'rotate', label: '돌기' },
+      { value: 'stay', label: '머물기' },
+    ] as Choice<'rotate' | 'stay'>[],
+    () => (current().pinnedTownId === null ? 'rotate' : 'stay'),
+    (mode) => {
+      const pinned = current().pinnedTownId;
+      if (mode === 'rotate') {
+        if (pinned !== null) lastStayTownId = pinned;
+        edit({ pinnedTownId: null });
+        return;
+      }
+      if (pinned !== null) return;
+      const isOpen = (id: string | null | undefined) => towns.some((town) => town.id === id);
+      const firstStay = [lastStayTownId, currentTownId].find(isOpen) ?? towns[towns.length - 1]?.id ?? null;
+      edit({ pinnedTownId: firstStay });
+    },
+  );
+  segments(
+    townControl,
     minutes(TOWN_ROTATE_MINUTE_OPTIONS),
     () => current().townRotateMinutes,
     (townRotateMinutes) => edit({ townRotateMinutes }),
-    () => current().townRotate && !isPinEffective(),
   );
-  // 고정 중에는 흐린 시간 버튼만 보여서는 왜 못 고르는지 몰라 버튼 자리에 고정한 마을을 적는다
-  const rotateMinutes = rotateControl.querySelector<HTMLElement>('.settings-segments')!;
-  const rotatePaused = document.createElement('span');
-  rotatePaused.className = 'settings-note';
-  rotateControl.appendChild(rotatePaused);
-  renders.push(() => {
-    const effective = isPinEffective();
-    rotateMinutes.hidden = effective;
-    rotatePaused.hidden = !effective;
-    rotatePaused.textContent = effective ? `${pinnedTownName()} 고정 중` : '';
-  });
+  const rotateMinutes = townControl.querySelectorAll<HTMLElement>('.settings-segments')[1];
 
-  // 마을은 열 몇 곳이라 한 줄에 다 못 늘어놓아서 ◀ ▶ 로 넘긴다. 맨 앞이 「자동」
-  const townControl = row('마을 고정', HINTS.pinned);
-  townControl.innerHTML = `
-    <div class="settings-stepper">
+  // 마을은 열 몇 곳이라 한 줄에 다 못 늘어놓아서 ◀ ▶ 로 넘긴다
+  townControl.insertAdjacentHTML(
+    'beforeend',
+    `<div class="settings-stepper">
       <button class="settings-step" type="button" aria-label="이전 마을">◀</button>
       <output class="settings-step-value"></output>
       <button class="settings-step" type="button" aria-label="다음 마을">▶</button>
-    </div>`;
+    </div>`,
+  );
+  const townStepper = townControl.querySelector<HTMLElement>('.settings-stepper')!;
   const [townPrevious, townNext] = townControl.querySelectorAll<HTMLButtonElement>('.settings-step');
   const townValue = townControl.querySelector('output')!;
   const townChoices = () => {
-    const choices: Choice<string | null>[] = [{ value: null, label: '자동' }, ...towns.map((town) => ({ value: town.id, label: town.name }))];
-    // 다른 캐릭터로 고정해 둔, 지금 캐릭터에게는 아직 안 열린 마을도 고른 값으로는 보여 준다
-    const pinned = current().pinnedTownId;
-    if (pinned !== null && !choices.some((choice) => choice.value === pinned)) {
-      choices.push({ value: pinned, label: '안 열린 마을' });
-    }
+    const choices = towns.map((town) => ({ value: town.id, label: town.name }));
+    // 다른 캐릭터로 골라 둔, 지금 캐릭터에게는 아직 안 열린 마을도 고른 값으로는 보여 준다. 넘기면 목록에서 빠진다
+    const stay = stayTown();
+    if (stay && !stay.open) choices.push({ value: current().pinnedTownId!, label: `${stay.name}(안 열림)` });
     return choices;
-  };
-  const pinnedTownName = () => {
-    const pinned = current().pinnedTownId;
-    return pinned === null ? null : (townChoices().find((choice) => choice.value === pinned)?.label ?? null);
   };
   const stepTown = (delta: number) => {
     const choices = townChoices();
+    if (choices.length === 0) return;
     const index = choices.findIndex((choice) => choice.value === current().pinnedTownId);
     edit({ pinnedTownId: choices[(index + delta + choices.length) % choices.length].value });
     render();
@@ -296,8 +313,10 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   townPrevious.addEventListener('click', () => stepTown(-1));
   townNext.addEventListener('click', () => stepTown(1));
   renders.push(() => {
-    const choice = townChoices().find((each) => each.value === current().pinnedTownId);
-    townValue.textContent = choice?.label ?? '자동';
+    const staying = current().pinnedTownId !== null;
+    rotateMinutes.hidden = staying;
+    townStepper.hidden = !staying;
+    townValue.textContent = townChoices().find((choice) => choice.value === current().pinnedTownId)?.label ?? '';
   });
 
   const bgmControl = row('배경음악', HINTS.bgm);
@@ -346,7 +365,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     let text = hoveredHint?.() ?? null;
     if (text === null && draft.encounterMinutes === null) text = huntHint.monstersOff;
     else if (text === null && draft.bossEvery === null) text = huntHint.bossOff;
-    else if (text === null && draft.pinnedTownId !== null) text = rotateHint();
+    else if (text === null && draft.pinnedTownId !== null) text = currentTownHint();
     hint.textContent = text ?? HINTS.default;
   }
 
@@ -373,6 +392,8 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
       draft = { ...state.settings };
       muted = state.muted;
       towns = state.towns;
+      currentTownId = state.currentTownId ?? null;
+      lastStayTownId = null;
       hoveredHint = null;
       render();
       screen.hidden = false;

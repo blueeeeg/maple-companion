@@ -253,6 +253,7 @@ function openSettings(): void {
     settings,
     muted: roster.muted,
     towns: unlockedTowns(level).map(({ id, name }) => ({ id, name })),
+    currentTownId: town?.id ?? null,
   });
 }
 
@@ -521,8 +522,8 @@ function handleLevelUp(character: Character, from: number, to: number): void {
   const opened = unlockedTowns(to).filter((candidate) => candidate.minLevel > from);
   if (opened.length > 0) {
     hud.notify(`새 마을: ${opened.map((candidate) => candidate.name).join(', ')}`);
-    // 자동 이동을 껐거나 유효한 마을을 고정했으면 새 마을로도 옮기지 않는다
-    if (isShown() && !scene.inEncounter && townRotateMs(settings) !== null && pinnedTown(settings, to) === null) moveTo(opened[opened.length - 1]);
+    // 열린 마을에 머물기로 했으면 새 마을로도 옮기지 않는다
+    if (isShown() && !scene.inEncounter && pinnedTown(settings, to) === null) moveTo(opened[opened.length - 1]);
   }
 }
 
@@ -618,11 +619,10 @@ async function tick(): Promise<void> {
   // 창이 안 보이는 동안은 정산을 미뤘다가 다시 보일 때 한 번에 알려준다
   if (!isShown()) return;
 
-  const rotateMs = townRotateMs(settings);
   if (!scene.inEncounter) {
     if (pinned) {
       if (pinned.id !== town.id && Date.now() - townChangedAt > PINNED_TOWN_RETRY_MS) moveTo(pinned);
-    } else if (rotateMs !== null && Date.now() - townChangedAt > rotateMs) {
+    } else if (Date.now() - townChangedAt > townRotateMs(settings)) {
       moveTo(pickNextTown(info.level, town.id));
     }
   }

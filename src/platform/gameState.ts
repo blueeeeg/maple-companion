@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { type Roster, emptyRoster } from '../game/characters';
+import { type Roster, characterXp, emptyRoster, selectedCharacter } from '../game/characters';
+import { levelInfo } from '../game/progression';
 import { loadRoster, mergeRosters, normalizeRoster, writeRoster as writeLocalRoster } from '../game/save';
 import {
   DEFAULT_SETTINGS,
@@ -28,6 +29,12 @@ interface StoredGameState {
 export interface GameData {
   roster: Roster;
   settings: Settings;
+}
+
+/** 예전 설정(마을 「자동」 끔)을 옮길 때 쓰는 지금 캐릭터 레벨 */
+function selectedLevel(roster: Roster | null): number {
+  const character = roster && selectedCharacter(roster);
+  return character ? levelInfo(characterXp(character)).level : 1;
 }
 
 let saveSession = 0;
@@ -61,7 +68,10 @@ function localMigrated(): boolean {
  * 브라우저로 화면만 볼 때는 localStorage 를 그대로 쓴다
  */
 export async function loadGameData(globalActiveSeconds: number): Promise<GameData> {
-  const fromLocalStorage = (): GameData => ({ roster: loadRoster(globalActiveSeconds), settings: loadSettings() });
+  const fromLocalStorage = (): GameData => {
+    const roster = loadRoster(globalActiveSeconds);
+    return { roster, settings: loadSettings(selectedLevel(roster)) };
+  };
   if (!isTauri) return fromLocalStorage();
 
   let stored: StoredGameState;
@@ -73,7 +83,8 @@ export async function loadGameData(globalActiveSeconds: number): Promise<GameDat
   }
   saveSession = stored.session;
   const roster = fileRoster(stored.roster);
-  const settings = stored.settings === null || stored.settings === undefined ? null : normalizeSettings(stored.settings);
+  const settings =
+    stored.settings === null || stored.settings === undefined ? null : normalizeSettings(stored.settings, selectedLevel(roster));
   if (localMigrated()) return { roster: roster ?? emptyRoster(), settings: settings ?? { ...DEFAULT_SETTINGS } };
 
   const local = fromLocalStorage();

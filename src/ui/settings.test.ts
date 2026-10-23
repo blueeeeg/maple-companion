@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bossHint, formatMinutes, townRotateHint } from './settings';
+import { bossHint, formatMinutes, townHint } from './settings';
 
 describe('활동 시간 표기', () => {
   it('한 시간 아래는 분, 넘으면 시간과 남은 분', () => {
@@ -25,25 +25,22 @@ describe('보스 안내', () => {
   });
 });
 
-describe('마을 이동 안내', () => {
-  it('고정 중이면 고정한 마을과 푸는 법을 적는다', () => {
-    expect(townRotateHint(true, '리스항구')).toBe('리스항구 고정 중이라 쉬어요 · 마을 고정을 「자동」으로 바꾸면 골라요');
+describe('마을 안내', () => {
+  it('돌아다니면 고른 시간과 함께 적는다', () => {
+    expect(townHint(8, null)).toBe('8분마다 최근에 열린 마을을 돌아다녀요');
+    expect(townHint(30, null)).toMatch(/^30분마다/);
   });
 
-  it('자동을 꺼 둬도 고정이 먼저다', () => {
-    expect(townRotateHint(false, '리스항구')).toMatch(/^리스항구 고정 중/);
+  it('머물면 그 마을과 사냥터에만 있다고 적는다. 사냥터가 없으면 마을만', () => {
+    expect(townHint(8, { name: '커닝시티', open: true, hasFields: true })).toBe('커닝시티와 그 사냥터에만 있어요');
+    expect(townHint(8, { name: '페리온', open: true, hasFields: true })).toBe('페리온과 그 사냥터에만 있어요');
+    expect(townHint(8, { name: '리스항구', open: true, hasFields: false })).toBe('리스항구에만 있어요');
   });
 
-  it('고정한 마을이 아직 안 열렸으면 자동으로 도는 힌트를 적는다', () => {
-    expect(townRotateHint(true, '안 열린 마을', false)).toBe('고정한 마을이 아직 안 열려서 자동으로 돌아요');
-    expect(townRotateHint(false, '안 열린 마을', false)).toBe('고정한 마을이 아직 안 열려서 자동으로 돌아요');
-  });
-
-  it('고정 없이 자동을 껐으면 자동을 켜라고 한다', () => {
-    expect(townRotateHint(false, null)).toContain('「자동」을 켜면 시간을 골라요');
-  });
-
-  it('돌고 있으면 평소 안내', () => {
-    expect(townRotateHint(true, null)).toBe('정해 둔 시간마다 최근에 열린 마을 중 하나로 옮겨요');
+  it('머물 마을이 아직 안 열린 캐릭터는 돌아다닌다고 적는다', () => {
+    expect(townHint(15, { name: '리프레', open: false, hasFields: true })).toBe(
+      '리프레는 이 캐릭터에게 아직 안 열려서 15분마다 최근에 열린 마을을 돌아다녀요',
+    );
+    expect(townHint(8, { name: '무릉', open: false, hasFields: false })).toMatch(/^무릉은 /);
   });
 });

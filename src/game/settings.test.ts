@@ -192,7 +192,6 @@ describe('설정 저장', () => {
       encounterMinutes: 3,
       bossEvery: 20,
       damageNumbers: true,
-      townRotate: true,
       townRotateMinutes: 8,
       pinnedTownId: null,
       bgmVolume: 35,
@@ -231,6 +230,21 @@ describe('설정 저장', () => {
     const settings = withSettings({ encounterMinutes: null, pinnedTownId: 'ellinia', bgmVolume: 0, idleMinutes: 5 });
     expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
   });
+
+  it('예전 판의 「자동」 끔(고정 없음)은 지금 캐릭터에게 가장 최근에 열린 마을에 머물기로 옮긴다', () => {
+    const legacy = { townRotate: false, pinnedTownId: null };
+    expect(normalizeSettings(legacy, 25).pinnedTownId).toBe('kerning');
+    expect(normalizeSettings(legacy).pinnedTownId).toBe('henesys');
+    expect(parseSettings(JSON.stringify(legacy), 100).pinnedTownId).toBe('leafre');
+    expect(normalizeSettings(legacy, 25)).not.toHaveProperty('townRotate');
+  });
+
+  it('예전 판에서 고정한 마을은 「자동」 체크와 상관없이 그대로, 「자동」만 켰으면 돌아다닌다', () => {
+    expect(normalizeSettings({ townRotate: false, pinnedTownId: 'ellinia' }, 200).pinnedTownId).toBe('ellinia');
+    expect(normalizeSettings({ townRotate: true, pinnedTownId: 'ellinia' }, 200).pinnedTownId).toBe('ellinia');
+    expect(normalizeSettings({ townRotate: true, pinnedTownId: null }, 200).pinnedTownId).toBeNull();
+    expect(normalizeSettings({ townRotate: false, pinnedTownId: 'atlantis' }, 25).pinnedTownId).toBe('kerning');
+  });
 });
 
 describe('설정 해석', () => {
@@ -240,14 +254,12 @@ describe('설정 해석', () => {
     expect(huntPace(withSettings({ encounterMinutes: null }))).toBeNull();
   });
 
-  it('자동 이동을 끄면 돌지 않는다. 핀 유효 여부는 호출한 쪽이 판단한다', () => {
+  it('마을을 도는 간격. 머물 마을이 유효한지는 호출한 쪽이 pinnedTown 으로 본다', () => {
     expect(townRotateMs(DEFAULT_SETTINGS)).toBe(8 * 60 * 1000);
-    expect(townRotateMs(withSettings({ townRotate: false }))).toBeNull();
-    // pinnedTownId 가 있어도 유효한지는 main.ts 가 판단 — townRotateMs 는 자동 on/off 만 본다
-    expect(townRotateMs(withSettings({ pinnedTownId: 'ellinia' }))).toBe(8 * 60 * 1000);
+    expect(townRotateMs(withSettings({ townRotateMinutes: 30, pinnedTownId: 'ellinia' }))).toBe(30 * 60 * 1000);
   });
 
-  it('고정한 마을이 아직 안 열렸으면 자동', () => {
+  it('머물 마을이 아직 안 열렸으면 돈다(null)', () => {
     const settings = withSettings({ pinnedTownId: 'leafre' });
     expect(pinnedTown(settings, 200)?.id).toBe('leafre');
     expect(pinnedTown(settings, 5)).toBeNull();
