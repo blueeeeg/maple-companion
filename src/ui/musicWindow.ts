@@ -3,6 +3,7 @@ import { BGM_TRACKS, type BgmFilter, type BgmTrack, filterTracks, findTrack, tra
 import type { BgmMode } from '../game/settings';
 import { wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry } from './art';
+import { BUTTON_SKINS, dressMapleButton, prefetchButtonSkins } from './mapleButton';
 
 export interface MusicWindowState {
   mode: BgmMode;
@@ -324,6 +325,8 @@ export function createMusicWindow(root: HTMLElement, handlers: MusicWindowHandle
     applyArt(close, CLOSE_ART);
     applyArt(list, ROW_ART);
     applyArt(scrollBar, SCROLL_ART);
+    // 원작 의자 BGM 창에는 이런 버튼이 없어서, 같은 어두운 남색인 원작 보스 UI 버튼에 글자를 얹는다. 고른 것은 눌린 그림
+    [...modeButtons, ...filterButtons].forEach(({ button }) => dressMapleButton(button, BUTTON_SKINS.bossNavy));
   }
 
   return {
@@ -355,4 +358,5 @@ export function prefetchMusicWindow(): void {
   [...Object.values(FRAME_ART), ...Object.values(CLOSE_ART), ...Object.values(ROW_ART), ...Object.values(SCROLL_ART)].forEach(
     (url) => void loadWithRetry(url).catch(() => {}),
   );
+  prefetchButtonSkins(BUTTON_SKINS.bossNavy);
 }

@@ -13,6 +13,7 @@ import {
 import { wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
+import { BUTTON_SKINS, dressMapleButton, prefetchButtonSkins } from './mapleButton';
 
 export interface SkillWindowState {
   jobLine: JobLineId | null;
@@ -117,6 +118,7 @@ export async function prefetchSkillWindow(jobLine: JobLineId | null, tier: numbe
   [...Object.values(ART), ...Object.values(ROW_ART), ...Object.values(SCROLL_ART), ...SKILL_TIERS.flatMap((each) => Object.values(tabArt(each)))].forEach(
     (url) => loadWithRetry(url).catch(() => {}),
   );
+  prefetchButtonSkins(BUTTON_SKINS.skillGreen, BUTTON_SKINS.skillOrange);
   await Promise.allSettled(icons);
 }
 
@@ -292,12 +294,13 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
     if (status.kind) stateCell.dataset.kind = status.kind;
     placeIcon(row.querySelector<HTMLElement>('.skill-icon')!, entry);
 
-    // 원작에서 스킬 레벨을 올리는 버튼(BtSpUp)이 있는 자리에 작게 둔다
+    // 원작에서 스킬 레벨을 올리는 버튼(BtSpUp)이 있는 자리에 원작 아래 버튼(하이퍼 초록)을 줄여 둔다. 지금 사냥 스킬은 매크로의 주황
     if (isHuntable(entry) || isCastable(entry)) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'skill-use';
       button.disabled = checking !== null;
+      dressMapleButton(button, inUse ? BUTTON_SKINS.skillOrange : BUTTON_SKINS.skillGreen);
       if (isHuntable(entry)) {
         button.textContent = '사냥';
         button.setAttribute('aria-label', `${entry.name} 으로 사냥하기`);
@@ -426,6 +429,7 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
     applyArt(book, BOOK_ICON);
     applyArt(matrix, MATRIX_ART);
     applyArt(close, CLOSE_ART);
+    dressMapleButton(auto, BUTTON_SKINS.skillGreen);
     tabButtons.forEach((button, tier) => applyArt(button, tabArt(tier)));
   }
 

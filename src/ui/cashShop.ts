@@ -21,6 +21,7 @@ import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 import { loadCashItems, loadCashWeaponTypes, warmCashItems } from './cashCatalog';
 import { cashDetail, fitCashGrid, pageContaining } from './cashShopLayout';
+import { BUTTON_SKINS, dressMapleButton } from './mapleButton';
 
 export interface CashShopState {
   gender: Gender;
@@ -616,6 +617,8 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     applyArt(exit, buttonArt('CSTab/BtExit'));
     applyArt(buy, buttonArt('CSList/BtBuy'));
     applyArt(reset, buttonArt('CSChar/BtDefaultAvatar'));
+    // 입기·벗기는 원작에 같은 글자의 버튼이 없어서, 아래 줄(20px)에 들어가는 원작 기본 파란 버튼(18 높이)에 글자를 얹는다
+    dressMapleButton(wear, BUTTON_SKINS.basicBlue);
     // 이름과 달리 BTForward 가 왼쪽(◀), BTBackward 가 오른쪽(▶) 화살표다
     applyArt(pagePrevious, buttonArt('CSNotice/BTForward'));
     applyArt(pageNext, buttonArt('CSNotice/BTBackward'));

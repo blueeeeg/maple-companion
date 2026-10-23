@@ -1283,7 +1283,9 @@ body {
   background: #5aa02c;
 }
 
+/* 원작 기본 파란 버튼(18 높이)을 늘려 쓴다(ui/mapleButton.ts). 폭은 정수로 */
 .shop-wear {
+  width: 76px;
   background: #2f6fb5;
 }
 
@@ -2839,13 +2841,13 @@ body {
   font-weight: 700;
 }
 
-/* 원작 레벨 올리기 버튼(BtSpUp, 14×12) 자리에 같은 초록으로 작게 */
+/* 원작 레벨 올리기 버튼(BtSpUp, 14×12) 자리에 원작 아래 버튼(50×16)을 29 폭으로 줄여 둔다. 높이는 원본 그대로 */
 .skill-use {
   position: absolute;
   left: 108px;
-  top: 19px;
+  top: 18px;
   width: 29px;
-  height: 14px;
+  height: 16px;
   padding: 0;
   border: 1px solid #3f7d12;
   border-radius: 2px;
@@ -2853,7 +2855,7 @@ body {
   color: #ffffff;
   font-size: 9px;
   font-weight: 700;
-  line-height: 12px;
+  line-height: 14px;
   text-shadow: 0 1px 0 rgba(30, 70, 0, 0.6);
 }
 
@@ -3194,24 +3196,42 @@ body {
   outline-offset: -1px;
 }
 
+/* 원작 보스 버튼(btBoss)에서 이름·초상을 걷어 낸 틀. 14 보스 모두 같은 틀에 이름과 얼굴을 얹는다 */
+.boss-list.has-frame .boss-row {
+  background: none;
+}
+
 .boss-row-art {
   position: absolute;
   inset: 0;
   display: none;
-  background: var(--normal) no-repeat;
+  background: var(--frame-normal) no-repeat;
   image-rendering: var(--art-rendering);
 }
 
-.boss-row.has-row-art .boss-row-art {
+.boss-list.has-frame .boss-row-art {
   display: block;
 }
 
-.boss-row.has-row-art:hover .boss-row-art {
-  background-image: var(--hover);
+.boss-list.has-frame .boss-row:hover .boss-row-art {
+  background-image: var(--frame-hover);
 }
 
-.boss-row.has-row-art.is-selected .boss-row-art {
-  background-image: var(--checked);
+.boss-list.has-frame .boss-row.is-selected .boss-row-art {
+  background-image: var(--frame-checked);
+}
+
+/* 몹 stand 그림을 원본 크기로 잘라 원작 초상 자리(오른쪽)에 둔다. 잘린 왼쪽 끝은 틀 바탕으로 흐린다 */
+.boss-row-face {
+  position: absolute;
+  left: 84px;
+  top: 1px;
+  width: 50px;
+  height: 28px;
+  background-repeat: no-repeat;
+  image-rendering: var(--art-rendering);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000000 12px);
+  mask-image: linear-gradient(90deg, transparent, #000000 12px);
 }
 
 /* 원작 버튼 그림의 이름 글씨(밝은 회색, 어두운 테두리)를 따라 쓴다 */
@@ -3219,7 +3239,7 @@ body {
   position: absolute;
   left: 11px;
   top: 0;
-  max-width: 92px;
+  max-width: 80px;
   overflow: hidden;
   color: #dcdcdc;
   font-size: 12px;
@@ -3234,39 +3254,19 @@ body {
     0 -1px 0 #1a1a1a;
 }
 
-/* 그림에 이름이 들어 있어도 화면 읽기에는 남긴다 */
-.boss-row.has-row-art .boss-row-name {
-  clip-path: inset(50%);
-}
-
-.boss-row-icon {
-  position: absolute;
-  right: 4px;
-  top: 2px;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-}
-
-.boss-row-icon img {
-  display: block;
-  image-rendering: var(--art-rendering);
-}
-
-/* 그림이 없는 보스 칸을 고르면 원작 checked 그림의 청록으로 테를 두른다 */
-.boss-row:not(.has-row-art)::after {
+/* 틀을 만들기 전에는 빈 칸 위에서 원작 checked 그림의 청록으로 테를 두른다 */
+.boss-list:not(.has-frame) .boss-row::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.boss-row:not(.has-row-art):hover::after {
+.boss-list:not(.has-frame) .boss-row:hover::after {
   background: rgba(255, 255, 255, 0.07);
 }
 
-.boss-row:not(.has-row-art).is-selected::after {
+.boss-list:not(.has-frame) .boss-row.is-selected::after {
   background: rgba(40, 190, 210, 0.3);
   box-shadow: inset 0 0 0 1px #46d2e3;
 }
@@ -3310,7 +3310,7 @@ body {
 }
 
 .boss-row.is-locked .boss-row-art,
-.boss-row.is-locked .boss-row-icon,
+.boss-row.is-locked .boss-row-face,
 .boss-row.is-locked .boss-row-name {
   filter: grayscale(1) brightness(0.45);
 }
@@ -3490,22 +3490,25 @@ body {
   width: 174px;
   height: 30px;
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 
-/* 버튼 크기는 원작 「연습모드」 버튼(84×30)과 같다. 색은 원작 보스 UI 의 버튼에서 따왔다 */
+/* 원작 보스 UI 버튼(83×26)을 84 폭으로 늘려 쓴다(ui/mapleButton.ts). 그림을 받기 전에는 같은 크기의 어두운 버튼이다 */
 .boss-action {
   flex: none;
   width: 84px;
-  height: 30px;
+  height: 26px;
   padding: 0;
   border: 1px solid #0d1118;
   border-radius: 4px;
   background: linear-gradient(#4b505b, #2b2f37);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
   color: #ffffff;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 800;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.65);
 }
 
@@ -3527,23 +3530,16 @@ body {
   cursor: default;
 }
 
-/* 원작 보스 UI 「보스 이동」 버튼의 연두. 보스 차례를 쓰는 진짜 싸움 */
+/* 보상 받는 진짜 싸움만 원작 버튼 묶음의 초록 */
 .boss-action.is-go {
   border-color: #4d6b05;
   background: linear-gradient(#cfe64a, #7ea414);
   text-shadow: 0 1px 0 rgba(40, 70, 0, 0.7);
 }
 
-/* 원작 「연습모드」 버튼의 보라. 보상 없는 연습전 */
-.boss-action.is-go-practice {
-  border-color: #6ea8c4;
-  background: linear-gradient(#5a3a7e, #2f2756);
-}
-
-/* 원작 목록 checked 그림의 청록. 지금 지정해 둔 보스 */
-.boss-action.is-reserve[aria-pressed='true'] {
-  border-color: #0e5560;
-  background: linear-gradient(#36c3d3, #17808f);
+/* 연습전 시작은 원작 「연습모드」 버튼(84×30) 그대로다 */
+.boss-action.is-practice-start {
+  height: 30px;
 }
 
 .boss-action.is-practice-start.has-art {
@@ -3682,20 +3678,21 @@ body {
   image-rendering: var(--art-rendering);
 }
 
-/* 원작 창의 위쪽 작은 판(의자 이름 자리, y 33~66). 트는 방식 세 가지 */
+/* 원작 창의 위쪽 작은 판(의자 이름 자리, y 33~66). 트는 방식 세 가지. 버튼은 원작 보스 UI 버튼(23 높이)을 106 폭으로 늘린다 */
 .music-modes {
   position: absolute;
   left: 13px;
-  top: 39px;
+  top: 38px;
   width: 326px;
-  height: 22px;
+  height: 23px;
   display: flex;
   gap: 4px;
 }
 
 .music-window .music-mode {
-  flex: 1;
-  height: 22px;
+  flex: none;
+  width: 106px;
+  height: 23px;
   padding: 0;
   border: 1px solid #0d1118;
   border-radius: 4px;
@@ -3995,8 +3992,9 @@ body {
 }
 
 .music-window .music-filter {
-  flex: 1;
-  height: 18px;
+  flex: none;
+  width: 40px;
+  height: 23px;
   padding: 0;
   border: 1px solid #0d1118;
   border-radius: 3px;
@@ -4030,4 +4028,109 @@ body {
 
 .music-hint.is-problem {
   color: #ffd27a;
+}
+
+/* ── 원작 범용 버튼 (ui/mapleButton.ts) ─────────────────────────────
+   원작 버튼에서 글자 없는 끝·가운데 열만 뗀 띠를 border-image 로 깐다. 끝 두 조각은 테두리 폭 자리, 가운데는 되풀이한다.
+   글자는 그 위에 원작 버튼 글씨처럼 흰 글자와 1px 테두리로 얹는다. 높이는 원본 그대로여야 칸이 늘어나지 않는다 */
+.maple-button.has-skin,
+.maple-button.has-skin:hover:not(:disabled),
+.maple-button.has-skin:active:not(:disabled),
+.maple-button.has-skin:disabled {
+  box-sizing: border-box;
+  padding: 0;
+  border-style: solid;
+  border-color: transparent;
+  border-width: 0 calc(var(--mb-cap-right) * 1px) 0 calc(var(--mb-cap-left) * 1px);
+  border-radius: 0;
+  border-image-source: var(--mb-normal);
+  border-image-slice: 0 var(--mb-cap-right) 0 var(--mb-cap-left) fill;
+  border-image-repeat: repeat;
+  background: none;
+  box-shadow: none;
+  filter: none;
+  opacity: 1;
+  color: var(--mb-ink);
+  text-shadow:
+    1px 0 0 var(--mb-outline),
+    -1px 0 0 var(--mb-outline),
+    0 1px 0 var(--mb-outline),
+    0 -1px 0 var(--mb-outline);
+  image-rendering: var(--art-rendering);
+}
+
+.maple-button.has-skin:hover:not(:disabled) {
+  border-image-source: var(--mb-hover);
+  color: var(--mb-ink-hover, var(--mb-ink));
+}
+
+/* 눌린 그림은 누르는 동안과, 켜 둔 토글(지정한 보스·고른 트는 방식)에 쓴다 */
+.maple-button.has-skin:active:not(:disabled),
+.maple-button.has-skin[aria-pressed='true']:not(:disabled),
+.maple-button.has-skin[aria-checked='true']:not(:disabled) {
+  border-image-source: var(--mb-pressed);
+}
+
+.maple-button.has-skin:disabled {
+  border-image-source: var(--mb-disabled);
+  color: var(--mb-ink-disabled);
+  text-shadow:
+    1px 0 0 var(--mb-outline-disabled),
+    -1px 0 0 var(--mb-outline-disabled),
+    0 1px 0 var(--mb-outline-disabled),
+    0 -1px 0 var(--mb-outline-disabled);
+}
+
+.maple-button.has-skin:focus-visible {
+  outline: 1px solid #ffd23f;
+  outline-offset: 0;
+}
+
+/* 글자색은 원본 버튼 글씨에서 뽑았다. 끄면(disabled) 원작처럼 글자만 흐려진다 */
+.maple-button[data-tone='boss-green'] {
+  --mb-ink: #ffffff;
+  --mb-outline: #557700;
+  --mb-ink-disabled: #e4ecc4;
+  --mb-outline-disabled: #8aa63a;
+}
+
+.maple-button[data-tone='boss-grey'] {
+  --mb-ink: #ffffff;
+  --mb-outline: #444444;
+  --mb-ink-disabled: #c4c4c4;
+  --mb-outline-disabled: #777777;
+}
+
+.maple-button[data-tone='boss-navy'] {
+  --mb-ink: #c5cfd7;
+  --mb-ink-hover: #eef2f6;
+  --mb-outline: #090c11;
+  --mb-ink-disabled: #5e7080;
+  --mb-outline-disabled: #090c11;
+}
+
+.maple-button[data-tone='skill-green'] {
+  --mb-ink: #ffffff;
+  --mb-outline: #558800;
+  --mb-ink-disabled: #ffffff;
+  --mb-outline-disabled: #aaaaaa;
+}
+
+.maple-button[data-tone='skill-orange'] {
+  --mb-ink: #ffffff;
+  --mb-outline: #bb6611;
+  --mb-ink-disabled: #ffffff;
+  --mb-outline-disabled: #aaaaaa;
+}
+
+.maple-button[data-tone='basic-blue'] {
+  --mb-ink: #ffffff;
+  --mb-outline: #226699;
+  --mb-ink-disabled: #ffffff;
+  --mb-outline-disabled: #888888;
+}
+
+/* BGM 고르기의 고른 칸은 원작 재생 중 칸의 하늘색 글자 */
+.music-window .maple-button.has-skin[aria-checked='true'] {
+  color: #9fe7ff;
 }
