@@ -9,7 +9,9 @@ const field = (mapId: number, fromMapId: number, entryX: number, arrivalX: numbe
   name: `맵${mapId}`,
   fromMapId,
   entryX,
+  entryY: -entryX,
   arrivalX,
+  arrivalY: -arrivalX,
   level: 10,
   monsters: [{ id: mapId, name: `몹${mapId}` }],
 });
@@ -19,7 +21,7 @@ const fields = [field(10, 1, 900, -400), field(11, 1, -800, 300), field(20, 10, 
 
 describe('사냥터 오가기', () => {
   it('마을에서는 마을에 붙은 사냥터로만 간다', () => {
-    expect(fieldMoves(1, fields, 1).map((move) => [move.toMapId, move.exitX, move.arrivalX])).toEqual([
+    expect(fieldMoves(1, fields, 1).map((move) => [move.toMapId, move.exit.x, move.arrival.x])).toEqual([
       [10, 900, -400],
       [11, -800, 300],
     ]);
@@ -27,7 +29,7 @@ describe('사냥터 오가기', () => {
 
   it('사냥터에서는 들어온 포털로 돌아가거나 더 안쪽으로 간다', () => {
     const moves = fieldMoves(1, fields, 10);
-    expect(moves.map((move) => [move.toMapId, move.exitX, move.arrivalX])).toEqual([
+    expect(moves.map((move) => [move.toMapId, move.exit.x, move.arrival.x])).toEqual([
       [1, -400, 900],
       [20, 700, -350],
     ]);
@@ -37,7 +39,7 @@ describe('사냥터 오가기', () => {
 
   it('안쪽 사냥터에서 돌아가면 앞 사냥터에 도착한다', () => {
     const [back] = fieldMoves(1, fields, 20);
-    expect(back).toMatchObject({ toMapId: 10, exitX: -350, arrivalX: 700 });
+    expect(back).toMatchObject({ toMapId: 10, exit: { x: -350, y: 350 }, arrival: { x: 700, y: -700 } });
     expect(back.field?.mapId).toBe(10);
   });
 
@@ -52,15 +54,15 @@ describe('늘 보이는 포털', () => {
   it('마을 맵과 사냥터 맵마다 드나드는 포털 자리와 가는 맵 이름을 준다', () => {
     const portals = routePortals({ mapId: 1, name: '마을' }, fields);
     expect(portals.get(1)).toEqual([
-      { x: 900, label: '맵10' },
-      { x: -800, label: '맵11' },
+      { x: 900, y: -900, label: '맵10' },
+      { x: -800, y: 800, label: '맵11' },
     ]);
     // 사냥터에 도착한 포털이 그 맵에서 마을로 돌아가는 포털이다
     expect(portals.get(10)).toEqual([
-      { x: -400, label: '마을' },
-      { x: 700, label: '맵20' },
+      { x: -400, y: 400, label: '마을' },
+      { x: 700, y: -700, label: '맵20' },
     ]);
-    expect(portals.get(20)).toEqual([{ x: -350, label: '맵10' }]);
+    expect(portals.get(20)).toEqual([{ x: -350, y: 350, label: '맵10' }]);
   });
 
   it('사냥터가 없는 마을은 포털이 없다', () => {

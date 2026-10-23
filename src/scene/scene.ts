@@ -37,6 +37,18 @@ import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
 import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/skills';
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture } from '../maple/textures';
 import { loadPortalFrames } from '../maple/portal';
+import {
+  type NavAction,
+  type NavGraph,
+  type NavPoint,
+  type NavStep,
+  buildNavGraph,
+  createNavRunner,
+  findPath,
+  platformUnder,
+  surfaceY,
+} from '../maple/navigation';
+import type { Point } from '../maple/ground';
 import { createBossGauge } from './bossGauge';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
@@ -153,10 +165,11 @@ export interface Scene {
   /** 캐릭터 발밑 이름표. 비어 있으면 이름표를 숨긴다 */
   setName(name: string): void;
   /**
-   * 지금 맵의 포털(exitX)까지 걸어가 들어가고, 옮겨 간 맵의 포털(arrivalX)에서 나온다. 좌표는 맵 월드 좌표.
+   * 지금 맵의 포털(exit)까지 가서 들어가고, 옮겨 간 맵의 포털(arrival)에서 나와 사냥하는 바닥으로 내려온다. 좌표는 맵 월드 좌표.
+   * 윗층 포털이면 점프·사다리·로프로 오르내린다.
    * 맵을 다 받은 뒤에 걷기 시작한다. 못 받아 오면 지금 맵에 남고 실패한다. 보스를 잡으면 이 맵으로 돌아온다
    */
-  travel(mapId: number, label: string, exitX: number, arrivalX: number): Promise<void>;
+  travel(mapId: number, label: string, exit: Point, arrival: Point): Promise<void>;
   /** 맵 id 별로 늘 띄워 둘 포털(맵 월드 좌표). 지금 맵에도 바로 건다 */
   setRoutePortals(portals: Map<number, RoutePortal[]>): void;
   /**
@@ -217,6 +230,8 @@ interface Stage {
   ground: GroundPath;
   /** 앞 레이어를 고르는 기준인 바닥 발판의 레이어(맵 좌표 그대로) */
   groundLayer: number;
+  /** 포털까지 오르내리는 길. 맵 월드 좌표다. 못 만들면 null 이고 바닥만 걷는다 */
+  nav: NavGraph | null;
 }
 
 type Behavior =
@@ -789,6 +804,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function updateHero(dtMs: number): void {
     if (!ground) return;
+    if (navMotion) {
+      stepNavMotion(dtMs);
+      return;
+    }
     const moveToward = (targetX: number): boolean => {
       const distance = targetX - hero.x;
       if (Math.abs(distance) < 3) return true;
@@ -940,11 +959,18 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       throw new Error(`${label}: 걸을 바닥을 못 찾음`);
     }
     const { dx, dy } = calibration;
+    let nav: NavGraph | null = null;
+    try {
+      nav = buildNavGraph(footholds, info.ladderRopes ?? []);
+    } catch (error) {
+      console.warn(`[scene] ${label} 발판 길을 못 만들어 바닥만 걷는다`, error);
+    }
     return {
       mapId,
       name: info.name || label,
       image,
       calibration,
+      nav,
       groundLayer: worldGround.layer,
       ground: {
         points: worldGround.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
@@ -1003,7 +1029,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   function addPortal(frames: EffectLayer, stage: Stage, portal: RoutePortal): { close(): void } {
     const x = portal.x + stage.calibration.dx;
     const node = new Container();
-    node.position.set(x, groundY(stage.ground, x));
+    const at = stage.nav && platformUnder(stage.nav, portal);
+    node.position.set(x, at ? surfaceY(stage.nav!.platforms[at.platform], portal.x) + stage.calibration.dy : groundY(stage.ground, x));
     const sprite = new Sprite(frames[0].texture);
     sprite.eventMode = 'static';
     sprite.cursor = 'pointer';
@@ -1050,6 +1077,94 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         return false;
       });
     });
+  }
+
+  type NavPoseAnimations = Record<Exclude<NavAction, 'walk' | 'stand'>, Animation>;
+  let navAnimations: { look: string; animations: NavPoseAnimations } | null = null;
+  let navMotion: {
+    runner: ReturnType<typeof createNavRunner>;
+    stage: Stage;
+    clockMs: number;
+    elapsedMs: number;
+    resolve(done: boolean): void;
+  } | null = null;
+
+  /** 점프·사다리·로프 동작. 못 받으면 서기·걷기 그림으로 오르내린다 */
+  async function loadNavAnimations(): Promise<void> {
+    const look = heroLook.join(',');
+    if (navAnimations?.look === look || heroLook.length === 0) return;
+    const [jump, ladder, rope] = await Promise.all(['jump', 'ladder', 'rope'].map((action) => loadHeroAction(heroLook, action)));
+    navAnimations = { look, animations: { jump: jump.animation, ladder: ladder.animation, rope: rope.animation } };
+  }
+
+  function stepNavMotion(dtMs: number): void {
+    const motion = navMotion!;
+    const nav = motion.stage.nav!;
+    motion.elapsedMs += dtMs;
+    const pose = motion.runner.update(dtMs);
+    hero.x = pose.x + motion.stage.calibration.dx;
+    hero.y = pose.y + motion.stage.calibration.dy;
+    facing = pose.facing;
+    // 바닥보다 높은 레이어 발판에 서면 앞 레이어에 그 발판 그림이 들어 있어 캐릭터를 가린다
+    frontSprite.visible = nav.platforms[motion.runner.position.platform].layer <= nav.platforms[nav.main].layer;
+    const animations = navAnimations?.look === heroLook.join(',') ? navAnimations.animations : null;
+    if (pose.action === 'walk' || pose.action === 'stand' || !animations) {
+      setHeroAction(pose.action === 'stand' ? 'stand' : 'walk');
+      updateHeroSprite(dtMs);
+    } else {
+      motion.clockMs += dtMs;
+      const animation = animations[pose.action];
+      hero.texture = animation.frames[frameAt(animation.delays, motion.clockMs, true)];
+      // 사다리·로프 그림은 등을 보이고 있어서 뒤집지 않는다
+      hero.scale.x = pose.action === 'jump' ? -facing : 1;
+    }
+    if (pose.done || motion.elapsedMs > PORTAL_WALK_LIMIT_MS) {
+      navMotion = null;
+      frontSprite.visible = true;
+      motion.resolve(pose.done);
+    }
+  }
+
+  /** 길을 따라 움직인다. 다 가면 true, 시간이 다 되면 false */
+  function runNav(stage: Stage, start: NavPoint, steps: NavStep[]): Promise<boolean> {
+    return new Promise((resolve) => {
+      navMotion = { runner: createNavRunner(stage.nav!, start, steps), stage, clockMs: 0, elapsedMs: 0, resolve };
+    });
+  }
+
+  /** 사냥하는 바닥에서 포털까지 간다. 길을 못 찾으면 바닥에서 포털에 가장 가까운 곳까지 걷는다 */
+  async function goToPortal(stage: Stage, exit: Point): Promise<void> {
+    const { nav } = stage;
+    const target = nav && platformUnder(nav, exit);
+    const start = nav && { platform: nav.main, x: hero.x - stage.calibration.dx };
+    const steps = nav && target && start && findPath(nav, start, target);
+    if (steps && start) await runNav(stage, start, steps);
+    else await walkTo(clampToGround(exit.x + stage.calibration.dx));
+  }
+
+  /** 옮겨 간 맵의 포털 자리에 세운다. 포털이 윗층이면 그 발판 위치를 돌려준다 */
+  function standAtPortal(stage: Stage, arrival: Point): NavPoint | null {
+    const at = stage.nav && platformUnder(stage.nav, arrival);
+    if (!at || at.platform === stage.nav!.main) {
+      hero.x = clampToGround(arrival.x + stage.calibration.dx);
+      hero.y = groundY(stage.ground, hero.x);
+      return null;
+    }
+    hero.x = arrival.x + stage.calibration.dx;
+    hero.y = surfaceY(stage.nav!.platforms[at.platform], arrival.x) + stage.calibration.dy;
+    return at;
+  }
+
+  /** 윗층 포털에서 바닥까지 내려온다. 길이 없거나 시간이 다 되면 바닥으로 옮겨 세운다. 공중에 남지 않게 한다 */
+  async function returnToGround(stage: Stage, from: NavPoint): Promise<void> {
+    const nav = stage.nav!;
+    const main = nav.platforms[nav.main];
+    const goal = { platform: nav.main, x: Math.min(main.maxX - EDGE_MARGIN, Math.max(main.minX + EDGE_MARGIN, from.x)) };
+    const steps = findPath(nav, from, goal);
+    const arrived = steps ? await runNav(stage, from, steps) : false;
+    if (!arrived) hero.x = clampToGround(hero.x);
+    if (ground) hero.y = groundY(ground, hero.x);
+    behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1000 };
   }
 
   /** 보스를 잡고 메소를 다 주운 뒤 마을로 돌아간다 */
@@ -1329,21 +1444,22 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (label) drawNameTag(label);
       placeNameTag();
     },
-    async travel(mapId, label, exitX, arrivalX) {
+    async travel(mapId, label, exit, arrival) {
       if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 맵을 옮길 수 없음');
       const from = home;
       const stage = await prepareStage(mapId, label);
-      // 늘 떠 있는 포털 자리까지 걸어가 들어간다
-      await walkTo(clampToGround(exitX + from.stage.calibration.dx));
+      void loadNavAnimations();
+      await goToPortal(from.stage, exit);
       await fadeTo(1);
       home = { stage, town: from.town };
       enterStage(stage, from.town);
-      hero.x = clampToGround(arrivalX + stage.calibration.dx);
-      hero.y = groundY(stage.ground, hero.x);
+      const arrived = standAtPortal(stage, arrival);
       behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1500 };
       updateCamera(1);
       await fadeTo(0);
       showBanner(stage.name);
+      // 사냥은 바닥에서만 해서, 윗층 포털로 나왔으면 바닥까지 내려온 뒤에 끝난다
+      if (arrived) await returnToGround(stage, arrived);
     },
     setRoutePortals(portals) {
       routePortals = portals;

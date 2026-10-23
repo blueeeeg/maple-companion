@@ -565,7 +565,7 @@ function travelField(current: Town): void {
   if (!move) return;
   townLoading = true;
   scene
-    .travel(move.toMapId, move.field?.name ?? current.name, move.exitX, move.arrivalX)
+    .travel(move.toMapId, move.field?.name ?? current.name, move.exit, move.arrival)
     .then(() => {
       field = move.field;
       arrivedAt = Date.now();

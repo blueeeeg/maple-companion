@@ -1,4 +1,5 @@
 // 메이플 리소스는 앱에 넣지 않고 팬 API(maplestory.io)에서 실행 중에 받아 온다
+import type { LadderRope } from './navigation';
 const REGION = 'KMS';
 const VERSION = '389';
 const BASE = `https://maplestory.io/api/${REGION}/${VERSION}`;
@@ -110,6 +111,7 @@ export interface MapInfo {
   name: string;
   backgroundMusic: string;
   footholds: Record<string, Foothold>;
+  ladderRopes?: LadderRope[];
 }
 
 export interface MobInfo {

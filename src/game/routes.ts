@@ -1,3 +1,4 @@
+import type { Point } from '../maple/ground';
 import type { RouteField } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
 import type { Town } from './towns';
@@ -5,10 +6,10 @@ import type { Town } from './towns';
 /** 지금 맵에서 포털로 옮겨 갈 한 걸음 */
 export interface FieldMove {
   toMapId: number;
-  /** 지금 맵에서 걸어 갈 포털 x(맵 월드 좌표) */
-  exitX: number;
-  /** 옮겨 간 맵에서 나타날 포털 x */
-  arrivalX: number;
+  /** 지금 맵에서 걸어 갈 포털(맵 월드 좌표) */
+  exit: Point;
+  /** 옮겨 간 맵에서 나타날 포털 */
+  arrival: Point;
   /** 옮겨 간 맵이 사냥터면 그 사냥터. 마을로 돌아가면 null */
   field: RouteField | null;
 }
@@ -21,21 +22,25 @@ export function townFields(town: Pick<Town, 'id'>): RouteField[] {
 export function fieldMoves(townMapId: number, fields: RouteField[], currentMapId: number): FieldMove[] {
   const forward = fields
     .filter((field) => field.fromMapId === currentMapId)
-    .map((field) => ({ toMapId: field.mapId, exitX: field.entryX, arrivalX: field.arrivalX, field }));
+    .map((field) => ({
+      toMapId: field.mapId,
+      exit: { x: field.entryX, y: field.entryY },
+      arrival: { x: field.arrivalX, y: field.arrivalY },
+      field,
+    }));
   const here = fields.find((field) => field.mapId === currentMapId);
   if (!here) return forward;
   const back: FieldMove = {
     toMapId: here.fromMapId,
-    exitX: here.arrivalX,
-    arrivalX: here.entryX,
+    exit: { x: here.arrivalX, y: here.arrivalY },
+    arrival: { x: here.entryX, y: here.entryY },
     field: here.fromMapId === townMapId ? null : (fields.find((field) => field.mapId === here.fromMapId) ?? null),
   };
   return [back, ...forward];
 }
 
-/** 맵에 늘 띄워 두는 포털 하나. x 는 맵 월드 좌표, label 은 가는 맵 이름 */
-export interface RoutePortal {
-  x: number;
+/** 맵에 늘 띄워 두는 포털 하나. 좌표는 맵 월드 좌표, label 은 가는 맵 이름 */
+export interface RoutePortal extends Point {
   label: string;
 }
 
@@ -44,7 +49,7 @@ export function routePortals(town: Pick<Town, 'mapId' | 'name'>, fields: RouteFi
   const portals = new Map<number, RoutePortal[]>();
   [town.mapId, ...fields.map((field) => field.mapId)].forEach((mapId) => {
     const moves = fieldMoves(town.mapId, fields, mapId);
-    if (moves.length > 0) portals.set(mapId, moves.map((move) => ({ x: move.exitX, label: move.field?.name ?? town.name })));
+    if (moves.length > 0) portals.set(mapId, moves.map((move) => ({ ...move.exit, label: move.field?.name ?? town.name })));
   });
   return portals;
 }

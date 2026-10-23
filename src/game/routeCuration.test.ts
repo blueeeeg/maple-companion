@@ -7,65 +7,33 @@ import {
   fieldLevel,
   fieldMonsters,
   levelBand,
-  portalOnGround,
+  portalAccess,
   selectRoute,
 } from './routeCuration';
+import { buildNavGraph } from '../maple/navigation';
 
-const foothold = (id: number, prev: number, next: number, x1: number, y1: number, x2: number, y2: number): Foothold => ({
-  id,
-  prev,
-  next,
-  x1,
-  y1,
-  x2,
-  y2,
-  layerId: 0,
-});
+const flat = (id: number, x1: number, x2: number, y: number): Foothold => ({ id, prev: 0, next: 0, x1, y1: y, x2, y2: y, layerId: 0 });
 
-describe('포털에 걸어서 닿는지', () => {
-  const footholds = [
-    // 바닥: x -1000~1000, y 0. 가운데 언덕
-    foothold(1, 0, 2, -1000, 0, 0, 0),
-    foothold(2, 1, 3, 0, 0, 200, -40),
-    foothold(3, 2, 0, 200, -40, 1000, -40),
-    // 바닥 위 오른쪽 윗층 발판
-    foothold(10, 0, 11, 400, -200, 700, -200),
-    foothold(11, 10, 0, 700, -200, 800, -200),
-    // 바닥 바로 위 낮은 단
-    foothold(20, 0, 0, -800, -35, -600, -35),
-  ];
+describe('포털에 오갈 수 있는지', () => {
+  const graph = buildNavGraph(
+    [
+      flat(1, -1000, 1000, 0), // 바닥
+      flat(2, 100, 300, -60), // 점프로 오르는 단
+      flat(3, 600, 700, -500), // 못 닿는 발판
+      flat(4, -100, 100, 200), // 떨어지면 못 나오는 구덩이
+    ],
+    [],
+  );
 
-  it('바닥 바로 위 포털은 닿는다', () => {
-    expect(portalOnGround(footholds, { x: -900, y: -5 })).toBe(true);
-    expect(portalOnGround(footholds, { x: 900, y: -45 })).toBe(true);
+  it('바닥이나 뛰어오를 수 있는 단 위 포털은 오간다', () => {
+    expect(portalAccess(graph, { x: -900, y: -5 })).toBe('ok');
+    expect(portalAccess(graph, { x: 200, y: -65 })).toBe('ok');
   });
 
-  it('경사 위 포털도 그 높이로 본다', () => {
-    expect(portalOnGround(footholds, { x: 100, y: -22 })).toBe(true);
-  });
-
-  it('윗층 발판에 놓인 포털은 못 닿는다', () => {
-    expect(portalOnGround(footholds, { x: 600, y: -205 })).toBe(false);
-  });
-
-  it('바닥 바로 위 낮은 단에 놓인 포털은 그 단 위에 있어 못 닿는다', () => {
-    expect(portalOnGround(footholds, { x: -700, y: -40 })).toBe(false);
-  });
-
-  it('바닥에서 높이 떠 있는 포털은 못 닿는다', () => {
-    expect(portalOnGround(footholds, { x: -500, y: -150 })).toBe(false);
-  });
-
-  it('바닥 가로 범위 밖 포털은 못 닿는다', () => {
-    expect(portalOnGround(footholds, { x: 1200, y: -45 })).toBe(false);
-  });
-
-  it('바닥보다 살짝 높은 턱 위 포털은 걸어서 닿는다', () => {
-    expect(portalOnGround([...footholds, foothold(30, 0, 0, -300, -6, -200, -6)], { x: -250, y: -8 })).toBe(true);
-  });
-
-  it('발판보다 몇 px 아래에 찍힌 포털도 닿는다', () => {
-    expect(portalOnGround(footholds, { x: -500, y: 4 })).toBe(true);
+  it('발판 없이 떠 있는 포털, 못 닿는 발판, 빠지면 못 나오는 곳의 포털은 쓰지 않는다', () => {
+    expect(portalAccess(graph, { x: -500, y: -200 })).toBe('no-platform');
+    expect(portalAccess(graph, { x: 650, y: -505 })).toBe('no-path-in');
+    expect(portalAccess(graph, { x: 0, y: 195 })).toBe('no-path-out');
   });
 });
 
@@ -105,7 +73,14 @@ describe('사냥터 고르기', () => {
     isTown,
     monsters: level > 0 ? [{ id: mapId, name: `몹${mapId}`, level }] : [],
   });
-  const link = (from: number, to: number): Link => ({ from, to, exitX: from + to, arrivalX: to - from });
+  const link = (from: number, to: number): Link => ({
+    from,
+    to,
+    exitX: from + to,
+    exitY: -from,
+    arrivalX: to - from,
+    arrivalY: -to,
+  });
 
   it('마을에서 가까운 사냥터부터 셋까지 나무 모양으로 고른다', () => {
     const fields = new Map([10, 11, 20, 30].map((id) => [id, field(id, 10)]));
@@ -116,7 +91,7 @@ describe('사냥터 고르기', () => {
       [11, 1],
       [20, 10],
     ]);
-    expect(route[2]).toMatchObject({ entryX: 30, arrivalX: 10, level: 10, monsters: [{ id: 20, name: '몹20' }] });
+    expect(route[2]).toMatchObject({ entryX: 30, entryY: -10, arrivalX: 10, arrivalY: -20, level: 10, monsters: [{ id: 20, name: '몹20' }] });
   });
 
   it('레벨이 안 맞거나 몹이 없는 맵, 다른 마을은 고르지 않고 그 너머로도 가지 않는다', () => {

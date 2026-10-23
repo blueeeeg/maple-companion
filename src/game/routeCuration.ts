@@ -1,6 +1,5 @@
 // scripts/curate-routes.ts 가 Node 로 바로 불러 쓰므로 확장자까지 적는다
-import type { Foothold } from '../maple/api';
-import { type GroundPath, groundPaths, groundY, mainGround } from '../maple/ground.ts';
+import { type NavGraph, findPath, platformUnder } from '../maple/navigation.ts';
 import type { MonsterSpec } from './towns';
 
 /** 맵 포털 하나. WZ `portal/{n}` 의 pn·tm·tn·x·y 를 옮긴 것 */
@@ -16,32 +15,22 @@ export interface PortalData {
 
 export const NO_MAP = 999999999;
 
-/** 포털은 발판보다 조금 위에 놓인다. 이보다 높이 떠 있으면 점프해야 닿는다고 본다 */
-export const PORTAL_MAX_HEIGHT = 60;
-/** 포털 좌표가 발판보다 몇 px 아래에 찍힌 맵도 있다 */
-const PORTAL_SINK = 10;
-/** 바닥보다 이만큼 이하로 높은 발판은 턱으로 보고 걸어서 넘는다 */
-const STEP_HEIGHT = 15;
+/** 포털에 오갈 수 있는지. ok 가 아니면 못 쓰는 까닭 */
+export type PortalAccess = 'ok' | 'no-platform' | 'no-path-in' | 'no-path-out';
 
 /**
- * 캐릭터는 mainGround 위만 걷는다. 포털이 바닥 바로 위에 있고, 포털과 바닥 사이에 다른 발판(윗층)이 끼어 있지 않아야 걸어서 닿는다
+ * 캐릭터는 사냥하는 바닥(가장 긴 발판)에서 걷고, 뛰고, 떨어지고, 사다리·로프를 타서 포털까지 간다.
+ * 포털로 들어갈 수 있고, 그 포털로 나온 뒤 바닥으로 돌아올 수도 있어야 쓴다
  */
-export function portalOnGround(footholds: Foothold[], portal: Pick<PortalData, 'x' | 'y'>): boolean {
-  const main = mainGround(footholds);
-  if (!main || portal.x < main.minX || portal.x > main.maxX) return false;
-  const mainY = groundY(main, portal.x);
-  const height = mainY - portal.y;
-  if (height < -PORTAL_SINK || height > PORTAL_MAX_HEIGHT) return false;
-  return groundPaths(footholds).every((path) => {
-    if (sameChain(path, main) || portal.x < path.minX || portal.x > path.maxX) return true;
-    const y = groundY(path, portal.x);
-    return y >= mainY - STEP_HEIGHT || y < portal.y - PORTAL_SINK;
-  });
+export function portalAccess(graph: NavGraph, portal: Pick<PortalData, 'x' | 'y'>): PortalAccess {
+  const at = platformUnder(graph, portal);
+  if (!at) return 'no-platform';
+  const main = graph.platforms[graph.main];
+  const ground = { platform: graph.main, x: Math.round((main.minX + main.maxX) / 2) };
+  if (!findPath(graph, ground, at)) return 'no-path-in';
+  if (!findPath(graph, at, ground)) return 'no-path-out';
+  return 'ok';
 }
-
-// mainGround 는 groundPaths 를 새로 만들어서 같은 묶음이어도 다른 객체다
-const sameChain = (a: GroundPath, b: GroundPath) =>
-  a.minX === b.minX && a.maxX === b.maxX && a.layer === b.layer && a.points.length === b.points.length;
 
 /** 맵 정보 mobs 의 한 칸. 같은 몹이 스폰 자리마다 하나씩 들어 있다 */
 export interface MapMob {
@@ -93,10 +82,12 @@ export function levelBand(minLevel: number, nextTownLevel: number | null): [min:
 export interface Link {
   from: number;
   to: number;
-  /** from 맵에서 to 로 가는 포털 x */
+  /** from 맵에서 to 로 가는 포털 */
   exitX: number;
-  /** to 맵에 도착하는 포털 x. 돌아갈 때는 이 포털로 나간다 */
+  exitY: number;
+  /** to 맵에 도착하는 포털. 돌아갈 때는 이 포털로 나간다 */
   arrivalX: number;
+  arrivalY: number;
 }
 
 export interface CandidateField {
@@ -111,10 +102,12 @@ export interface RouteField {
   name: string;
   /** 이 사냥터로 들어오는 앞 맵(마을이나 다른 사냥터) */
   fromMapId: number;
-  /** 앞 맵에서 이 사냥터로 가는 포털 x */
+  /** 앞 맵에서 이 사냥터로 가는 포털(맵 월드 좌표) */
   entryX: number;
-  /** 이 사냥터에 도착하는 포털 x. 앞 맵으로 돌아갈 때도 여기로 나간다 */
+  entryY: number;
+  /** 이 사냥터에 도착하는 포털. 앞 맵으로 돌아갈 때도 여기로 나간다 */
   arrivalX: number;
+  arrivalY: number;
   level: number;
   monsters: MonsterSpec[];
 }
@@ -152,7 +145,9 @@ export function selectRoute(
             name: field.name,
             fromMapId: from,
             entryX: link.exitX,
+            entryY: link.exitY,
             arrivalX: link.arrivalX,
+            arrivalY: link.arrivalY,
             level,
             monsters: field.monsters.map(({ id, name }) => ({ id, name })),
           });

@@ -15,11 +15,13 @@ import {
   type RouteField,
   fieldLevel,
   fieldMonsters,
+  MAX_ROUTE_FIELDS,
   levelBand,
-  portalOnGround,
+  portalAccess,
   selectRoute,
 } from '../src/game/routeCuration.ts';
 import { TOWNS } from '../src/game/towns.ts';
+import { type LadderRope, type NavGraph, buildNavGraph } from '../src/maple/navigation.ts';
 
 const API = 'https://maplestory.io/api/KMS/389';
 const WZ = 'https://maplestory.io/api/wz/KMS/389';
@@ -60,6 +62,7 @@ interface MapJson {
   streetName?: string;
   isTown: boolean;
   footholds: Record<string, Foothold> | null;
+  ladderRopes: LadderRope[] | null;
   mobs: MapMob[] | null;
 }
 
@@ -68,6 +71,7 @@ interface MapData {
   name: string;
   isTown: boolean;
   footholds: Foothold[];
+  ladders: LadderRope[];
   mobs: MapMob[];
 }
 
@@ -113,12 +117,25 @@ async function loadMap(mapId: number): Promise<MapData | null> {
         name: info.name,
         isTown: info.isTown,
         footholds: Object.values(info.footholds ?? {}),
+        ladders: info.ladderRopes ?? [],
         mobs: (info.mobs ?? []).filter((mob) => mob && typeof mob.id === 'number'),
       }
     : null;
   maps.set(mapId, data);
   return data;
 }
+
+const graphs = new Map<number, NavGraph>();
+function navGraph(map: MapData): NavGraph {
+  if (!graphs.has(map.id)) graphs.set(map.id, buildNavGraph(map.footholds, map.ladders));
+  return graphs.get(map.id)!;
+}
+
+const ACCESS_REASON = {
+  'no-platform': '포털 아래 발판이 없음',
+  'no-path-in': '바닥에서 포털까지 가는 길이 없음',
+  'no-path-out': '포털에서 바닥으로 내려오는 길이 없음',
+} as const;
 
 const mobs = new Map<number, MobDetail>();
 async function loadMobs(ids: number[]): Promise<Map<number, MobDetail>> {
@@ -151,7 +168,9 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
   const exclude = (from: number, to: number, reason: string) =>
     exclusions.push({ townId: town.id, from: label(from), to: label(to), reason });
 
-  for (let depth = 0; depth < MAX_DEPTH && frontier.length > 0; depth += 1) {
+  let suitable = 0;
+  // 사냥터는 가까운 층부터 고르니, 이번 층까지 셋이 모이면 더 깊이 볼 필요가 없다
+  for (let depth = 0; depth < MAX_DEPTH && frontier.length > 0 && suitable < MAX_ROUTE_FIELDS; depth += 1) {
     const nextFrontier: number[] = [];
     for (const fromId of frontier) {
       const from = (await loadMap(fromId))!;
@@ -161,8 +180,9 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
         const target = await loadMap(portal.toMap);
         if (!target) continue;
         if (target.isTown) continue;
-        if (!portalOnGround(from.footholds, portal)) {
-          exclude(fromId, portal.toMap, `나가는 포털 ${portal.name}(${portal.x}, ${portal.y}) 이 바닥 위에 없음`);
+        const exitAccess = portalAccess(navGraph(from), portal);
+        if (exitAccess !== 'ok') {
+          exclude(fromId, portal.toMap, `나가는 포털 ${portal.name}(${portal.x}, ${portal.y}): ${ACCESS_REASON[exitAccess]}`);
           continue;
         }
         const targetPortals = await loadPortals(target.id);
@@ -172,12 +192,13 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
           exclude(fromId, portal.toMap, '돌아오는 포털이 없음');
           continue;
         }
-        if (!portalOnGround(target.footholds, back)) {
-          exclude(fromId, portal.toMap, `도착 포털 ${back.name}(${back.x}, ${back.y}) 이 바닥 위에 없음`);
+        const arrivalAccess = portalAccess(navGraph(target), back);
+        if (arrivalAccess !== 'ok') {
+          exclude(fromId, portal.toMap, `도착 포털 ${back.name}(${back.x}, ${back.y}): ${ACCESS_REASON[arrivalAccess]}`);
           continue;
         }
         visited.add(portal.toMap);
-        links.push({ from: fromId, to: portal.toMap, exitX: portal.x, arrivalX: back.x });
+        links.push({ from: fromId, to: portal.toMap, exitX: portal.x, exitY: portal.y, arrivalX: back.x, arrivalY: back.y });
         const details = await loadMobs(target.mobs.map((mob) => mob.id));
         const monsters = fieldMonsters(target.mobs, details);
         fields.set(target.id, { mapId: target.id, name: target.name, isTown: target.isTown, monsters });
@@ -190,6 +211,7 @@ async function curateTown(townIndex: number, exclusions: Exclusion[]): Promise<R
           exclude(fromId, portal.toMap, `몹 레벨 ${level} 이 ${band[0]}~${band[1]} 밖`);
           continue;
         }
+        suitable += 1;
         nextFrontier.push(portal.toMap);
       }
     }
@@ -220,7 +242,9 @@ function render(routes: Record<string, RouteField[]>): string {
       lines.push(`      name: ${quote(field.name)},`);
       lines.push(`      fromMapId: ${field.fromMapId},`);
       lines.push(`      entryX: ${field.entryX},`);
+      lines.push(`      entryY: ${field.entryY},`);
       lines.push(`      arrivalX: ${field.arrivalX},`);
+      lines.push(`      arrivalY: ${field.arrivalY},`);
       lines.push(`      level: ${field.level},`);
       lines.push('      monsters: [');
       field.monsters.forEach((monster) => lines.push(`        { id: ${monster.id}, name: ${quote(monster.name)} },`));
