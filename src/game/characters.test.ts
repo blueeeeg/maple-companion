@@ -213,6 +213,21 @@ describe('2차 갈래 바꾸기', () => {
     expect(character.meso).toBe(0);
   });
 
+  it('바꾸면 맵에 넘기는 모습·동작·사거리·자동 스킬이 새 갈래 것이 되고, 못 드는 컬렉션 무기는 갈래 무기로 돌아간다', () => {
+    // 자쿰의 포이즈닉 너클은 바이퍼만 든다
+    const character = viper({ equipOwned: [1482199], equipWorn: { weapon: 1482199 } });
+    const before = characterJob(character, 105);
+    expect(before.look).toContain(1482199);
+    expect(changeJobBranch(character, 'captain', 1)).toBe('ok');
+    const after = characterJob(character, 105);
+    expect(after.look).not.toContain(1482199);
+    expect(after.look).toContain(1492020);
+    expect(after).toMatchObject({ attackAction: 'shoot2', fallbackRange: 400, skillId: 5221017, autoSkillId: 5221017 });
+    // 맵(scene.setJob)은 이 값들이 바뀌어야 캐릭터 그림을 다시 받는다
+    const key = (job: typeof before) => `${job.look.join(',')}|${job.standAction}|${job.walkAction}|${job.attackAction}|${job.skillId}`;
+    expect(key(after)).not.toBe(key(before));
+  });
+
   it('메소가 모자라면 바꾸지 않는다', () => {
     const character = viper({ meso: JOB_CHANGE_MESO - 1 });
     expect(changeJobBranch(character, 'captain', 1)).toBe('meso');

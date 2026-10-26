@@ -60,6 +60,7 @@ import { chairLoopDelayMs, frameTopLeft, layerAnchor, layerOrder, seatFacing, se
 import { FULL_FPS, IDLE_FPS, targetFps } from './framePolicy';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
+import { applyEachLoaded } from './heroLoad';
 import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
 import { viewportFor } from './viewport';
 
@@ -1666,14 +1667,20 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
               callbacks.onSkillUnusable?.(chosen.id, chosen.name);
               return loadSkill(autoSkillId, job.fallbackRange);
             });
-      // 스킬(수 MB)을 못 받아도 캐릭터는 먼저 보이게 따로 건다. 못 받은 것은 이전 것을 그대로 쓰다가 잠시 뒤 다시 받는다
-      void Promise.allSettled([loadHeroAnimations(job), skillPromise]).then(([loadedHero, loadedSkill]) => {
-        if (lookKey !== key) return;
-        if (loadedHero.status === 'fulfilled') {
-          heroAnimations = loadedHero.value.animations;
+      // 직업을 바꿔 스킬이 달라졌으면 앞 직업 스킬의 사거리·이펙트로 싸우지 않게 새 스킬을 받을 때까지 비워 둔다
+      if (skill && skill.id !== job.skillId && skill.id !== autoSkillId) skill = null;
+      // 스킬(수 MB)을 기다리지 않고 캐릭터는 받는 대로 먼저 바꾼다. 못 받은 것은 이전 것을 그대로 쓰다가 잠시 뒤 다시 받는다
+      void applyEachLoaded(loadHeroAnimations(job), skillPromise, {
+        hero(loaded) {
+          if (lookKey !== key) return;
+          heroAnimations = loaded.animations;
           heroClockMs = 0;
-        }
-        if (loadedSkill.status === 'fulfilled') skill = loadedSkill.value;
+        },
+        skill(loaded) {
+          if (lookKey === key) skill = loaded;
+        },
+      }).then(([loadedHero, loadedSkill]) => {
+        if (lookKey !== key) return;
         const failures = [loadedHero, loadedSkill].flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
         if (failures.length > 0 || (loadedHero.status === 'fulfilled' && loadedHero.value.still)) {
           if (failures.length > 0) console.warn('[scene] 캐릭터 그림·스킬을 못 받아 잠시 뒤 다시 받는다', ...failures);
