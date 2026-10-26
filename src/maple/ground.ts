@@ -124,7 +124,12 @@ export function calibrateFootholds(image: AlphaMap, footholds: Foothold[]): Cali
       if (score > best.score) best = { dx, dy, score };
     }
   }
-  return best;
+  if (best.score >= 0) return best;
+  // 발판이 그림보다 넓게 퍼져 있으면(자쿰의 제단은 윗층 발판 그림이 렌더에 없다) 찾을 범위가 비어 원점이 엉뚱해진다.
+  // 가장 긴 바닥 발판 묶음만으로 다시 맞춘다
+  const ground = mainGround(floors);
+  const onGround = floors.filter((foothold) => ground?.points.some((point) => point.x === foothold.x1 && point.y === foothold.y1));
+  return onGround.length > 0 && onGround.length < floors.length ? calibrateFootholds(image, onGround) : best;
 }
 
 /**

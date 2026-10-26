@@ -132,6 +132,7 @@ export const MAP_BGM: Record<number, string> = {
   250020200: 'Bgm15/MureungHill',
   270050100: 'Bgm16/FightingPinkBeen',
   272020200: 'Bgm25/AltarOfAkayrum',
+  280030100: 'Bgm06/WelcomeToTheHell',
   401060100: 'Bgm28/thefinalWar',
   410000500: 'Bgm53/TheHolyLand',
   410000570: 'Bgm53/TheHolyLand',

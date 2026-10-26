@@ -74,6 +74,24 @@ describe('맵 이미지에 발판 맞추기', () => {
     expect(Math.abs(result.dx - truth.dx)).toBeLessThanOrEqual(8);
     expect(Math.abs(result.dy - truth.dy)).toBeLessThanOrEqual(6);
   });
+
+  it('윗층 발판이 그림 밖으로 나가 범위가 비면 바닥 발판만으로 맞춘다', () => {
+    // 렌더에는 바닥 띠(높이 100)만 있고 300 위의 발판은 그림이 없다
+    const footholds = [foothold(1, 0, 0, 0, 0, 400, 0), foothold(2, 0, 0, 100, -300, 200, -300)];
+    const truth = { dx: 40, dy: 30 };
+    const image: AlphaMap = {
+      width: 500,
+      height: 100,
+      alphaAt(x, y) {
+        if (x < 0 || y < 0 || x >= 500 || y >= 100) return 0;
+        const worldX = x - truth.dx;
+        return worldX >= 0 && worldX <= 400 && y >= truth.dy ? 255 : 0;
+      },
+    };
+    const result = calibrateFootholds(image, footholds);
+    expect(Math.abs(result.dx - truth.dx)).toBeLessThanOrEqual(8);
+    expect(Math.abs(result.dy - truth.dy)).toBeLessThanOrEqual(6);
+  });
 });
 
 describe('레이어 그림으로 보정 맞추기', () => {

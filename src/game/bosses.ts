@@ -5,7 +5,7 @@ export interface BossSpec {
   /** 메이플 몹 ID */
   id: number;
   name: string;
-  /** 이 레벨부터 나온다. 몹 레벨(Mob.wz info/level)을 그대로 쓴다 */
+  /** 이 레벨부터 나온다. 몹 레벨(Mob.wz info/level)을 그대로 쓴다. 자쿰만 몹 레벨(110) 대신 원작 입장 레벨(50)이다 */
   minLevel: number;
   /** 원작에서 이 보스를 잡는 맵. 배경·발판·BGM 을 이 맵에서 가져온다 */
   mapId: number;
@@ -32,13 +32,17 @@ export const BOSS_MESO_MULTIPLIER = 10;
 export const BOSS_HITS_MIN = 18;
 export const BOSS_HITS_MAX = 32;
 
+/** 자쿰 몸통(1페이즈). 팔(8800003~10)은 KMS 389 에서 스파인 애니메이션만 있어 그리지 않는다 */
+export const ZAKUM_ID = 8800000;
+
 // 몹·맵 ID 는 KMS 389 에서 이름·애니메이션(stand·hit1·die1)·렌더·BGM 이 모두 받아지는 것을 확인한 값이다.
-// 여러 부위로 나뉜 보스(자쿰·혼테일 등)와 die1 이 빈 그림인 보스(데미안)는 뺐다
+// 여러 부위로 나뉜 보스(혼테일 등)와 die1 이 빈 그림인 보스(데미안)는 뺐다. 자쿰은 몸통만으로 원작 모습이 나와서 넣었다
 export const BOSSES: BossSpec[] = [
   { id: 2220000, name: '마노', minLevel: 10, mapId: 104010200, sky: [0x7ec8ff, 0xd9f2ff] },
   { id: 6130101, name: '머쉬맘', minLevel: 18, mapId: 100020101, sky: [0x8fd3ff, 0xe6f7ff] },
   { id: 3220000, name: '스텀피', minLevel: 25, mapId: 102020500, sky: [0xe8a466, 0xffe0b0] },
   { id: 6220000, name: '다일', minLevel: 50, mapId: 103030400, sky: [0x3d5a3a, 0x9fbf8a] },
+  { id: ZAKUM_ID, name: '자쿰', minLevel: 50, mapId: 280030100, sky: [0x1a0806, 0x6a2410] },
   { id: 6300005, name: '좀비 머쉬맘', minLevel: 66, mapId: 910090210, sky: [0x3a3550, 0x8c86a8] },
   { id: 8130100, name: '주니어 발록', minLevel: 70, mapId: 105030500, sky: [0x1a1420, 0x4a3a4a] },
   { id: 8150000, name: '크림슨 발록', minLevel: 100, mapId: 200090010, sky: [0x5aa8f0, 0xdff1ff] },

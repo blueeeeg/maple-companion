@@ -3243,7 +3243,7 @@ body {
   outline-offset: -1px;
 }
 
-/* 원작 보스 버튼(btBoss)에서 이름·초상을 걷어 낸 틀. 14 보스 모두 같은 틀에 이름과 얼굴을 얹는다 */
+/* 원작 보스 버튼(btBoss)에서 이름·초상을 걷어 낸 틀. 원작 버튼을 쓰는 보스 말고는 모두 같은 틀에 이름과 얼굴을 얹는다 */
 .boss-list.has-frame .boss-row {
   background: none;
 }
@@ -3266,6 +3266,32 @@ body {
 
 .boss-list.has-frame .boss-row.is-selected .boss-row-art {
   background-image: var(--frame-checked);
+}
+
+/* 원작 버튼을 그대로 쓰는 보스(자쿰). 이름·초상이 그림에 있어서 얹은 이름은 읽기용으로만 남긴다 */
+.boss-list .boss-row.has-original {
+  background: none;
+}
+
+.boss-row.has-original .boss-row-art {
+  display: block;
+}
+
+.boss-row.has-original:hover .boss-row-art {
+  background-image: var(--frame-hover);
+}
+
+.boss-row.has-original.is-selected .boss-row-art {
+  background-image: var(--frame-checked);
+}
+
+.boss-row.has-original .boss-row-face {
+  display: none;
+}
+
+.boss-row.has-original .boss-row-name {
+  color: transparent;
+  text-shadow: none;
 }
 
 /* 몹 stand 그림을 원본 크기로 잘라 원작 초상 자리(오른쪽)에 둔다. 잘린 왼쪽 끝은 틀 바탕으로 흐린다 */

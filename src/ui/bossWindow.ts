@@ -1,4 +1,4 @@
-import { BOSSES, type BossSpec } from '../game/bosses';
+import { BOSSES, type BossSpec, ZAKUM_ID } from '../game/bosses';
 import { type BossTurn, formatBossWait } from '../game/bossChallenge';
 import { type WzValue, mobFrameUrl, mobGageIconLinkUrl, mobGageUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry } from './art';
@@ -65,11 +65,17 @@ export const PRACTICE_BANNER_URL = ui('UIWindow2.img/BossPracticeMode/backgrd');
 const ICON_FRAME_ART = { frame: mobGageUrl('backgrnd', true) };
 
 /**
- * 목록 칸은 14 보스 모두 같은 원작 보스 버튼 틀(UIBoss.img/BossList/{번호}/btBoss, 135×30)에 이름과 얼굴을 얹는다.
+ * 목록 칸은 ORIGINAL_BUTTON 보스 말고는 모두 같은 원작 보스 버튼 틀(UIBoss.img/BossList/{번호}/btBoss, 135×30)에 이름과 얼굴을 얹는다.
  * 원작에는 이름·초상이 없는 빈 틀이 없어서, 이름이 한 글자라 바탕이 가장 많이 보이는 「윌」(23) 버튼을 고쳐 쓴다
  */
 const FRAME_SOURCE = (state: string) => ui(`UIBoss.img/BossList/23/btBoss/${state}/0`);
 const FRAME_STATES = { normal: 'normal', hover: 'mouseOver', checked: 'checked' } as const;
+/** 원작 버튼을 그대로 쓰는 보스. 이름·초상이 그림에 들어 있다. 자쿰은 BossList/1 이다 */
+const ORIGINAL_BUTTON: Record<number, number> = { [ZAKUM_ID]: 1 };
+const originalButtonArt = (index: number) =>
+  Object.fromEntries(
+    Object.entries(FRAME_STATES).map(([name, state]) => [`frame-${name}`, ui(`UIBoss.img/BossList/${index}/btBoss/${state}/0`)]),
+  );
 // 윌 버튼에서 잰 자리. 이름 「윌」은 (15~25, 10~20), 밝은 쐐기 경계는 9줄 x24 → 21줄 x13, 오른쪽 책·초상은 x 52 부터다
 const FRAME_RECIPE: FrameRecipe = {
   nameHole: { x: 14, y: 9, width: 13, height: 13 },
@@ -89,6 +95,7 @@ const FACE_CROP: Record<number, [x: number, y: number]> = {
   6130101: [23, 46],
   3220000: [64, 88],
   6220000: [36, 84],
+  8800000: [152, 101],
   6300005: [26, 52],
   8130100: [34, 52],
   8150000: [26, 166],
@@ -480,7 +487,11 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
     applyArt(up, ARROW('Up'));
     applyArt(down, ARROW('Down'));
     applyArt(iconFrame, ICON_FRAME_ART);
-    rows.forEach(({ boss, face }) => placeFace(face, boss));
+    rows.forEach(({ boss, row, face }) => {
+      placeFace(face, boss);
+      const original = ORIGINAL_BUTTON[boss.id];
+      if (original !== undefined) applyArt(row, originalButtonArt(original), 'has-original');
+    });
     if (!list.classList.contains('has-frame')) {
       loadBossFrame().then(
         (urls) => {
@@ -533,6 +544,9 @@ export function prefetchBossWindow(): void {
   });
   [FRAME_ART.frame, SLOT_ART.slot, PRACTICE_BANNER_URL, ICON_FRAME_ART.frame, ...Object.values(PRACTICE_BUTTON_ART)].forEach(
     (url) => void loadWithRetry(url).catch(() => {}),
+  );
+  Object.values(ORIGINAL_BUTTON).forEach((index) =>
+    Object.values(originalButtonArt(index)).forEach((url) => void loadWithRetry(url).catch(() => {})),
   );
   void loadBossFrame().catch(() => {});
   prefetchButtonSkins(BUTTON_SKINS.bossGreen, BUTTON_SKINS.bossGrey);

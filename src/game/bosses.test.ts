@@ -7,6 +7,7 @@ import {
   BOSS_XP,
   DEFAULT_PACE,
   type HuntProgress,
+  ZAKUM_ID,
   bossDue,
   bossHits,
   bossMeso,
@@ -226,5 +227,15 @@ describe('셔플 백', () => {
 
   it('자격 있는 보스가 없으면 null', () => {
     expect(drawFromBag([], null, 5)).toBeNull();
+  });
+
+  it('자쿰은 원작 입장 레벨(50)부터 새 주기에 들어간다', () => {
+    expect(BOSSES.find((b) => b.id === ZAKUM_ID)!.name).toBe('자쿰');
+    const refill = (level: number) => {
+      const drawn = drawFromBag([], null, level, fixed(0))!;
+      return [drawn.boss.id, ...drawn.bag];
+    };
+    expect(refill(49)).not.toContain(ZAKUM_ID);
+    expect(refill(50)).toContain(ZAKUM_ID);
   });
 });
