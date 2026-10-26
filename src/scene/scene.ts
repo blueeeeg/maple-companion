@@ -33,8 +33,8 @@ import {
   loadBossMob,
   preloadBossGauge,
 } from '../maple/bossMob';
-import { type Calibration, type GroundPath, calibrateFootholds, correctCalibration, groundY, mainGround } from '../maple/ground';
-import { type Pixels, alignOverlay, frontRenderLayers } from '../maple/layers';
+import { type Calibration, type GroundPath, calibrateFootholds, groundY, mainGround } from '../maple/ground';
+import { type Pixels, alignOverlay, exactCalibrationFrom, frontRenderLayers } from '../maple/layers';
 import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/skills';
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture, storeAnimation } from '../maple/textures';
 import { fetchStoredJson, keepArt } from '../maple/artStore';
@@ -75,8 +75,6 @@ const FRAME_MARGIN = 60;
 const FRONT_SEARCH = 24;
 /** 바닥 레이어 그림으로 보정을 맞출 때 이만큼만 기다린다. 못 받으면 어림한 보정으로 들어가고 다음에 그 맵에 갈 때 다시 맞춘다 */
 const EXACT_CALIBRATION_WAIT_MS = 30_000;
-/** 어림한 보정은 가로로 25px 넘게 틀린 맵도 있어서(츄츄 알록달록 숲지대1) 앞 레이어보다 넓게 찾는다 */
-const CALIBRATION_SEARCH = 48;
 /**
  * 바닥 레이어는 앞 레이어와 달리 위 레이어에 가려진 곳이 있어 다 맞지는 않는다(리프레는 1할 넘게 가려진다).
  * 제자리가 아니면 대부분 어긋나서(400점 중 300점 넘게) 이 정도로 낮춰도 다른 자리를 고르지 않는다
@@ -355,18 +353,21 @@ const totalMs = (animation: Animation) => animation.delays.reduce((sum, delay) =
  * 바닥 발판 레이어의 타일을 어림한 원점으로 받아 전체 렌더에 겹쳐 보정을 정확히 맞춘다. 타일이 없거나 위 레이어에 많이
  * 가려 못 맞추면 같은 레이어의 오브젝트로 한 번 더 해 본다(리스항구). 못 받거나 못 맞추면 null
  */
-async function exactCalibration(mapId: number, groundLayer: number, rough: Calibration, base: Pixels): Promise<Calibration | null> {
-  const minX = Math.round(-rough.dx) - FRONT_SEARCH;
-  const minY = Math.round(-rough.dy) - FRONT_SEARCH;
+function exactCalibration(mapId: number, groundLayer: number, rough: Calibration, base: Pixels): Promise<Calibration | null> {
   const tiles = groundLayer * 2 + 1;
-  for (const layers of [[tiles], [tiles - 1], [tiles - 1, tiles]]) {
-    const stack = await loadLayerStack(layers.map((layer) => mapLayerRenderUrl(mapId, layer, minX, minY)));
-    if (!stack) continue;
-    const at = alignOverlay(base, stack.pixels, { x: -FRONT_SEARCH, y: -FRONT_SEARCH }, CALIBRATION_SEARCH, CALIBRATION_MATCH_RATIO);
-    stack.texture.destroy(true);
-    if (at) return correctCalibration(rough, at, FRONT_SEARCH);
-  }
-  return null;
+  const variants = [[tiles], [tiles - 1], [tiles - 1, tiles]];
+  return exactCalibrationFrom(
+    rough,
+    base,
+    variants.length,
+    async (variant, minX, minY) => {
+      const stack = await loadLayerStack(variants[variant].map((layer) => mapLayerRenderUrl(mapId, layer, minX, minY)));
+      if (!stack) return null;
+      stack.texture.destroy(true);
+      return stack.pixels;
+    },
+    CALIBRATION_MATCH_RATIO,
+  );
 }
 
 /**

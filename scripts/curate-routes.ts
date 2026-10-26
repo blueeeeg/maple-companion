@@ -29,16 +29,6 @@ import { type LadderRope, type NavGraph, buildNavGraph } from '../src/maple/navi
 const API = 'https://maplestory.io/api/KMS/389';
 const WZ = 'https://maplestory.io/api/wz/KMS/389';
 const MAX_DEPTH = 3;
-/**
- * 전체 렌더 위 발판 자리를 못 맞추는 맵. 발판 위까지 배경이 불투명해 투명도 어림이 120~330px 틀리고,
- * 레이어 겹치기(scene.ts exactCalibration)는 어림 둘레 48px 안만 찾아서 캐릭터가 허공·지붕 위에 선다
- */
-const MISCALIBRATED_MAPS = new Map([
-  [250020000, '초급 수련장'],
-  [250020100, '하급 수련장'],
-  [410000570, '세르니움 서쪽 성문'],
-  [410000580, '세르니움 서쪽 성벽 입구'],
-]);
 const TIMEOUT_MS = 30_000;
 
 const cacheDir = process.argv[2] ?? join(tmpdir(), 'maple-routes-cache');
@@ -199,10 +189,6 @@ async function curateTown(
         // 무릉 사원처럼 앱 마을이 아닌 마을 맵은 통로로 지나갈 수 있다. 앱 마을로는 넘어가지 않는다
         const isAppTown = TOWNS.some((each) => each.mapId === target.id);
         if (isAppTown || (target.isTown && maxPassages === 0)) continue;
-        if (MISCALIBRATED_MAPS.has(target.id)) {
-          exclude(fromId, portal.toMap, '렌더에 발판 자리를 못 맞춤(보정 어림이 120px 넘게 틀림)');
-          continue;
-        }
         const exitAccess = portalAccess(navGraph(from), portal);
         if (exitAccess !== 'ok') {
           exclude(fromId, portal.toMap, `나가는 포털 ${portal.name}(${portal.x}, ${portal.y}): ${ACCESS_REASON[exitAccess]}`);

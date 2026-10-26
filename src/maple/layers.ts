@@ -1,4 +1,4 @@
-import type { Point } from './ground';
+import { type Calibration, type Point, correctCalibration } from './ground';
 
 const MAP_LAYERS = 8;
 
@@ -21,6 +21,8 @@ export interface Pixels {
 const MAX_SAMPLES = 400;
 const MIN_MATCH_RATIO = 0.9;
 const TOLERANCE = 2;
+/** 자리마다 먼저 보는 고르게 뽑은 표본 수 */
+const PROBES = 16;
 
 function opaqueSamples(image: Pixels): Point[] {
   let count = 0;
@@ -55,26 +57,28 @@ export function alignOverlay(
   const allowedMisses = Math.floor(samples.length * (1 - minMatchRatio));
   let best: Point | null = null;
   let bestMisses = allowedMisses + 1;
+  const matches = (sample: Point, x: number, y: number) => {
+    const baseX = sample.x + x;
+    const baseY = sample.y + y;
+    if (baseX < 0 || baseY < 0 || baseX >= base.width || baseY >= base.height) return false;
+    const from = (sample.y * overlay.width + sample.x) * 4;
+    const to = (baseY * base.width + baseX) * 4;
+    for (let channel = 0; channel < 4; channel += 1) {
+      if (Math.abs(overlay.data[from + channel] - base.data[to + channel]) > TOLERANCE) return false;
+    }
+    return true;
+  };
+  // 넓게 찾으면 자리가 수십만 곳이라, 그림 전체에서 고르게 뽑은 표본이 하나도 안 맞는 자리는 다 보지 않고 버린다.
+  // 제자리는 표본 대부분이 맞으니 이것으로 버려지지 않는다
+  const probeStride = Math.max(1, Math.floor(samples.length / PROBES));
+  const probes = samples.filter((_, index) => index % probeStride === 0);
 
   for (let y = guess.y - radius; y <= guess.y + radius; y += 1) {
     for (let x = guess.x - radius; x <= guess.x + radius; x += 1) {
+      if (!probes.some((sample) => matches(sample, x, y))) continue;
       let misses = 0;
       for (let index = 0; index < samples.length && misses < bestMisses; index += 1) {
-        const sample = samples[index];
-        const baseX = sample.x + x;
-        const baseY = sample.y + y;
-        if (baseX < 0 || baseY < 0 || baseX >= base.width || baseY >= base.height) {
-          misses += 1;
-          continue;
-        }
-        const from = (sample.y * overlay.width + sample.x) * 4;
-        const to = (baseY * base.width + baseX) * 4;
-        for (let channel = 0; channel < 4; channel += 1) {
-          if (Math.abs(overlay.data[from + channel] - base.data[to + channel]) > TOLERANCE) {
-            misses += 1;
-            break;
-          }
-        }
+        if (!matches(samples[index], x, y)) misses += 1;
       }
       if (misses < bestMisses) {
         bestMisses = misses;
@@ -83,4 +87,37 @@ export function alignOverlay(
     }
   }
   return best;
+}
+
+/**
+ * 레이어를 겹쳐 볼 단계. pad 는 레이어 원점을 어림보다 왼쪽·위로 얼마나 물려 받는지, radius 는 어림 자리 둘레 몇 px 를
+ * 찾는지다. 좁은 단계는 가로로 25px 넘게 틀린 어림(츄츄 알록달록 숲지대1)까지 덮는다. 넓은 단계는 발판 위까지 배경이
+ * 불투명해 투명도 어림이 120~330px 틀리는 맵(무릉 수련장·세르니움 성문) 때문에 있다
+ */
+export const CALIBRATION_PASSES = [
+  { pad: 24, radius: 48 },
+  { pad: 424, radius: 400 },
+] as const;
+
+/**
+ * 바닥 레이어 그림을 전체 렌더에 겹쳐 어림 보정(rough)을 정확히 고친다. 좁은 단계에서 모든 레이어 조합이 안 맞을 때만
+ * 넓은 단계로 간다. loadOverlay(variant, minX, minY) 는 그 원점으로 받은 variant 번째 레이어 조합, 없으면 null.
+ * 어느 단계에서도 못 맞추면 null 이고 부르는 쪽은 어림 보정을 그대로 쓴다
+ */
+export async function exactCalibrationFrom(
+  rough: Calibration,
+  base: Pixels,
+  variants: number,
+  loadOverlay: (variant: number, minX: number, minY: number) => Promise<Pixels | null>,
+  minMatchRatio: number,
+): Promise<Calibration | null> {
+  for (const { pad, radius } of CALIBRATION_PASSES) {
+    for (let variant = 0; variant < variants; variant += 1) {
+      const overlay = await loadOverlay(variant, Math.round(-rough.dx) - pad, Math.round(-rough.dy) - pad);
+      if (!overlay) continue;
+      const at = alignOverlay(base, overlay, { x: -pad, y: -pad }, radius, minMatchRatio);
+      if (at) return correctCalibration(rough, at, pad);
+    }
+  }
+  return null;
 }
