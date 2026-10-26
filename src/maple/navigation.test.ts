@@ -118,6 +118,30 @@ describe('길 따라 움직이기', () => {
     expect(runner.position.platform).toBe(high);
   });
 
+  it('사다리를 타는 동안에는 그 page 레이어에 그리고 내리면 발판 레이어로 돌아온다', () => {
+    const paged = buildNavGraph(footholds, [{ ...ladders[0], page: 3 }]);
+    const start = { platform: ground, x: -450 };
+    const steps = findPath(paged, start, { platform: high, x: -450 })!;
+    const runner = createNavRunner(paged, start, steps);
+    const layers = { ladder: new Set<number>(), other: new Set<number>() };
+    let pose = runner.update(0);
+    for (let frame = 0; frame < 30 * 60 && !pose.done; frame += 1) {
+      pose = runner.update(33);
+      if (!pose.done) layers[pose.action === 'ladder' ? 'ladder' : 'other'].add(pose.layer);
+    }
+    expect([...layers.ladder]).toEqual([3]);
+    expect([...layers.other]).toEqual([0]);
+    expect(pose.layer).toBe(0);
+  });
+
+  it('page 를 모르는 사다리는 오르기 전 발판 레이어로 그린다', () => {
+    const start = { platform: ground, x: -450 };
+    const runner = createNavRunner(graph, start, findPath(graph, start, { platform: high, x: -450 })!);
+    let pose = runner.update(0);
+    for (let frame = 0; frame < 30 * 60 && !pose.done && pose.action !== 'ladder'; frame += 1) pose = runner.update(33);
+    expect(pose).toMatchObject({ action: 'ladder', layer: 0 });
+  });
+
   it('공중 구간은 길을 찾을 때 계산한 자리에 내린다', () => {
     const start = { platform: ground, x: -800 };
     const steps = findPath(graph, start, { platform: step2, x: 450 })!;

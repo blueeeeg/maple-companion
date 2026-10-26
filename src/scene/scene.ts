@@ -7,10 +7,12 @@ import {
   DATA_KEY,
   type MapInfo,
   type MobInfo,
+  type WzValue,
   characterAnimationUrl,
   characterArtBase,
   characterFrameUrl,
   mapInfoUrl,
+  mapLadderRopeNodeUrl,
   mapLayerRenderUrl,
   mapRenderUrl,
   mesoDropIconUrl,
@@ -40,6 +42,7 @@ import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, l
 import { fetchStoredJson, keepArt } from '../maple/artStore';
 import { loadPortalFrames } from '../maple/portal';
 import {
+  type LadderRope,
   type NavAction,
   type NavGraph,
   type NavPoint,
@@ -75,6 +78,8 @@ const FRAME_MARGIN = 60;
 const FRONT_SEARCH = 24;
 /** 바닥 레이어 그림으로 보정을 맞출 때 이만큼만 기다린다. 못 받으면 어림한 보정으로 들어가고 다음에 그 맵에 갈 때 다시 맞춘다 */
 const EXACT_CALIBRATION_WAIT_MS = 30_000;
+/** 사다리·로프 page 는 보정을 맞추는 동안 같이 받고, 보정이 이미 있으면 이만큼만 더 기다린다. 못 받으면 page 없이 들어간다 */
+const LADDER_PAGE_WAIT_MS = 3000;
 /**
  * 바닥 레이어는 앞 레이어와 달리 위 레이어에 가려진 곳이 있어 다 맞지는 않는다(리프레는 1할 넘게 가려진다).
  * 제자리가 아니면 대부분 어긋나서(400점 중 300점 넘게) 이 정도로 낮춰도 다른 자리를 고르지 않는다
@@ -370,6 +375,31 @@ function exactCalibration(mapId: number, groundLayer: number, rough: Calibration
   );
 }
 
+/** layer 에 선 캐릭터를 가리는 레이어들을 한 장으로 겹친다. 원점이 같아 어느 layer 로 받아도 전체 렌더 위 위치가 같다 */
+function loadFrontStack(mapId: number, layer: number, calibration: Calibration) {
+  const minX = Math.round(-calibration.dx) - FRONT_SEARCH;
+  const minY = Math.round(-calibration.dy) - FRONT_SEARCH;
+  return loadLayerStack(frontRenderLayers(layer).map((each) => mapLayerRenderUrl(mapId, each, minX, minY)));
+}
+
+/**
+ * 사다리·로프마다 WZ page 를 붙인다. 맵 정보에는 page 가 없다. 자식 수가 맞지 않거나 못 받은 것은 page 없이 둔다
+ */
+async function loadLadderPages(mapId: number, ladders: LadderRope[]): Promise<LadderRope[]> {
+  if (ladders.length === 0) return ladders;
+  const { children } = await fetchStoredJson<{ children: string[] }>(mapLadderRopeNodeUrl(mapId));
+  if (children.length !== ladders.length) return ladders;
+  const pages = await Promise.all(
+    children.map((name) =>
+      fetchStoredJson<WzValue<number>>(mapLadderRopeNodeUrl(mapId, `${name}/page`)).then(
+        ({ value }) => value,
+        () => undefined,
+      ),
+    ),
+  );
+  return ladders.map((ladder, index) => ({ ...ladder, page: pages[index] }));
+}
+
 /**
  * 캐릭터보다 높은 레이어의 타일·오브젝트만 따로 받아 한 장으로 겹친다. 전체 렌더에도 같은 그림이 맨 위에 있으니
  * 픽셀을 맞대어 전체 렌더 위의 정확한 위치를 찾는다. 가릴 것이 없거나 위치를 못 맞추면 null
@@ -380,11 +410,7 @@ async function loadFront(
   calibration: Calibration,
   base: Pixels,
 ): Promise<{ texture: Texture; x: number; y: number } | null> {
-  const minX = Math.round(-calibration.dx) - FRONT_SEARCH;
-  const minY = Math.round(-calibration.dy) - FRONT_SEARCH;
-  const stack = await loadLayerStack(
-    frontRenderLayers(groundLayer).map((layer) => mapLayerRenderUrl(mapId, layer, minX, minY)),
-  );
+  const stack = await loadFrontStack(mapId, groundLayer, calibration);
   if (!stack) return null;
   const at = alignOverlay(base, stack.pixels, { x: -FRONT_SEARCH, y: -FRONT_SEARCH }, FRONT_SEARCH);
   if (!at) {
@@ -424,6 +450,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const frontSprite = new Sprite();
   // 몬스터를 누르는 입력이 앞 레이어에 막히지 않게 한다
   frontSprite.eventMode = 'none';
+  // 바닥보다 높은 레이어(윗층 발판·로프)에 있을 때 frontSprite 대신 쓴다
+  const upperFrontSprite = new Sprite();
+  upperFrontSprite.eventMode = 'none';
   const worldEffects = new Container();
   // 이름표는 원작처럼 앞 레이어보다 위, 대미지 숫자·스킬 이펙트보다 아래에 그린다
   const nameTag = new Container();
@@ -432,7 +461,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const nameTagBack = new Graphics();
   const nameTagText = new Text({ style: { fontFamily: FONT, fontSize: NAME_TAG_FONT_SIZE, fill: 0xffffff } });
   nameTag.addChild(nameTagBack, nameTagText);
-  world.addChild(mapSprite, actors, frontSprite, nameTag, worldEffects);
+  world.addChild(mapSprite, actors, frontSprite, upperFrontSprite, nameTag, worldEffects);
   // 포털은 원작처럼 맵 위, 캐릭터·몬스터 뒤에 돈다
   const portalLayer = new Container();
   world.addChildAt(portalLayer, world.getChildIndex(actors));
@@ -1023,6 +1052,49 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     frontSprite.texture = front?.texture ?? Texture.EMPTY;
     frontSprite.position.set(front?.x ?? 0, front?.y ?? 0);
     if (previous !== Texture.EMPTY && previous !== frontSprite.texture) previous.destroy(true);
+    if (front) return;
+    upperFrontSprite.visible = false;
+    upperFrontSprite.texture = Texture.EMPTY;
+    upperFronts.forEach((texture) => texture?.destroy(true));
+    upperFronts.clear();
+  }
+
+  /** 지금 맵에서 바닥보다 높은 레이어마다 받은 앞 레이어. 받는 중이거나 가릴 것이 없으면 null */
+  const upperFronts = new Map<number, Texture | null>();
+
+  /**
+   * 원작은 캐릭터를 선 레이어(사다리·로프에서는 그 page)의 그림 바로 위에 그린다. 바닥 레이어보다 높으면 바닥 기준 앞 레이어에
+   * 캐릭터 뒤에 있어야 할 그림(타는 로프, 선 발판)이 들어 있어서 그 레이어보다 높은 것만 겹친 그림으로 바꾼다. 받기 전에는 숨긴다
+   */
+  function showFront(stage: Stage, layer: number): void {
+    const upper = layer > stage.groundLayer;
+    frontSprite.visible = !upper;
+    upperFrontSprite.visible = false;
+    // 바닥 앞 레이어를 못 맞췄으면 같은 원점으로 받은 윗 레이어도 놓을 자리가 없다
+    if (!upper || frontSprite.texture === Texture.EMPTY) return;
+    if (!upperFronts.has(layer)) {
+      upperFronts.set(layer, null);
+      const load = townLoads;
+      loadFrontStack(stage.mapId, layer, stage.calibration).then(
+        (stack) => {
+          if (load === townLoads) upperFronts.set(layer, stack?.texture ?? null);
+          else stack?.texture.destroy(true);
+        },
+        () => {
+          // 못 받으면 이 맵에 있는 동안 그 레이어에서는 앞 레이어 없이 그린다
+        },
+      );
+    }
+    const texture = upperFronts.get(layer);
+    if (!texture) return;
+    upperFrontSprite.texture = texture;
+    upperFrontSprite.position.copyFrom(frontSprite.position);
+    upperFrontSprite.visible = true;
+  }
+
+  function resetFront(): void {
+    frontSprite.visible = true;
+    upperFrontSprite.visible = false;
   }
 
   /** 맵 정보·전체 렌더를 받아 발판을 이미지 좌표로 맞춘다. 화면은 아직 안 바꾼다 */
@@ -1031,6 +1103,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     keepArt('map', [mapInfoUrl(mapId), ...(home ? [mapInfoUrl(home.stage.mapId)] : [])]);
     const [info, image] = await Promise.all([fetchStoredJson<MapInfo>(mapInfoUrl(mapId)), loadMapImage(mapRenderUrl(mapId))]);
     const footholds = Object.values(info.footholds);
+    const ladders = loadLadderPages(mapId, info.ladderRopes ?? []).catch(() => info.ladderRopes ?? []);
     const worldGround = mainGround(footholds);
     if (!worldGround) {
       image.texture.destroy(true);
@@ -1047,9 +1120,13 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       storeCalibration(mapId, calibration);
     }
     const { dx, dy } = calibration;
+    const paged = await Promise.race([
+      ladders,
+      new Promise<LadderRope[]>((resolve) => setTimeout(() => resolve(info.ladderRopes ?? []), LADDER_PAGE_WAIT_MS)),
+    ]);
     let nav: NavGraph | null = null;
     try {
-      nav = buildNavGraph(footholds, info.ladderRopes ?? []);
+      nav = buildNavGraph(footholds, paged);
     } catch (error) {
       console.warn(`[scene] ${label} 발판 길을 못 만들어 바닥만 걷는다`, error);
     }
@@ -1189,14 +1266,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function stepNavMotion(dtMs: number): void {
     const motion = navMotion!;
-    const nav = motion.stage.nav!;
     motion.elapsedMs += dtMs;
     const pose = motion.runner.update(dtMs);
     hero.x = pose.x + motion.stage.calibration.dx;
     hero.y = pose.y + motion.stage.calibration.dy;
     facing = pose.facing;
-    // 바닥보다 높은 레이어 발판에 서면 앞 레이어에 그 발판 그림이 들어 있어 캐릭터를 가린다
-    frontSprite.visible = nav.platforms[motion.runner.position.platform].layer <= nav.platforms[nav.main].layer;
+    showFront(motion.stage, pose.layer);
     const animations = navAnimations?.look === heroLook.join(',') ? navAnimations.animations : null;
     if (pose.action === 'walk' || pose.action === 'stand' || !animations) {
       setHeroAction(pose.action === 'stand' ? 'stand' : 'walk');
@@ -1210,7 +1285,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
     if (pose.done || motion.elapsedMs > PORTAL_WALK_LIMIT_MS) {
       navMotion = null;
-      frontSprite.visible = true;
+      resetFront();
       navStoppedAt = motion.runner.position;
       motion.resolve(pose.done);
     }
@@ -1219,16 +1294,15 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   /** 포털에 들어가고 나오며 화면이 어두워지고 밝아지는 동안 그 자리에 세워 둔다 */
   let parkedAtPortal = false;
 
-  /** 포털 자리에 세운다. 바닥보다 높은 레이어 발판이면 앞 레이어에 그 발판 그림이 있어 캐릭터를 가리니 앞 레이어를 숨긴다 */
+  /** 포털 자리에 세운다. 바닥보다 높은 레이어 발판이면 그 레이어 기준 앞 레이어로 바꾼다 */
   function parkAtPortal(stage: Stage, at: NavPoint | null): void {
     parkedAtPortal = true;
-    const nav = stage.nav;
-    frontSprite.visible = !(nav && at && nav.platforms[at.platform].layer > nav.platforms[nav.main].layer);
+    showFront(stage, stage.nav && at ? stage.nav.platforms[at.platform].layer : stage.groundLayer);
   }
 
   function unpark(): void {
     parkedAtPortal = false;
-    frontSprite.visible = true;
+    resetFront();
   }
 
   /** 길을 따라 움직인다. 다 가면 true, 시간이 다 되면 false */

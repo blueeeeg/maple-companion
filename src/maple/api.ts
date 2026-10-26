@@ -22,6 +22,14 @@ export function mapBgmNodeUrl(mapId: number): string {
   const padded = String(mapId).padStart(9, '0');
   return `https://maplestory.io/api/wz/${REGION}/${VERSION}/Map/Map/Map${padded[0]}/${padded}.img/info/bgm`;
 }
+/**
+ * 맵의 사다리·로프 WZ 노드(JSON). path 가 비면 자식 이름 목록이고, `1/page` 처럼 주면 그 값이다.
+ * 맵 정보 ladderRopes 는 이 자식 목록 순서(1, 10, 11, 2 …)대로 들어 있다
+ */
+export function mapLadderRopeNodeUrl(mapId: number, path = ''): string {
+  const padded = String(mapId).padStart(9, '0');
+  return `https://maplestory.io/api/wz/${REGION}/${VERSION}/Map/Map/Map${padded[0]}/${padded}.img/ladderRope${path ? `/${path}` : ''}`;
+}
 export const mobInfoUrl = (mobId: number) => `${BASE}/mob/${mobId}`;
 export const mobFrameUrl = (mobId: number, action: string, frame: number) =>
   `${BASE}/mob/${mobId}/render/${action}/${frame}`;

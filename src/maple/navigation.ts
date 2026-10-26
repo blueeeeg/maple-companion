@@ -15,6 +15,8 @@ export interface LadderRope {
   y1: number;
   y2: number;
   isLadder: boolean;
+  /** WZ page. 원작은 사다리·로프 그림을 이 레이어에 두고 오르는 캐릭터도 이 레이어에 그린다. 맵 정보에는 없어 따로 받는다 */
+  page?: number;
 }
 
 export interface Platform extends GroundPath {
@@ -32,8 +34,8 @@ export type NavStep =
   | { kind: 'walk'; platform: number; x: number }
   /** 공중으로 몸을 던져 to 에 내린다. vx·vy 로 시작해 중력으로 떨어진다. ignore 는 처음에 빠져나오는 발판 */
   | { kind: 'jump' | 'fall' | 'drop'; from: Point; vx: number; vy: number; ignore: number | null; platform: number; to: Point }
-  /** 사다리·로프를 x 에서 fromY → toY 로 타고 platform 에 선다 */
-  | { kind: 'climb'; x: number; fromY: number; toY: number; rope: boolean; platform: number };
+  /** 사다리·로프를 x 에서 fromY → toY 로 타고 platform 에 선다. layer 는 오르는 동안 캐릭터를 그리는 레이어(page) */
+  | { kind: 'climb'; x: number; fromY: number; toY: number; rope: boolean; platform: number; layer?: number };
 
 interface Transition {
   from: NavPoint;
@@ -238,6 +240,7 @@ export function buildNavGraph(footholds: Foothold[], ladders: LadderRope[]): Nav
       toY: topY,
       rope,
       platform: top.id,
+      layer: ladder.page,
     });
     add({ platform: top.id, x: ladder.x }, { platform: bottom.id, x: ladder.x }, cost, {
       kind: 'climb',
@@ -246,6 +249,7 @@ export function buildNavGraph(footholds: Foothold[], ladders: LadderRope[]): Nav
       toY: bottomY,
       rope,
       platform: bottom.id,
+      layer: ladder.page,
     });
   });
 
@@ -342,6 +346,8 @@ export interface NavPose {
   /** 1 이면 오른쪽을 본다 */
   facing: -1 | 1;
   done: boolean;
+  /** 캐릭터를 그리는 맵 레이어. 사다리·로프에서는 그 page, 모르면 오르기 전 발판의 레이어 */
+  layer: number;
 }
 
 /** 찾은 길을 프레임마다 따라간다. 공중 구간은 길을 찾을 때와 같은 계산으로 다시 날아서 같은 자리에 내린다 */
@@ -354,6 +360,7 @@ export function createNavRunner(graph: NavGraph, start: NavPoint, steps: NavStep
   let index = 0;
   let air: { vx: number; vy: number; ignore: number | null } | null = null;
   let carryS = 0;
+  let climbLayer: number | null = null;
 
   const finishStep = () => {
     index += 1;
@@ -362,6 +369,8 @@ export function createNavRunner(graph: NavGraph, start: NavPoint, steps: NavStep
 
   function advance(seconds: number): NavAction {
     const step = steps[index];
+    // 다 오른 프레임도 사다리 그림이라 그 레이어를 다음 걸음까지 둔다
+    climbLayer = step?.kind === 'climb' ? (step.layer ?? null) : null;
     if (!step) return 'stand';
     if (step.kind === 'walk') {
       const distance = step.x - x;
@@ -420,7 +429,7 @@ export function createNavRunner(graph: NavGraph, start: NavPoint, steps: NavStep
   return {
     update(dtMs: number): NavPose {
       const action = advance(dtMs / 1000);
-      return { x, y, action, facing, done: index >= steps.length };
+      return { x, y, action, facing, done: index >= steps.length, layer: climbLayer ?? platform.layer };
     },
     /** 시간이 다 돼 멈출 때 서 있을 자리 */
     get position(): NavPoint {
