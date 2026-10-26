@@ -16,6 +16,20 @@ import {
   stackTryOn,
   unequipCash,
 } from '../game/cashShop';
+import {
+  EQUIP_SHOP_ITEMS,
+  type EquipSlot,
+  type EquipWorn,
+  canWear,
+  equipGear,
+  equipItemName,
+  equipShopPrice,
+  equipSlotOf,
+  isEquipItem,
+  unequipGear,
+  wearEquipment,
+} from '../game/equipment';
+import { JOB_BRANCHES, type JobPath } from '../game/jobs';
 import { MESO_HUD_ICON_URL, cashShopUiUrl, characterAnimationUrl, itemIconUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
@@ -32,6 +46,8 @@ export interface CashShopState {
   meso: number;
   wardrobe: number[];
   equipped: CashEquipped;
+  /** 장비 상점 탭. 산 컬렉션 장비는 캐시 아이템 아래에 입힌다 */
+  gear: { path: JobPath | null; owned: number[]; worn: EquipWorn };
 }
 
 export interface CashShopHandlers {
@@ -39,6 +55,10 @@ export interface CashShopHandlers {
   onBuy(itemId: number): void;
   onEquip(itemId: number): void;
   onUnequip(slot: CashSlot): void;
+  /** 장비 상점 탭의 사기·입기·벗기. 사고 나서 바로 입히는 것까지 받는 쪽이 한다 */
+  onBuyGear(itemId: number): void;
+  onEquipGear(itemId: number): void;
+  onUnequipGear(slot: EquipSlot): void;
   onClose(): void;
 }
 
@@ -49,7 +69,7 @@ export interface CashShop {
   hide(): void;
 }
 
-type Tab = CashSlot | 'owned';
+type Tab = CashSlot | 'owned' | 'gear';
 
 /**
  * 이만큼 안에 연달아 누른 아이템은 마지막 것만 그려 받는다. 서버가 그림 하나에 1~4초씩 걸려서 앞 것까지 받으면 뒤 것이 늦어진다.
@@ -105,6 +125,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
           <span class="shop-picker-label"></span><span class="shop-picker-arrow" aria-hidden="true"></span>
         </button>
         <button class="shop-owned" type="button" aria-pressed="false">보유</button>
+        <button class="shop-gear" type="button" aria-pressed="false" title="장비 상점 · 원작 일반 장비를 메소로 사서 장비 컬렉션에 넣어요">장비</button>
         <label class="shop-search"><input type="text" placeholder="이름으로 찾기" aria-label="이름으로 찾기" autocomplete="off" spellcheck="false" /></label>
       </div>
       <div class="shop-categories" role="menu" aria-label="부위" hidden></div>
@@ -148,6 +169,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   const picker = pick<HTMLButtonElement>('.shop-picker');
   const pickerLabel = pick('.shop-picker-label');
   const ownedButton = pick<HTMLButtonElement>('.shop-owned');
+  const gearButton = pick<HTMLButtonElement>('.shop-gear');
   const categories = pick('.shop-categories');
   const mesoIcon = pick('.shop-meso-icon');
   const mesoAmount = pick('.shop-meso-amount');
@@ -191,6 +213,8 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   let hoveredId: number | null = null;
   /** 이번에 상점에 들어와 입어 본 아이템. 입고 있는 것 위에 겹쳐 보이고, 원래대로·나가기로 버린다 */
   let trying: CashEquipped = {};
+  /** 장비 상점 탭에서 입어 본 컬렉션 장비. 미리보기에서는 같은 자리 캐시 아이템을 걷고 보여 준다 */
+  let tryingGear: EquipWorn = {};
   let items: CashItem[] = [];
   let loading: 'loading' | 'error' | 'ready' = 'loading';
   let loadToken = 0;
@@ -251,12 +275,15 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   }
 
   const nameOf = (itemId: number) => names.get(itemId) ?? `아이템 ${itemId}`;
-  const owns = (itemId: number) => state?.wardrobe.includes(itemId) ?? false;
+  const owns = (itemId: number) =>
+    (isEquipItem(itemId) ? state?.gear.owned.includes(itemId) : state?.wardrobe.includes(itemId)) ?? false;
   const wearing = (itemId: number) => {
+    if (isEquipItem(itemId)) return state?.gear.worn[equipSlotOf(itemId)!] === itemId;
     const slot = cashSlotOf(itemId);
     return slot !== null && state?.equipped[slot] === itemId;
   };
-  const tryingOn = (itemId: number) => Object.values(trying).includes(itemId);
+  const tryingOn = (itemId: number) => Object.values(trying).includes(itemId) || Object.values(tryingGear).includes(itemId);
+  const priceOf = (itemId: number) => (isEquipItem(itemId) ? equipShopPrice(itemId) : cashPrice(itemId)) ?? 0;
 
   function visibleItems(): CashItem[] {
     const needle = query.trim().toLowerCase();
@@ -275,6 +302,13 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     const token = ++loadToken;
     const current = state;
     if (!current) return;
+    if (tab === 'gear') {
+      items = EQUIP_SHOP_ITEMS.map(({ id }) => ({ id, name: equipItemName(id), requiredGender: 2 }));
+      items.forEach((item) => names.set(item.id, item.name));
+      loading = 'ready';
+      render();
+      return;
+    }
     if (tab === 'owned') {
       // 이름을 알려면 그 부위 목록이 있어야 한다. 못 받은 부위는 번호로 보여 준다
       const slots = [...new Set(current.wardrobe.map(cashSlotOf).filter((slot): slot is CashSlot => slot !== null))];
@@ -318,7 +352,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     closeCategories();
     if (next === tab && loading !== 'error') return;
     tab = next;
-    if (next !== 'owned') lastSlot = next;
+    if (next !== 'owned' && next !== 'gear') lastSlot = next;
     page = 0;
     loadTab();
   }
@@ -326,15 +360,20 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   /** 고른 아이템을 지금 살·입을 수 없는 까닭. 괜찮으면 null */
   function problem(itemId: number): string | null {
     if (!state) return null;
-    if (cashSlotOf(itemId) === 'weapon' && !owns(itemId)) {
-      if (!hasWeapon(state.jobLook)) return '전직하면 살 수 있어요';
+    if (isEquipItem(itemId) && !canWear(state.gear.path, itemId)) {
+      return state.gear.path !== null && state.gear.path in JOB_BRANCHES ? '이 직업은 못 들어요' : '2차 전직하면 들 수 있어요';
+    }
+    if (cashSlotOf(itemId) === 'weapon' && !isEquipItem(itemId) && !owns(itemId)) {
+      // 컬렉션 무기를 들고 있으면 캐시 무기 외형은 그 무기 위에 그려진다
+      const look = wearEquipment(state.jobLook, state.gear.worn, state.gear.path);
+      if (!hasWeapon(look)) return '전직하면 살 수 있어요';
       const types = weaponTypes.get(itemId);
       if (!types || types === 'loading') return '무기 확인 중…';
       if (types === 'error') return '무기 정보를 못 받았어요';
-      if (!cashWeaponFits(types, state.jobLook)) return '이 무기엔 안 보여요';
+      if (!cashWeaponFits(types, look)) return '이 무기엔 안 보여요';
     }
     if (!owns(itemId)) {
-      const price = cashPrice(itemId) ?? 0;
+      const price = priceOf(itemId);
       if (state.meso < price) return `메소 ${won(price - state.meso)} 부족`;
     }
     return null;
@@ -357,7 +396,18 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
 
   function previewLook(): number[] {
     if (!state) return [];
-    return composeLook(state.jobLook, stackTryOn(state.equipped, trying));
+    const gear = Object.values(tryingGear).reduce<EquipWorn>((worn, itemId) => equipGear(worn, itemId), state.gear.worn);
+    const cash = stackTryOn(state.equipped, trying);
+    // 입어 보는 장비는 같은 자리 캐시 아이템에 가려지면 안 보이니 미리보기에서만 그 캐시를 걷는다
+    (Object.keys(tryingGear) as EquipSlot[]).forEach((slot) => {
+      if (slot !== 'earrings' && slot !== 'shield') delete cash[slot];
+      if (slot === 'overall') {
+        delete cash.top;
+        delete cash.bottom;
+      }
+      if (slot === 'top' || slot === 'bottom') delete cash.overall;
+    });
+    return composeLook(wearEquipment(state.jobLook, gear, state.gear.path), cash);
   }
 
   function showPreview(url: string, src: string) {
@@ -427,7 +477,12 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     }
     const info = cashDetail(
       { id: shownId, name: nameOf(shownId) },
-      { owned: owns(shownId), equipped: wearing(shownId), problem: shownId === selectedId ? problem(shownId) : null },
+      {
+        owned: owns(shownId),
+        equipped: wearing(shownId),
+        problem: shownId === selectedId ? problem(shownId) : null,
+        price: priceOf(shownId),
+      },
     );
     detail.dataset.tone = info.tone;
     detailName.textContent = info.name;
@@ -465,15 +520,17 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       button.setAttribute('aria-checked', String(active));
     });
     const shown = categoryButtons.get(lastSlot)!;
-    const onCategory = tab !== 'owned';
+    const onCategory = tab !== 'owned' && tab !== 'gear';
     // 부위 버튼은 고른 부위의 원작 탭 글자 그림을 그대로 빌려 쓴다. 보유 탭에 있으면 흰 글자(Disable)로 둔다
     const art = shown.style.getPropertyValue(onCategory ? '--on' : '--off');
     picker.classList.toggle('has-art', art !== '');
     if (art) picker.style.setProperty('--tab', art);
     pickerLabel.textContent = cashCategory(lastSlot).label;
     picker.classList.toggle('is-active', onCategory);
-    ownedButton.classList.toggle('is-active', !onCategory);
-    ownedButton.setAttribute('aria-pressed', String(!onCategory));
+    ownedButton.classList.toggle('is-active', tab === 'owned');
+    ownedButton.setAttribute('aria-pressed', String(tab === 'owned'));
+    gearButton.classList.toggle('is-active', tab === 'gear');
+    gearButton.setAttribute('aria-pressed', String(tab === 'gear'));
   }
 
   /** 칸 하나의 표시(고름·입어 봄·보유·착용 중)와 마우스를 올렸을 때 뜨는 이름 */
@@ -484,7 +541,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     button.classList.toggle('is-trying', tryingOn(itemId));
     button.classList.toggle('is-equipped', equipped);
     button.classList.toggle('is-owned', owned && !equipped);
-    const { name, note } = cashDetail({ id: itemId, name: nameOf(itemId) }, { owned, equipped });
+    const { name, note } = cashDetail({ id: itemId, name: nameOf(itemId) }, { owned, equipped, price: priceOf(itemId) });
     button.title = `${name} · ${note}`;
     button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-pressed', String(itemId === selectedId));
@@ -513,7 +570,11 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     button.addEventListener('blur', leave);
     button.addEventListener('click', () => {
       selectedId = item.id;
-      trying = equipCash(trying, item.id);
+      // 못 드는 무기는 입혀 보면 직업 무기로 돌아가 보여서 입혀 보지 않는다
+      if (isEquipItem(item.id)) {
+        if (state && canWear(state.gear.path, item.id)) tryingGear = equipGear(tryingGear, item.id);
+      }
+      else trying = equipCash(trying, item.id);
       if (!hintSeen) {
         hintSeen = true;
         rememberTryOnHint();
@@ -550,6 +611,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     if (loading === 'loading' && visible.length === 0) message = '목록을 받는 중…';
     else if (loading === 'error') message = '목록을 받지 못했어요. 부위를 다시 고르면 다시 받아요';
     else if (visible.length === 0 && tab === 'owned' && !query.trim()) message = '아직 산 아이템이 없어요';
+    else if (visible.length === 0 && tab === 'gear') message = query.trim() ? `‘${query.trim()}’ 장비가 없어요` : '';
     else if (visible.length === 0) {
       message = query.trim() ? `‘${query.trim()}’ 아이템이 없어요` : '판매 중인 상품이 없어요';
       showArt = !query.trim();
@@ -592,7 +654,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   function openConfirm() {
     if (selectedId === null || problem(selectedId) !== null || owns(selectedId)) return;
     confirmName.textContent = nameOf(selectedId);
-    confirmPrice.textContent = `${won(cashPrice(selectedId) ?? 0)} 메소에 살까요?`;
+    confirmPrice.textContent = `${won(priceOf(selectedId))} 메소에 살까요?`;
     const image = icons.get(selectedId);
     confirmIcon.replaceChildren(...(image ? [image.cloneNode() as HTMLImageElement] : []));
     confirm.hidden = false;
@@ -602,7 +664,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   function openCategories() {
     categories.hidden = false;
     picker.setAttribute('aria-expanded', 'true');
-    (categoryButtons.get(tab === 'owned' ? lastSlot : tab) ?? categories.querySelector('button'))?.focus();
+    (categoryButtons.get(tab === 'owned' || tab === 'gear' ? lastSlot : tab) ?? categories.querySelector('button'))?.focus();
   }
 
   function closeCategories() {
@@ -669,6 +731,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     buttons[(index + step + buttons.length) % buttons.length]?.focus();
   });
   ownedButton.addEventListener('click', () => selectTab('owned'));
+  gearButton.addEventListener('click', () => selectTab('gear'));
   // 부위 목록 밖을 누르면 닫는다. 부위 버튼을 다시 누른 것은 버튼이 직접 닫는다
   screen.addEventListener('pointerdown', (event) => {
     const target = event.target as Node;
@@ -706,6 +769,14 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   buy.addEventListener('click', openConfirm);
   wear.addEventListener('click', () => {
     if (selectedId === null || !owns(selectedId)) return;
+    if (isEquipItem(selectedId)) {
+      const slot = equipSlotOf(selectedId)!;
+      if (wearing(selectedId)) {
+        tryingGear = unequipGear(tryingGear, slot);
+        handlers.onUnequipGear(slot);
+      } else handlers.onEquipGear(selectedId);
+      return;
+    }
     const slot = cashSlotOf(selectedId)!;
     if (wearing(selectedId)) {
       // 입어 보기 층에 같은 아이템이 남아 있으면 벗어도 미리보기에서 안 벗겨진다
@@ -716,6 +787,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   reset.addEventListener('click', () => {
     selectedId = null;
     trying = {};
+    tryingGear = {};
     renderGrid();
     renderPick();
   });
@@ -725,7 +797,9 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   });
   confirmOk.addEventListener('click', () => {
     confirm.hidden = true;
-    if (selectedId !== null && problem(selectedId) === null) handlers.onBuy(selectedId);
+    if (selectedId === null || problem(selectedId) !== null) return;
+    if (isEquipItem(selectedId)) handlers.onBuyGear(selectedId);
+    else handlers.onBuy(selectedId);
   });
   screen.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
@@ -745,6 +819,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       selectedId = null;
       hoveredId = null;
       trying = {};
+      tryingGear = {};
       if (genderChanged) page = 0;
       dressUp();
       screen.hidden = false;

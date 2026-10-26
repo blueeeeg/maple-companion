@@ -37,6 +37,14 @@ describe('같은 일은 한 번만', () => {
     expect(advancement('a', 2)).not.toBe(choice(10));
   });
 
+  it('장비 드롭은 캐릭터·아이템마다 하나다', () => {
+    const drop = (characterId: string, itemId: number) =>
+      describeAlert({ kind: 'equip-drop', characterId, characterName: '단풍이', itemId, itemName: '자쿰의 투구', bossName: '자쿰' });
+    expect(drop('a', 1002357).key).not.toBe(drop('a', 1003112).key);
+    expect(drop('a', 1002357).key).not.toBe(drop('b', 1002357).key);
+    expect(drop('a', 1002357).body).toContain('자쿰의 투구');
+  });
+
   it('2차 갈래 고르기는 캐릭터마다 하나이고 전직관 이름을 적는다', () => {
     const alert = describeAlert({ kind: 'branch-choice', characterId: 'a', characterName: '바다', level: 30, instructor: '카이린' });
     expect(alert.key).toBe('branch-choice:a');

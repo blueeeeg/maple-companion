@@ -27,7 +27,9 @@ export interface StatWindowState {
   canChangeJob: boolean;
   /** 갈래를 바꾸는 값. 갈래 칸이 없던 캐릭터의 한 번은 0 이다 */
   jobChangePrice: number;
-  /** 맵 캐릭터와 같은 모습(캐시 아이템 포함) */
+  /** 장비 컬렉션에서 모은 칸과 이 캐릭터가 모을 수 있는 칸 */
+  collection: { owned: number; total: number };
+  /** 맵 캐릭터와 같은 모습(컬렉션 장비·캐시 아이템 포함) */
   look: number[];
   standAction: string;
 }
@@ -36,6 +38,8 @@ export interface StatWindowHandlers {
   onClose(): void;
   /** 「직업 바꾸기」. 전직관 대화를 연다 */
   onChangeJob(): void;
+  /** 「장비」 줄. 장비 창을 연다 */
+  onOpenEquip(): void;
 }
 
 export interface StatWindow {
@@ -62,7 +66,7 @@ const CLOSE_ART = {
 };
 
 type Page = 'summary' | 'advancements';
-type RowKey = 'level' | 'job' | 'exp' | 'hunts' | 'bosses' | 'meso' | 'advancement';
+type RowKey = 'level' | 'job' | 'exp' | 'hunts' | 'bosses' | 'meso' | 'equip' | 'advancement';
 
 const number = (value: number) => Math.floor(value).toLocaleString();
 
@@ -101,6 +105,10 @@ function summaryValues(state: StatWindowState): Record<RowKey, { text: string; t
       ? { text: `${number(total)}번 · ${strongest.name}`, title: `지금까지 잡은 가장 센 보스는 ${strongest.name}` }
       : { text: '아직 없음' },
     meso: { text: number(state.meso) },
+    equip: {
+      text: `장비 컬렉션 ${state.collection.owned}/${state.collection.total}`,
+      title: '눌러서 장비 창 열기. 보스 드롭·레벨 선물·장비 상점으로 모은다',
+    },
     advancement: {
       // 「직업 바꾸기」 버튼이 붙으면 칸이 좁아 날짜를 월-일로 줄인다
       text:
@@ -119,6 +127,7 @@ const SUMMARY_LABELS: [RowKey, string][] = [
   ['hunts', '사냥'],
   ['bosses', '보스'],
   ['meso', '메소'],
+  ['equip', '장비'],
   ['advancement', '전직'],
 ];
 
@@ -193,7 +202,11 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
         const detail = addRow(
           key,
           label,
-          key === 'advancement' ? { run: () => setPage('advancements'), label: '전직 기록 보기' } : undefined,
+          key === 'advancement'
+            ? { run: () => setPage('advancements'), label: '전직 기록 보기' }
+            : key === 'equip'
+              ? { run: handlers.onOpenEquip, label: '장비 창 열기' }
+              : undefined,
         );
         if (key === 'meso') {
           detail.className = 'stat-meso';

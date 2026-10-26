@@ -1,6 +1,7 @@
 import { normalizeAppearance } from './appearance';
 import { normalizeReservedBoss } from './bossChallenge';
 import { normalizeCashData } from './cashShop';
+import { mergeEquipPity, normalizeEquipData } from './equipment';
 import {
   type Character,
   type JobChange,
@@ -36,6 +37,8 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       ...character,
       appearance,
       ...normalizeCashData(character),
+      // 장비 컬렉션이 생기기 전 저장은 빈 컬렉션이다. 레벨 선물은 켤 때 받는다
+      ...normalizeEquipData(character),
     };
     const { huntSkillId } = character;
     const raw = character as Partial<Character>;
@@ -170,6 +173,10 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
       // 갈래를 다른 쪽에서 가져오면 고른 사냥 스킬이 그 갈래 것이 아닐 수 있다
       huntSkillId: branchSide.jobBranch === winner.jobBranch ? winner.huntSkillId : null,
       wardrobe: [...new Set([...fromFile.wardrobe, ...fromLocal.wardrobe])],
+      // 컬렉션은 한쪽에서만 얻은 것도 남게 합친다. 입은 것은 메소처럼 더 자란 쪽 것이다
+      equipOwned: [...new Set([...fromFile.equipOwned, ...fromLocal.equipOwned])],
+      equipGifts: [...new Set([...fromFile.equipGifts, ...fromLocal.equipGifts])],
+      equipPity: mergeEquipPity(fromFile.equipPity, fromLocal.equipPity),
       advancedAt: mergeAdvancements(fromFile.advancedAt, fromLocal.advancedAt),
       jobHistory: mergeJobHistory(fromFile.jobHistory, fromLocal.jobHistory),
     };

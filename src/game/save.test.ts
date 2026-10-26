@@ -302,3 +302,64 @@ describe('2차 갈래 저장', () => {
     expect(mergeRosters(notYet, chose).characters[0].jobBranch).toBe('captain');
   });
 });
+
+describe('장비 컬렉션 저장', () => {
+  const ZAKUM_HELMET = 1002357;
+  const WORK_GLOVES = 1082002;
+  const GENESIS_SABER = 1302355;
+
+  it('컬렉션이 생기기 전 저장은 빈 컬렉션으로 읽는다', () => {
+    const { characters } = normalizeRoster({ characters: [{ id: 'a', name: '모험가', activeSeconds: 1 } as Character] });
+    expect(characters[0]).toMatchObject({ equipOwned: [], equipWorn: {}, equipPity: {}, equipGifts: [] });
+  });
+
+  it('모르는 아이템·깨진 값·가진 적 없는 착용·자리가 안 맞는 착용은 버린다', () => {
+    const saved = {
+      ...character('a'),
+      equipOwned: [ZAKUM_HELMET, WORK_GLOVES, 123, 'x', ZAKUM_HELMET],
+      equipWorn: { cap: ZAKUM_HELMET, glove: GENESIS_SABER, weapon: WORK_GLOVES, shoes: 1072375 },
+      equipPity: { 8820001: { rare: 7, veryRare: -1 }, 999: { rare: 3 }, 8800000: 'x' },
+      equipGifts: [1102166, 5],
+    } as unknown as Character;
+    const [read] = normalizeRoster({ characters: [saved] }).characters;
+    expect(read.equipOwned).toEqual([ZAKUM_HELMET, WORK_GLOVES]);
+    expect(read.equipWorn).toEqual({ cap: ZAKUM_HELMET });
+    expect(read.equipPity).toEqual({ 8820001: { rare: 7 } });
+    expect(read.equipGifts).toEqual([1102166]);
+  });
+
+  it('같은 캐릭터면 컬렉션·받은 선물은 합치고 입은 것은 더 자란 쪽, 천장은 더 센 쪽이다', () => {
+    const file = roster([
+      character('a', {
+        activeSeconds: 100,
+        equipOwned: [ZAKUM_HELMET],
+        equipWorn: { cap: ZAKUM_HELMET },
+        equipPity: { 8820001: { rare: 3 } },
+        equipGifts: [1102166],
+      }),
+    ]);
+    const local = roster([
+      character('a', {
+        activeSeconds: 50,
+        equipOwned: [WORK_GLOVES],
+        equipWorn: { glove: WORK_GLOVES },
+        equipPity: { 8820001: { rare: 5, veryRare: 2 } },
+        equipGifts: [1102031],
+      }),
+    ]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.equipOwned).toEqual([ZAKUM_HELMET, WORK_GLOVES]);
+    expect(merged.equipWorn).toEqual({ cap: ZAKUM_HELMET });
+    expect(merged.equipGifts).toEqual([1102166, 1102031]);
+    expect(merged.equipPity).toEqual({ 8820001: { rare: 5, veryRare: 2 } });
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
+  });
+
+  it('파일로 쓰고 다시 읽어도 같다', () => {
+    const saved = roster([character('a', { equipOwned: [ZAKUM_HELMET], equipWorn: { cap: ZAKUM_HELMET }, equipGifts: [ZAKUM_HELMET] })]);
+    expect(parseRoster(JSON.stringify(saved), null, 0).characters[0]).toMatchObject({
+      equipOwned: [ZAKUM_HELMET],
+      equipWorn: { cap: ZAKUM_HELMET },
+    });
+  });
+});

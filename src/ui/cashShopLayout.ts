@@ -55,14 +55,19 @@ const won = (meso: number) => meso.toLocaleString();
 
 /**
  * 미리보기 아래 한 줄에 보여 줄 아이템 이름과 값. 칸에는 아이콘만 두고 이름·값은 여기 한 번만 쓴다.
- * problem(살·입을 수 없는 까닭)은 고른 아이템에만 넘긴다
+ * problem(살·입을 수 없는 까닭)은 고른 아이템에만 넘긴다. 장비 상점 물건은 price 로 그 값을 넘긴다
  */
 export function cashDetail(
   item: { id: number; name: string },
-  { owned, equipped, problem = null }: { owned: boolean; equipped: boolean; problem?: string | null },
+  {
+    owned,
+    equipped,
+    problem = null,
+    price = cashPrice(item.id) ?? 0,
+  }: { owned: boolean; equipped: boolean; problem?: string | null; price?: number },
 ): CashDetail {
   if (problem) return { name: item.name, note: problem, tone: 'problem' };
   if (equipped) return { name: item.name, note: '착용 중', tone: 'equipped' };
   if (owned) return { name: item.name, note: '보유', tone: 'owned' };
-  return { name: item.name, note: `${won(cashPrice(item.id) ?? 0)} 메소`, tone: 'price' };
+  return { name: item.name, note: `${won(price)} 메소`, tone: 'price' };
 }

@@ -1,5 +1,6 @@
 import { type Appearance, DEFAULT_APPEARANCE } from './appearance';
 import { type CashEquipped, composeLook } from './cashShop';
+import { type EquipPity, type EquipWorn, wearEquipment } from './equipment';
 import {
   JOB_BRANCHES,
   type JobBranchId,
@@ -50,6 +51,14 @@ export interface Character {
   wardrobe: number[];
   /** 지금 입고 있는 캐시 아이템. 직업·차수 장비 겉모습을 자리별로 덮는다 */
   cashEquipped: CashEquipped;
+  /** 장비 컬렉션에서 모은 아이템 ID(보스 드롭·레벨 선물·장비 상점) */
+  equipOwned: number[];
+  /** 자리마다 입은 컬렉션 장비. 직업 장비를 바꾸고, 같은 자리 캐시 아이템에는 가린다 */
+  equipWorn: EquipWorn;
+  /** 보스(몹 ID)마다 등급별로 드롭 없이 잡은 수. 천장에 닿으면 하나를 준다 */
+  equipPity: EquipPity;
+  /** 받은 레벨 선물 아이템 ID. 같은 선물을 두 번 주지 않는다 */
+  equipGifts: number[];
   /** 스킬창에서 고른 사냥 스킬. null 이면 자동(차수마다 정해 둔 스킬). 겉모습만 바뀌고 보상은 같다 */
   huntSkillId: number | null;
   /** 보스 도전 창에서 지정한 다음 보스(몹 ID). 다음 보스 차례에 무작위 대신 이 보스가 나오고, 잡으면 지운다. 보상은 같다 */
@@ -122,6 +131,10 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     bossChargeSeconds: 0,
     wardrobe: [],
     cashEquipped: {},
+    equipOwned: [],
+    equipWorn: {},
+    equipPity: {},
+    equipGifts: [],
     huntSkillId: null,
     reservedBossId: null,
     bossBag: [],
@@ -249,7 +262,7 @@ export interface CharacterSummary {
 }
 
 /**
- * 직업·차수 장비에 입고 있는 캐시 아이템을 덧입힌 모습. 맵·캐릭터 선택 화면이 같은 모습을 그린다.
+ * 직업·차수 장비에 컬렉션 장비를 입히고 그 위에 캐시 아이템을 덧입힌 모습. 맵·캐릭터 선택 화면이 같은 모습을 그린다.
  * 공격 스킬은 스킬창에서 고른 것이고, 못 고른 상태면 자동 스킬 그대로다
  */
 export function characterJob(character: Character, level: number): JobView {
@@ -257,7 +270,7 @@ export function characterJob(character: Character, level: number): JobView {
   const job = describeJob(level, path, character.appearance);
   return {
     ...job,
-    look: composeLook(job.look, character.cashEquipped),
+    look: composeLook(wearEquipment(job.look, character.equipWorn, path), character.cashEquipped),
     skillId: huntSkill(path, job.tier, character.huntSkillId),
     autoSkillId: job.skillId,
   };

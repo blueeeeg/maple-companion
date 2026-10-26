@@ -2,12 +2,14 @@ import type { Settings } from './settings';
 
 /**
  * 창을 봐야 하는 일. 직업 고르기와 2차 갈래 고르기는 대화가 답을 기다리고, 2차 이상 전직은 축하 대화가 「확인」을 기다린다.
- * 레벨업·보스는 알리지 않는다. 레벨업은 초반에 몇 분마다 오고, 보스는 창이 숨어 있으면 장면 없이 정산된다
+ * 레벨업·보스는 알리지 않는다. 레벨업은 초반에 몇 분마다 오고, 보스는 창이 숨어 있으면 장면 없이 정산된다.
+ * 보스가 떨어뜨린 컬렉션 장비는 드물어서 아이템마다 한 번 알린다
  */
 export type AlertEvent =
   | { kind: 'job-choice'; characterId: string; characterName: string; level: number }
   | { kind: 'branch-choice'; characterId: string; characterName: string; level: number; instructor: string }
-  | { kind: 'advancement'; characterId: string; characterName: string; tier: number; jobTitle: string };
+  | { kind: 'advancement'; characterId: string; characterName: string; tier: number; jobTitle: string }
+  | { kind: 'equip-drop'; characterId: string; characterName: string; itemId: number; itemName: string; bossName: string };
 
 export interface Alert {
   /** 같은 일을 두 번 알리지 않으려고 쓴다 */
@@ -36,6 +38,13 @@ export function describeAlert(event: AlertEvent): Alert {
       key: `branch-choice:${event.characterId}`,
       title: `${event.characterName} 전직 가능!`,
       body: `Lv.${event.level} 달성. ${event.instructor}에게 2차 전직 갈래를 골라 알려 주세요`,
+    };
+  }
+  if (event.kind === 'equip-drop') {
+    return {
+      key: `equip-drop:${event.characterId}:${event.itemId}`,
+      title: `${event.characterName} 장비 획득!`,
+      body: `${event.bossName} 처치 · ${event.itemName} 획득. 장비 창에서 입을 수 있어요`,
     };
   }
   return {

@@ -32,6 +32,15 @@ import {
 import { bossTurn, settleBossFight } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
+import {
+  awardBossDrops,
+  buyEquipItem,
+  collectionProgress,
+  equipGear,
+  equipItemName,
+  grantLevelGifts,
+  unequipGear,
+} from './game/equipment';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
 import { JOB_BRANCHES, type JobBranchId, advancementTier, describeJob, jobPath, pathTier } from './game/jobs';
 import { levelInfo } from './game/progression';
@@ -65,6 +74,7 @@ import { createScene } from './scene/scene';
 import { frameOffset, viewportFor } from './scene/viewport';
 import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui/bossWindow';
 import { type CashShopState, createCashShop } from './ui/cashShop';
+import { type EquipWindowState, createEquipWindow } from './ui/equipWindow';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
 import { instructorName } from './ui/npcDialog';
@@ -110,10 +120,17 @@ const firstSnapshot = await activity.snapshot();
 let lastGlobalActiveSeconds = firstSnapshot.activeSeconds;
 const gameData = await loadGameData(firstSnapshot.activeSeconds);
 const roster = gameData.roster;
+/** 아직 화면에 알리지 않은 지금 캐릭터의 레벨 선물. 맵이 보일 때 알린다 */
+let pendingGifts: number[] = [];
+// 장비 컬렉션이 생기기 전 캐릭터도 이미 넘은 레벨 선물을 켤 때 한 번 받는다
+roster.characters.forEach((each) => {
+  const gifts = grantLevelGifts(each, levelInfo(characterXp(each)).level, jobPath(each.jobLine, each.jobBranch));
+  if (each.id === roster.selectedId) pendingGifts = gifts;
+});
 writeRoster(roster);
 let settings = gameData.settings;
 
-let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' | 'boss' | 'music' =selectedCharacter(roster) ? 'map' : 'select';
+let screen: 'map' | 'select' | 'shop' | 'settings' | 'stat' | 'skill' | 'boss' | 'music' | 'equip' =selectedCharacter(roster) ? 'map' : 'select';
 let town: Town | null = null;
 let townLoading = false;
 let townChangedAt = Date.now();
@@ -188,10 +205,13 @@ const hud = createHud(root, {
   onOpenStat: openStat,
   onOpenSkill: openSkill,
   onOpenBoss: openBoss,
+  onOpenEquip: openEquip,
 });
 
 const characterSelect = createCharacterSelect(root, {
   onStart(id) {
+    // 앞 캐릭터의 레벨 선물 알림이 다음 캐릭터 화면에 뜨지 않게 한다
+    if (id !== roster.selectedId) pendingGifts = [];
     roster.selectedId = id;
     writeRoster(roster);
     screen = 'map';
@@ -238,6 +258,21 @@ const cashShop = createCashShop(root, {
   onUnequip(slot) {
     changeWardrobe((character) => (character.cashEquipped = unequipCash(character.cashEquipped, slot)));
   },
+  onBuyGear(itemId) {
+    changeWardrobe((character) => {
+      if (buyEquipItem(character, itemId, jobPath(character.jobLine, character.jobBranch))) {
+        character.equipWorn = equipGear(character.equipWorn, itemId);
+      }
+    });
+  },
+  onEquipGear(itemId) {
+    changeWardrobe((character) => {
+      if (character.equipOwned.includes(itemId)) character.equipWorn = equipGear(character.equipWorn, itemId);
+    });
+  },
+  onUnequipGear(slot) {
+    changeWardrobe((character) => (character.equipWorn = unequipGear(character.equipWorn, slot)));
+  },
   onClose() {
     screen = 'map';
     cashShop.hide();
@@ -256,7 +291,18 @@ const settingsScreen = createSettingsScreen(root, {
   onCancel: closeSettings,
 });
 
-const statWindow = createStatWindow(root, { onClose: closeInfoWindow, onChangeJob: openJobChange });
+const statWindow = createStatWindow(root, { onClose: closeInfoWindow, onChangeJob: openJobChange, onOpenEquip: openEquip });
+const equipWindow = createEquipWindow(root, {
+  onEquip(itemId) {
+    changeGear((character) => {
+      if (character.equipOwned.includes(itemId)) character.equipWorn = equipGear(character.equipWorn, itemId);
+    });
+  },
+  onUnequip(slot) {
+    changeGear((character) => (character.equipWorn = unequipGear(character.equipWorn, slot)));
+  },
+  onClose: closeInfoWindow,
+});
 const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
 const bossWindow = createBossWindow(root, { onReserve: reserveBoss, onChallenge: challengeBoss, onClose: closeInfoWindow });
 const musicWindow = createMusicWindow(root, {
@@ -377,6 +423,7 @@ function cashShopState(character: Character): CashShopState {
     meso: character.meso,
     wardrobe: character.wardrobe,
     equipped: character.cashEquipped,
+    gear: { path: jobPath(character.jobLine, character.jobBranch), owned: character.equipOwned, worn: character.equipWorn },
   };
 }
 
@@ -408,9 +455,42 @@ function statState(character: Character): StatWindowState {
     jobHistory: character.jobHistory,
     canChangeJob: character.jobBranch !== null && job.tier >= 2,
     jobChangePrice: character.freeJobChange ? 0 : JOB_CHANGE_MESO,
+    collection: collectionProgress(character.equipOwned, jobPath(character.jobLine, character.jobBranch)),
     look: job.look,
     standAction: job.standAction,
   };
+}
+
+function equipState(character: Character): EquipWindowState {
+  const job = characterJob(character, levelInfo(characterXp(character)).level);
+  return {
+    path: jobPath(character.jobLine, character.jobBranch),
+    owned: character.equipOwned,
+    worn: character.equipWorn,
+    cash: character.cashEquipped,
+    pity: character.equipPity,
+    look: job.look,
+    standAction: job.standAction,
+  };
+}
+
+/** 장비 창에서 입고 벗은 것을 저장하고 창을 다시 그린다 */
+function changeGear(change: (character: Character) => void): void {
+  const character = selectedCharacter(roster);
+  if (!character) return;
+  change(character);
+  writeRoster(roster);
+  equipWindow.update(equipState(character));
+}
+
+/** 캐릭터 정보창의 「장비」 줄과 HUD ⚙️ 메뉴 「장비」가 연다. 다른 정보창처럼 맵을 멈춘다 */
+function openEquip(): void {
+  const character = selectedCharacter(roster);
+  if (!character || (screen !== 'map' && screen !== 'stat')) return;
+  statWindow.hide();
+  screen = 'equip';
+  syncRunning();
+  equipWindow.show(equipState(character));
 }
 
 function skillState(character: Character): SkillWindowState {
@@ -536,6 +616,7 @@ function closeInfoWindow(): void {
   statWindow.hide();
   skillWindow.hide();
   bossWindow.hide();
+  equipWindow.hide();
   syncRunning();
   void tick();
 }
@@ -630,8 +711,13 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
     character.meso += meso;
     character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
   } else ({ xp, meso } = settleBossFight(character, pace, reward, boss, false));
+  const drops = awardBossDrops(character, boss.id, jobPath(character.jobLine, character.jobBranch), false);
   writeRoster(roster);
   hud.notify(`보스 ${boss.name} 처치 · EXP +${Math.round(xp).toLocaleString()} · 메소 +${meso.toLocaleString()}`);
+  announceDrops(
+    character,
+    drops.map((itemId) => ({ itemId, bossName: boss.name })),
+  );
   void tick();
   return meso;
 }
@@ -680,7 +766,7 @@ function syncRunning(): void {
   document.documentElement.toggleAttribute('data-hidden', !isShown());
   if (tickShown !== null && tickShown !== isShown()) scheduleTick();
   // 정보창·스킬창도 캐시샵처럼 맵을 멈추는 창이라 BGM 도 캐시샵과 같이 다룬다
-  const bgmScreen = screen === 'stat' || screen === 'skill' || screen === 'boss' ? 'shop' : screen;
+  const bgmScreen = screen === 'stat' || screen === 'skill' || screen === 'boss' || screen === 'equip' ? 'shop' : screen;
   bgm.setEnabled(shouldPlayBgm({ muted: roster.muted, volume: settings.bgmVolume, screen: bgmScreen, windowVisible: isShown() }));
 }
 
@@ -744,6 +830,26 @@ function alertUser(event: AlertEvent): void {
   if (firstAlert(sentAlerts, alert.key)) notifier.notify(alert.title, alert.body);
 }
 
+/** 보스가 떨어뜨린 컬렉션 장비를 화면 위쪽에 띄우고, 창을 안 보고 있으면 아이템마다 한 번 OS 알림으로 알린다 */
+function announceDrops(character: Character, drops: { itemId: number; bossName: string }[]): void {
+  if (drops.length === 0) return;
+  const bossNames = [...new Set(drops.map((drop) => drop.bossName))].join('·');
+  hud.notifyItems(
+    drops.map(({ itemId }) => ({ itemId, name: equipItemName(itemId) })),
+    `${bossNames} 처치`,
+  );
+  drops.forEach(({ itemId, bossName }) =>
+    alertUser({
+      kind: 'equip-drop',
+      characterId: character.id,
+      characterName: character.name,
+      itemId,
+      itemName: equipItemName(itemId),
+      bossName,
+    }),
+  );
+}
+
 function handleLevelUp(character: Character, from: number, to: number): void {
   scene.celebrate('LEVEL UP!');
   const who = { characterId: character.id, characterName: character.name };
@@ -786,6 +892,15 @@ function settleMissedHunts(character: Character, count: number, level: number, p
   Object.entries(result.kills).forEach(([name, kills]) => {
     character.monsterBook[name] = (character.monsterBook[name] ?? 0) + kills;
   });
+  // 비운 사이 잡은 보스도 진짜 처치라 장비를 굴린다
+  const path = jobPath(character.jobLine, character.jobBranch);
+  const drops = Object.entries(result.bosses).flatMap(([name, kills]) => {
+    const boss = BOSSES.find((each) => each.name === name);
+    if (!boss) return [];
+    return Array.from({ length: kills }, () => awardBossDrops(character, boss.id, path, false))
+      .flat()
+      .map((itemId) => ({ itemId, bossName: name }));
+  });
   writeRoster(roster);
   const bosses = Object.entries(result.bosses);
   const bossCount = bosses.reduce((sum, [, kills]) => sum + kills, 0);
@@ -793,6 +908,7 @@ function settleMissedHunts(character: Character, count: number, level: number, p
   hud.notify(
     `비운 사이 ${count - bossCount}마리 사냥${bossText} · EXP +${Math.round(result.xp).toLocaleString()} · 메소 +${result.meso.toLocaleString()}`,
   );
+  announceDrops(character, drops);
 }
 
 async function tick(): Promise<void> {
@@ -818,6 +934,12 @@ async function tick(): Promise<void> {
   if (noteAdvancements(character.advancedAt, job.tier, Date.now()).length > 0) writeRoster(roster);
   // 스킬창을 열 때 아이콘을 기다리지 않게 켤 때와 직업·차수가 바뀔 때 뒤에서 받아 둔다
   const path = jobPath(character.jobLine, character.jobBranch);
+  // 레벨이 오르거나 2차 갈래를 정하면 그 레벨의 장비 선물을 받는다
+  const gifts = grantLevelGifts(character, info.level, path);
+  if (gifts.length > 0) {
+    pendingGifts = [...pendingGifts, ...gifts];
+    writeRoster(roster);
+  }
   const skillBookKey = `${path}|${job.tier}`;
   if (skillBookKey !== prefetchedSkillBook) {
     prefetchedSkillBook = skillBookKey;
@@ -837,6 +959,7 @@ async function tick(): Promise<void> {
   if (screen === 'stat') statWindow.update(statState(character));
   if (screen === 'skill') skillWindow.update(skillState(character));
   if (screen === 'boss') bossWindow.update(bossState(character));
+  if (screen === 'equip') equipWindow.update(equipState(character));
   if (screen !== 'map') return;
 
   if (lastLevel?.characterId === character.id && info.level > lastLevel.level) {
@@ -850,6 +973,13 @@ async function tick(): Promise<void> {
 
   scene.setJob(job);
   scene.setName(character.name);
+  if (pendingGifts.length > 0 && isShown()) {
+    hud.notifyItems(
+      pendingGifts.map((itemId) => ({ itemId, name: equipItemName(itemId) })),
+      '레벨 선물',
+    );
+    pendingGifts = [];
+  }
   hud.render({
     level: info.level,
     jobTitle: job.title,

@@ -2442,9 +2442,9 @@ body {
 .stat-together {
   position: absolute;
   left: 110px;
-  top: 27px;
+  top: 26px;
   width: 150px;
-  height: 34px;
+  height: 30px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -2470,18 +2470,19 @@ body {
   text-shadow: 0 1px 0 #ffffff;
 }
 
-/* 원작 항목 칸(16 높이, 18 간격)과 같은 칸 일곱 줄. 원작 판의 항목 이름이 비치지 않게 흰 바탕으로 덮는다 */
+/* 원작 항목 칸(16 높이)과 같은 칸 여덟 줄. 장비 줄이 들어갈 자리를 내려고 간격을 1px 로 줄이고 판 아래까지 쓴다.
+   원작 판의 항목 이름이 비치지 않게 흰 바탕으로 덮는다 */
 .stat-rows {
   position: absolute;
   left: 109px;
-  top: 66px;
+  top: 58px;
   width: 155px;
-  height: 127px;
+  height: 137px;
   box-sizing: border-box;
   display: grid;
   grid-template-columns: 45px minmax(0, 1fr);
   grid-auto-rows: 16px;
-  row-gap: 2px;
+  row-gap: 1px;
   align-content: start;
   margin: 0;
   padding: 2px 4px 0 1px;
@@ -4213,4 +4214,493 @@ body {
 /* BGM 고르기의 고른 칸은 원작 재생 중 칸의 하늘색 글자 */
 .music-window .maple-button.has-skin[aria-checked='true'] {
   color: #9fe7ff;
+}
+
+/* ── 장비 창 (ui/equipWindow.ts) ─────────────────────────────
+   원작 장비창(UIWindow2.img/Equip/character) 틀을 294×212 로 늘려 깔고(제목·귀퉁이는 원본 그대로), 왼쪽에 캐릭터 정보창의
+   캐릭터 칸(97×165)·이름표(89×19), 오른쪽에 장비창 흰 판(172×262)의 위쪽과 아래 버튼 띠(26)를 이어 178 높이로 쓴다 */
+.equip-window {
+  position: absolute;
+  z-index: 0;
+  left: 33px;
+  top: 9px;
+  width: 294px;
+  height: 212px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.73);
+  box-shadow: inset 0 0 0 1px #cccccc;
+}
+
+.equip-window.has-frame-art {
+  border-radius: 0;
+  background: var(--frame) no-repeat;
+  box-shadow: none;
+  image-rendering: var(--art-rendering);
+}
+
+.equip-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 20px;
+  margin: 0;
+  color: #ffd23f;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* 원작 창 그림에 「EQUIPMENT INVENTORY」 제목이 들어 있다 */
+.has-frame-art > .equip-title {
+  color: transparent;
+}
+
+.equip-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 2;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-size: 9px;
+  line-height: 15px;
+}
+
+.equip-close.has-art {
+  width: 13px;
+  height: 13px;
+  image-rendering: var(--art-rendering);
+}
+
+.equip-stage {
+  position: absolute;
+  left: 8px;
+  top: 24px;
+  width: 97px;
+  height: 165px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: radial-gradient(ellipse 18px 3px at 48px 127px, rgba(0, 0, 0, 0.3), transparent), #ffffff;
+}
+
+.equip-stage.has-art {
+  border-radius: 0;
+  background: var(--stage) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+/* 캐릭터 정보창과 같이 발을 원작 그림자 가운데(칸 안 48, 127)에 둔다. 자쿰의 투구처럼 큰 장비는 칸 밖이 잘린다 */
+.equip-stage img {
+  position: absolute;
+  left: calc(48px - var(--half-width, 0px));
+  top: calc(127px - var(--half-height, 0px));
+  image-rendering: var(--art-rendering);
+}
+
+.equip-count {
+  position: absolute;
+  left: 12px;
+  top: 166px;
+  width: 89px;
+  height: 19px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #22aadd;
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 19px;
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0, 60, 90, 0.45);
+}
+
+.equip-count.has-art {
+  border-radius: 0;
+  background: var(--plate) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.equip-board {
+  position: absolute;
+  left: 113px;
+  top: 24px;
+  width: 172px;
+  height: 178px;
+  border-radius: 4px;
+  background: #f3f3f3;
+}
+
+.equip-board.has-art {
+  border-radius: 0;
+  background: none;
+}
+
+.equip-board.has-art::before,
+.equip-board.has-art::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  width: 172px;
+  background: var(--board) no-repeat;
+  image-rendering: var(--art-rendering);
+}
+
+.equip-board.has-art::before {
+  top: 0;
+  height: 152px;
+}
+
+.equip-board.has-art::after {
+  bottom: 0;
+  height: 26px;
+  background-position: 0 100%;
+}
+
+.equip-filters {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+}
+
+.equip-filter {
+  flex: 1;
+  height: 14px;
+  padding: 0;
+  border: 1px solid #b9b9b9;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(#f4f4f4, #d8d8d8);
+  color: #666666;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.equip-filter.is-active {
+  border-color: #3c8fc4;
+  background: linear-gradient(#6cc0ee, #2b8ccb);
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 50, 90, 0.4);
+}
+
+.equip-filter:focus-visible {
+  outline: 1px solid #ffb21f;
+}
+
+/* 장비창 칸(32×32, 1 간격)과 같은 칸 다섯 줄 × 세 줄 */
+.equip-grid {
+  position: absolute;
+  left: 3px;
+  top: 21px;
+  display: grid;
+  grid-template-columns: repeat(5, 32px);
+  grid-auto-rows: 32px;
+  gap: 1px;
+  padding: 1px;
+  width: 166px;
+  height: 100px;
+  box-sizing: border-box;
+}
+
+.equip-cell {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #a9a9a9;
+  border-radius: 2px;
+  background: linear-gradient(#e2e2e2, #c9c9c9);
+}
+
+.equip-cell:hover,
+.equip-cell:focus-visible {
+  border-color: #6aa9d6;
+  outline: none;
+}
+
+.equip-cell.is-selected {
+  border-color: #ff9a1f;
+  box-shadow: inset 0 0 0 1px #ffd23f;
+}
+
+.equip-cell-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.equip-cell-icon img {
+  display: block;
+  image-rendering: var(--art-rendering);
+}
+
+/* 아직 없는 칸은 원작 장비창의 빈 자리처럼 그림자만 보인다 */
+.equip-cell.is-locked .equip-cell-icon img {
+  filter: brightness(0);
+  opacity: 0.28;
+}
+
+.equip-cell-mark {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  display: none;
+  min-width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 9px;
+  text-align: center;
+  color: #ffffff;
+}
+
+.equip-cell.is-equipped .equip-cell-mark {
+  display: block;
+  background: #2b8ccb;
+}
+
+.equip-cell.is-equipped .equip-cell-mark::after {
+  content: 'E';
+}
+
+/* 입었지만 같은 자리 캐시 아이템에 가려 안 보이는 칸 */
+.equip-cell.is-covered .equip-cell-mark {
+  background: #b07a12;
+}
+
+.equip-cell.is-covered .equip-cell-mark::after {
+  content: 'C';
+}
+
+.equip-detail {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 124px;
+  height: 26px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: #444444;
+}
+
+.equip-detail-name,
+.equip-detail-note {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.equip-detail-name {
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 13px;
+}
+
+.equip-detail-note {
+  font-size: 9px;
+  line-height: 12px;
+  color: #777777;
+}
+
+.equip-detail[data-tone='hint'] .equip-detail-name {
+  font-weight: 700;
+  color: #777777;
+}
+
+.equip-detail[data-tone='equipped'] .equip-detail-note {
+  color: #1f7fbf;
+}
+
+.equip-detail[data-tone='covered'] .equip-detail-note {
+  color: #b07a12;
+}
+
+.equip-detail[data-tone='owned'] .equip-detail-note {
+  color: #3e8a2e;
+}
+
+.equip-detail[data-tone='locked'] .equip-detail-note {
+  color: #c0532a;
+}
+
+.equip-actions {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 4px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.equip-wear {
+  width: 50px;
+  height: 18px;
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(#6cc0ee, #2b8ccb);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.equip-wear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.equip-page-previous {
+  margin-left: auto;
+}
+
+.equip-actions .art-button {
+  width: 22px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.14);
+  font-size: 8px;
+}
+
+/* 원작 넘김 버튼(18×13) 원본 크기 */
+.equip-actions .art-button.has-art {
+  width: 18px;
+  height: 13px;
+}
+
+.equip-actions .art-button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.equip-page-number {
+  min-width: 30px;
+  color: #555555;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* 컬렉션 장비를 얻었을 때 잠깐 뜨는 알림. 원작 아이템 획득 알림처럼 칸에 든 아이콘과 노란 이름이다.
+   보스전에서 보스 게이지·얼굴(위에서 65px 까지)을 가리지 않게 그 아래에 둔다 */
+.hud-item {
+  position: absolute;
+  left: 50%;
+  top: 68px;
+  z-index: 3;
+  max-width: calc(100% - 24px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  translate: -50% 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.7);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  animation: hud-item-in 0.25s ease-out;
+}
+
+.hud-item[hidden] {
+  display: none;
+}
+
+.hud-item-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #8a8a8a;
+  border-radius: 3px;
+  background: linear-gradient(#e2e2e2, #bdbdbd);
+}
+
+.hud-item-icon img {
+  image-rendering: var(--art-rendering);
+}
+
+.hud-item-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hud-item-text strong {
+  overflow: hidden;
+  color: #ffe36b;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 0 #000000;
+}
+
+.hud-item-text small {
+  overflow: hidden;
+  color: #d8d8d8;
+  font-size: 9px;
+  line-height: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@keyframes hud-item-in {
+  from {
+    opacity: 0;
+    translate: -50% -6px;
+  }
+}
+
+/* 캐시샵 「장비」 버튼(장비 상점 탭). 「보유」 버튼과 같은 모양이다 */
+.shop-gear {
+  flex: none;
+  height: 19px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shop-gear.is-active {
+  background: rgba(255, 210, 63, 0.16);
+  color: #ffd23f;
+}
+
+.shop-gear:hover:not(.is-active) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.shop-gear:focus-visible {
+  outline: 1px solid #ffd23f;
+}
+
+.equip-cell.is-empty {
+  box-sizing: border-box;
+  opacity: 0.55;
 }

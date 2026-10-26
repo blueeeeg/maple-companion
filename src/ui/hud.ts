@@ -1,5 +1,5 @@
 import type { JobBranchId, JobLineId, JobPath } from '../game/jobs';
-import { cashShopUiUrl, wzImageUrl } from '../maple/api';
+import { cashShopUiUrl, itemIconUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry, loadedImage } from './art';
 import { PRACTICE_BANNER_URL } from './bossWindow';
 import { type GlyphBox, isQuickKeyBlue, keyOutBackground, keyOutFaint } from './glyph';
@@ -39,6 +39,7 @@ export interface HudHandlers {
   onOpenStat(): void;
   onOpenSkill(): void;
   onOpenBoss(): void;
+  onOpenEquip(): void;
 }
 
 export interface Hud {
@@ -57,9 +58,12 @@ export interface Hud {
   closeDialogs(): void;
   /** 연습전 동안 보스 게이지 아래에 원작 연습 모드 표시를 띄운다. null 이면 내린다 */
   setPractice(bossName: string | null): void;
+  /** 얻은 컬렉션 장비를 아이콘과 함께 화면 위쪽에 잠깐 띄운다. 맨 아래 알림 줄과 따로라 정산 알림과 같이 보인다 */
+  notifyItems(items: { itemId: number; name: string }[], source: string): void;
 }
 
 const NOTICE_MS = 4000;
+const ITEM_NOTICE_MS = 6000;
 
 /** StatusBar.img StatKey·SkillKey(28×20)에서 파란 버튼 안쪽만 본다. 바깥 3px 은 버튼 테두리·광택이다 */
 const QUICK_KEY_INSIDE = { x: 3, y: 3, width: 22, height: 14 };
@@ -121,6 +125,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     </header>
     <div class="hud-menu" role="menu" hidden>
       <button class="hud-mute" type="button" role="menuitem"></button>
+      <button class="hud-equip" type="button" role="menuitem">🛡 장비</button>
       <button class="hud-music" type="button" role="menuitem">🎵 BGM 고르기</button>
       <button class="hud-settings" type="button" role="menuitem">⚙️ 설정</button>
       <button class="hud-characters" type="button" role="menuitem">👤 캐릭터 선택</button>
@@ -130,6 +135,10 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <span class="exp-text"></span>
     </div>
     <div class="notice" aria-live="polite" hidden></div>
+    <div class="hud-item" role="status" hidden>
+      <span class="hud-item-icon"></span>
+      <span class="hud-item-text"><strong></strong><small></small></span>
+    </div>
     <div class="hud-practice" role="status" hidden>
       <span class="hud-practice-banner">PRACTICE MODE</span>
       <span class="hud-practice-text"></span>
@@ -151,6 +160,11 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   const expText = pick('.exp-text');
   const notice = pick('.notice');
   let noticeTimer: number | null = null;
+  const itemNotice = pick('.hud-item');
+  const itemIcon = pick('.hud-item-icon');
+  const itemName = pick('.hud-item-text strong');
+  const itemSource = pick('.hud-item-text small');
+  let itemTimer: number | null = null;
 
   advance.addEventListener('click', () => (branchChoice ? openBranch(branchChoice) : openChoice()));
 
@@ -175,6 +189,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       action();
     });
   menuItem('.hud-mute', handlers.onToggleMute);
+  menuItem('.hud-equip', handlers.onOpenEquip);
   menuItem('.hud-music', handlers.onOpenMusic);
   menuItem('.hud-settings', handlers.onOpenSettings);
   menuItem('.hud-characters', handlers.onOpenCharacterSelect);
@@ -236,6 +251,16 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     openJobChange: (offer, changeHandlers) => openJobChange(dialog, offer, changeHandlers),
     congratulate: (path, tier) => openAdvancementCongratulation(dialog, path, tier),
     closeDialogs: dialog.clear,
+    notifyItems(items, source) {
+      if (items.length === 0) return;
+      const [first] = items;
+      itemIcon.replaceChildren(loadedImage(itemIconUrl(first.itemId)));
+      itemName.textContent = items.length > 1 ? `${first.name} 외 ${items.length - 1}개 획득!` : `${first.name} 획득!`;
+      itemSource.textContent = `${source} · 장비 창에서 입을 수 있어요`;
+      itemNotice.hidden = false;
+      if (itemTimer !== null) window.clearTimeout(itemTimer);
+      itemTimer = window.setTimeout(() => (itemNotice.hidden = true), ITEM_NOTICE_MS);
+    },
     setPractice(bossName) {
       practice.hidden = bossName === null;
       if (bossName === null) return;
