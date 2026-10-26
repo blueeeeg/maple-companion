@@ -1,9 +1,10 @@
+import { isChairItem } from './chairs';
 import type { Settings } from './settings';
 
 /**
  * 창을 봐야 하는 일. 직업 고르기와 2차 갈래 고르기는 대화가 답을 기다리고, 2차 이상 전직은 축하 대화가 「확인」을 기다린다.
  * 레벨업·보스는 알리지 않는다. 레벨업은 초반에 몇 분마다 오고, 보스는 창이 숨어 있으면 장면 없이 정산된다.
- * 보스가 떨어뜨린 컬렉션 장비는 드물어서 아이템마다 한 번 알린다
+ * 보스가 떨어뜨린 컬렉션 장비·의자는 드물어서 아이템마다 한 번 알린다
  */
 export type AlertEvent =
   | { kind: 'job-choice'; characterId: string; characterName: string; level: number }
@@ -41,10 +42,11 @@ export function describeAlert(event: AlertEvent): Alert {
     };
   }
   if (event.kind === 'equip-drop') {
+    const chair = isChairItem(event.itemId);
     return {
       key: `equip-drop:${event.characterId}:${event.itemId}`,
-      title: `${event.characterName} 장비 획득!`,
-      body: `${event.bossName} 처치 · ${event.itemName} 획득. 장비 창에서 입을 수 있어요`,
+      title: `${event.characterName} ${chair ? '의자' : '장비'} 획득!`,
+      body: `${event.bossName} 처치 · ${event.itemName} 획득. ${chair ? '장비 창 「의자」에서 앉을 수 있어요' : '장비 창에서 입을 수 있어요'}`,
     };
   }
   return {

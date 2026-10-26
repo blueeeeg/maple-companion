@@ -1,6 +1,7 @@
 import { normalizeAppearance } from './appearance';
 import { normalizeReservedBoss } from './bossChallenge';
 import { normalizeCashData } from './cashShop';
+import { normalizeChairData } from './chairs';
 import { mergeEquipPity, normalizeEquipData } from './equipment';
 import {
   type Character,
@@ -39,6 +40,7 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       ...normalizeCashData(character),
       // 장비 컬렉션이 생기기 전 저장은 빈 컬렉션이다. 레벨 선물은 켤 때 받는다
       ...normalizeEquipData(character),
+      ...normalizeChairData(character),
     };
     const { huntSkillId } = character;
     const raw = character as Partial<Character>;
@@ -177,6 +179,8 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
       equipOwned: [...new Set([...fromFile.equipOwned, ...fromLocal.equipOwned])],
       equipGifts: [...new Set([...fromFile.equipGifts, ...fromLocal.equipGifts])],
       equipPity: mergeEquipPity(fromFile.equipPity, fromLocal.equipPity),
+      // 의자도 컬렉션처럼 합치고 고른 의자는 더 자란 쪽 것이다
+      chairOwned: [...new Set([...fromFile.chairOwned, ...fromLocal.chairOwned])],
       advancedAt: mergeAdvancements(fromFile.advancedAt, fromLocal.advancedAt),
       jobHistory: mergeJobHistory(fromFile.jobHistory, fromLocal.jobHistory),
     };

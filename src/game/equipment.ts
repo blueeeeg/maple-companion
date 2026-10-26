@@ -1,4 +1,5 @@
 import { BOSSES, ZAKUM_ID } from './bosses';
+import { type Chair, chairOf, chairsOfBoss, isChairItem } from './chairs';
 import { JOB_BRANCHES, type JobBranchId, type JobLineId, type JobPath, lineOf } from './jobs';
 
 /** 장비 컬렉션 아이템을 입는 자리. 캐시 자리에 귀고리·방패가 더 있다 */
@@ -139,11 +140,41 @@ const VERUS_HILLA = 8880405;
 // 아이템 ID 는 KMS 389 에서 이름·부위·캐시 아님·아이콘·착용 그림(남녀)을 확인했다. 눈장식 마크 두 개는 그림이 거의 안 보여 뺐다
 export const EQUIP_ENTRIES: EquipEntry[] = [
   { id: 'mapleLeaf', name: '메이플 리프', slot: 'faceAccessory', source: boss(MANO, 'rare'), items: fixed([1012098, '메이플 리프']) },
+  { id: 'brownPitsBandana', name: '브라운 피츠 반다나', slot: 'cap', source: boss(MANO, 'rare'), items: fixed([1002619, '브라운 피츠 반다나']) },
+  { id: 'brownToolkGalley', name: '브라운 툴크갤리', slot: 'overall', source: boss(MANO, 'rare'), items: fixed([1052104, '브라운 툴크갤리']) },
+  { id: 'hardLeatherGlove', name: '하드레더 글로브', slot: 'glove', source: boss(MANO, 'rare'), items: fixed([1082186, '하드레더 글로브']) },
+  { id: 'brownWoodenKrag', name: '브라운 우든크라그', slot: 'shoes', source: boss(MANO, 'rare'), items: fixed([1072291, '브라운 우든크라그']) },
   { id: 'orangeMushroomShirt', name: '주황버섯 티셔츠', slot: 'top', source: boss(MUSHMOM, 'rare'), items: fixed([1042352, '주황버섯 티셔츠']) },
   { id: 'mushKingGlove', name: '머쉬킹의 레더 글로브', slot: 'glove', source: boss(MUSHMOM, 'veryRare'), items: fixed([1082254, '머쉬킹의 레더 글로브']) },
+  { id: 'crystalFlowerRing', name: '크리스탈 플라워링', slot: 'earrings', source: boss(MUSHMOM, 'rare'), items: fixed([1032019, '크리스탈 플라워링']) },
+  { id: 'steelTowerShield', name: '스틸 타워 실드', slot: 'shield', source: boss(MUSHMOM, 'rare'), items: fixed([1092012, '스틸 타워 실드']) },
+  { id: 'thorns', name: '쏜즈', slot: 'weapon', source: boss(MUSHMOM, 'rare'), items: fixed([1382006, '쏜즈']) },
   { id: 'vikingHelm', name: '아이언 바이킹 헬름', slot: 'cap', source: boss(STUMPY, 'rare'), items: fixed([1002011, '아이언 바이킹 헬름']) },
+  { id: 'redBarbei', name: '레드 바르베이', slot: 'overall', source: boss(STUMPY, 'rare'), items: fixed([1052113, '레드 바르베이']) },
+  { id: 'brownLeatherKrag', name: '브라운 레더크라그', slot: 'shoes', source: boss(STUMPY, 'rare'), items: fixed([1072300, '브라운 레더크라그']) },
+  { id: 'redRoyalMisty', name: '레드 로얄미스티', slot: 'cap', source: boss(STUMPY, 'rare'), items: fixed([1002628, '레드 로얄미스티']) },
   { id: 'skullEarrings', name: '해골 귀고리', slot: 'earrings', source: boss(DYLE, 'rare'), items: fixed([1032012, '해골 귀고리']) },
   { id: 'skullShield', name: '해골 방패', slot: 'shield', source: boss(DYLE, 'veryRare'), items: fixed([1092004, '해골 방패']) },
+  { id: 'boneHelm', name: '본 헬름', slot: 'cap', source: boss(DYLE, 'rare'), items: fixed([1002006, '본 헬름']) },
+  {
+    id: 'dyleWeapon',
+    name: '다일 무기',
+    slot: 'weapon',
+    source: boss(DYLE, 'veryRare'),
+    items: series(
+      [1302012, '레드 카타나'],
+      [1422010, '호프만'],
+      [1432007, '스페판'],
+      [1382010, '레이든 스태프'],
+      [1372015, '엔젤윙즈'],
+      [1452011, '골든 힌켈'],
+      [1462009, '그로스야거'],
+      [1472029, '흑갑충'],
+      [1332018, '칸디네'],
+      [1482009, '베이아 크래쉬'],
+      [1492009, '어비스 슈터'],
+    ),
+  },
   { id: 'zakumHelmet', name: '자쿰의 투구', slot: 'cap', source: boss(ZAKUM_ID, 'rare'), items: fixed([1002357, '자쿰의 투구']) },
   { id: 'zakumBranch', name: '자쿰의 나뭇가지', slot: 'weapon', source: boss(ZAKUM_ID, 'rare'), items: fixed([1372049, '자쿰의 나뭇가지']) },
   { id: 'chaosZakumHelmet', name: '카오스 자쿰의 투구', slot: 'cap', source: boss(ZAKUM_ID, 'veryRare'), items: fixed([1003112, '카오스 자쿰의 투구']) },
@@ -166,10 +197,40 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
       [1492209, '자쿰의 포이즈닉 건'],
     ),
   },
+  { id: 'zakumStoneFist', name: '자쿰의 돌주먹', slot: 'glove', source: boss(ZAKUM_ID, 'rare'), items: fixed([1082447, '자쿰의 돌주먹']) },
+  { id: 'angryZakumCape', name: '분노한 자쿰의 망토', slot: 'cape', source: boss(ZAKUM_ID, 'rare'), items: fixed([1102871, '분노한 자쿰의 망토']) },
   { id: 'weirdMushroomFace', name: '요상한 주황버섯 얼굴장식', slot: 'faceAccessory', source: boss(ZOMBIE_MUSHMOM, 'rare'), items: fixed([1012576, '요상한 주황버섯 얼굴장식']) },
   { id: 'poisonMushroom', name: '독버섯', slot: 'weapon', source: boss(ZOMBIE_MUSHMOM, 'rare'), items: fixed([1382015, '독버섯']) },
+  { id: 'pinkFlowerEarrings', name: '분홍꽃 귀고리', slot: 'earrings', source: boss(ZOMBIE_MUSHMOM, 'rare'), items: fixed([1032014, '분홍꽃 귀고리']) },
+  { id: 'blackGaiaCape', name: '검은색 가이아의 망토', slot: 'cape', source: boss(ZOMBIE_MUSHMOM, 'rare'), items: fixed([1102024, '검은색 가이아의 망토']) },
+  { id: 'silverLegendShield', name: '실버 레전드 실드', slot: 'shield', source: boss(ZOMBIE_MUSHMOM, 'rare'), items: fixed([1092010, '실버 레전드 실드']) },
   { id: 'balrogLeatherShoes', name: '발록의 가죽 신발', slot: 'shoes', source: boss(JUNIOR_BALROG, 'rare'), items: fixed([1072375, '발록의 가죽 신발']) },
+  { id: 'devilsHorn', name: '데빌스 혼', slot: 'cap', source: boss(JUNIOR_BALROG, 'rare'), items: fixed([1003360, '데빌스 혼']) },
+  { id: 'silverAncientShield', name: '실버 에인션트 실드', slot: 'shield', source: boss(JUNIOR_BALROG, 'rare'), items: fixed([1092016, '실버 에인션트 실드']) },
+  {
+    // 크림슨 발록의 발록 무기(Lv90)와 이름 계열만 같고 ID·겉모습이 다르다
+    id: 'balrogWeapon80',
+    name: '발록 무기(Lv80)',
+    slot: 'weapon',
+    source: boss(JUNIOR_BALROG, 'veryRare'),
+    items: series(
+      [1302112, '발록의 아츠'],
+      [1422042, '발록의 크롬'],
+      [1432054, '발록의 호진공창'],
+      [1382066, '발록의 케이그'],
+      [1372050, '발록의 마기코라스'],
+      [1452067, '발록의 파이어 아룬드'],
+      [1462060, '발록의 파이어 샬리트'],
+      [1472083, '발록의 코브라스티어'],
+      [1332084, '발록의 카타르'],
+      [1482031, '발록의 스틸르노'],
+      [1492035, '발록의 인피티니'],
+    ),
+  },
   { id: 'balrogFurShoes', name: '발록의 털가죽 신발', slot: 'shoes', source: boss(CRIMSON_BALROG, 'rare'), items: fixed([1072376, '발록의 털가죽 신발']) },
+  { id: 'hellfire', name: '지옥의 불꽃', slot: 'earrings', source: boss(CRIMSON_BALROG, 'rare'), items: fixed([1032136, '지옥의 불꽃']) },
+  { id: 'bjelDevilsHorn', name: '브옐 데빌스 혼', slot: 'cap', source: boss(CRIMSON_BALROG, 'rare'), items: fixed([1003752, '브옐 데빌스 혼']) },
+  { id: 'demonClassicCape', name: '데몬 클래식 케이프', slot: 'cape', source: boss(CRIMSON_BALROG, 'rare'), items: fixed([1102505, '데몬 클래식 케이프']) },
   {
     id: 'balrogWeapon',
     name: '발록 무기',
@@ -192,7 +253,13 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
   { id: 'aquariusCrown', name: '아쿠아리스 크라운', slot: 'cap', source: boss(PIANUS, 'rare'), items: fixed([1004075, '아쿠아리스 크라운']) },
   { id: 'fishSpear', name: '물고기 작살', slot: 'weapon', source: boss(PIANUS, 'rare'), items: fixed([1432008, '물고기 작살']) },
   { id: 'coralWand', name: '산호 가지 지팡이', slot: 'weapon', source: boss(PIANUS, 'rare'), items: fixed([1372243, '산호 가지 지팡이']) },
+  { id: 'oxygenTank', name: '산소통', slot: 'cape', source: boss(PIANUS, 'rare'), items: fixed([1102061, '산소통']) },
+  { id: 'kentaGoggles', name: '켄타의 물안경', slot: 'eyeAccessory', source: boss(PIANUS, 'rare'), items: fixed([1022123, '켄타의 물안경']) },
+  { id: 'octopusEarrings', name: '옥토퍼스 이어링', slot: 'earrings', source: boss(PIANUS, 'rare'), items: fixed([1032254, '옥토퍼스 이어링']) },
   { id: 'ludibriumCape', name: '루디브리엄 망토', slot: 'cape', source: boss(PAPULATUS, 'rare'), items: fixed([1102057, '루디브리엄 망토']) },
+  { id: 'toyNose', name: '장난감 코', slot: 'faceAccessory', source: boss(PAPULATUS, 'rare'), items: fixed([1012146, '장난감 코']) },
+  { id: 'blackSkelDuke', name: '블랙 스켈듀크', slot: 'glove', source: boss(PAPULATUS, 'rare'), items: fixed([1082213, '블랙 스켈듀크']) },
+  { id: 'blueCrescentBoots', name: '블루 크리센트부츠', slot: 'shoes', source: boss(PAPULATUS, 'rare'), items: fixed([1072221, '블루 크리센트부츠']) },
   {
     id: 'royalVanLeon',
     name: '로얄 반 레온 무기',
@@ -213,6 +280,9 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
     ),
   },
   { id: 'horntailShirt', name: '혼테일의 복근무늬 티셔츠', slot: 'top', source: boss(LEVIATHAN, 'rare'), items: fixed([1042243, '혼테일의 복근무늬 티셔츠']) },
+  { id: 'blueDragonHelm', name: '블루 드래곤 투구', slot: 'cap', source: boss(LEVIATHAN, 'rare'), items: fixed([1002551, '블루 드래곤 투구']) },
+  { id: 'blueDragonGauntlet', name: '블루 드래곤 건틀렛', slot: 'glove', source: boss(LEVIATHAN, 'rare'), items: fixed([1082168, '블루 드래곤 건틀렛']) },
+  { id: 'blueDragonBoots', name: '블루 드래곤 부츠', slot: 'shoes', source: boss(LEVIATHAN, 'rare'), items: fixed([1072273, '블루 드래곤 부츠']) },
   {
     id: 'fafnir',
     name: '파프니르 무기',
@@ -233,6 +303,21 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
     ),
   },
   { id: 'arkariumBeard', name: '아카이럼의 수염', slot: 'faceAccessory', source: boss(ARKARIUM, 'rare'), items: fixed([1012332, '아카이럼의 수염']) },
+  { id: 'timelessMoonlight', name: '타임리스 문라이트', slot: 'cape', source: boss(ARKARIUM, 'rare'), items: fixed([1102172, '타임리스 문라이트']) },
+  { id: 'timelessEarrings', name: '타임리스 이어링', slot: 'earrings', source: boss(ARKARIUM, 'rare'), items: fixed([1032031, '타임리스 이어링']) },
+  {
+    id: 'timelessHat',
+    name: '타임리스 모자',
+    slot: 'cap',
+    source: boss(ARKARIUM, 'rare'),
+    items: byLine({
+      warrior: [1002776, '타임리스 휀넬'],
+      magician: [1002777, '타임리스 코럴'],
+      archer: [1002778, '타임리스 라피드'],
+      thief: [1002779, '타임리스 차이브'],
+      pirate: [1002780, '타임리스 콘라드 헨켈'],
+    }),
+  },
   {
     id: 'absolab',
     name: '앱솔랩스 무기',
@@ -255,6 +340,8 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
   { id: 'pinkBeanHat', name: '핑크빈 모자', slot: 'cap', source: boss(PINK_BEAN, 'rare'), items: fixed([1002971, '핑크빈 모자']) },
   { id: 'pinkBeanSuit', name: '핑크빈 슈트', slot: 'overall', source: boss(PINK_BEAN, 'rare'), items: fixed([1052202, '핑크빈 슈트']) },
   { id: 'chaosPinkBeanHat', name: '카오스 핑크빈 모자', slot: 'cap', source: boss(PINK_BEAN, 'veryRare'), items: fixed([1003621, '카오스 핑크빈 모자']) },
+  { id: 'chaosPinkBeanSuit', name: '카오스 핑크빈 슈트', slot: 'overall', source: boss(PINK_BEAN, 'rare'), items: fixed([1052526, '카오스 핑크빈 슈트']) },
+  { id: 'pinkBeanFace', name: '핑크빈 얼굴장식', slot: 'faceAccessory', source: boss(PINK_BEAN, 'rare'), items: fixed([1012532, '핑크빈 얼굴장식']) },
   {
     id: 'tyrantCloak',
     name: '타일런트 클록',
@@ -266,6 +353,72 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
       archer: [1102483, '타일런트 케이론 클록'],
       thief: [1102484, '타일런트 리카온 클록'],
       pirate: [1102485, '타일런트 알테어 클록'],
+    }),
+  },
+  {
+    id: 'tyrantBoots',
+    name: '타일런트 부츠',
+    slot: 'shoes',
+    source: boss(MAGNUS, 'rare'),
+    items: byLine({
+      warrior: [1072743, '타일런트 히아데스 부츠'],
+      magician: [1072744, '타일런트 헤르메스 부츠'],
+      archer: [1072745, '타일런트 케이론 부츠'],
+      thief: [1072746, '타일런트 리카온 부츠'],
+      pirate: [1072747, '타일런트 알테어 부츠'],
+    }),
+  },
+  {
+    id: 'tyrantGlove',
+    name: '타일런트 글러브',
+    slot: 'glove',
+    source: boss(MAGNUS, 'rare'),
+    items: byLine({
+      warrior: [1082543, '타일런트 히아데스 글러브'],
+      magician: [1082544, '타일런트 헤르메스 글러브'],
+      archer: [1082545, '타일런트 케이론 글러브'],
+      thief: [1082546, '타일런트 리카온 글러브'],
+      pirate: [1082547, '타일런트 알테어 글러브'],
+    }),
+  },
+  {
+    id: 'novaCloak',
+    name: '노바 클록',
+    slot: 'cape',
+    source: boss(MAGNUS, 'rare'),
+    items: byLine({
+      warrior: [1102476, '노바 히아데스 클록'],
+      magician: [1102477, '노바 헤르메스 클록'],
+      archer: [1102478, '노바 케이론 클록'],
+      thief: [1102479, '노바 리카온 클록'],
+      pirate: [1102480, '노바 알테어 클록'],
+    }),
+  },
+  { id: 'blueFlameRing', name: '청염의 고리', slot: 'cap', source: boss(VERUS_HILLA, 'rare'), items: fixed([1003579, '청염의 고리']) },
+  {
+    id: 'arcaneGlove',
+    name: '아케인셰이드 장갑',
+    slot: 'glove',
+    source: boss(VERUS_HILLA, 'rare'),
+    items: byLine({
+      warrior: [1082695, '아케인셰이드 나이트글러브'],
+      magician: [1082696, '아케인셰이드 메이지글러브'],
+      archer: [1082697, '아케인셰이드 아처글러브'],
+      thief: [1082698, '아케인셰이드 시프글러브'],
+      pirate: [1082699, '아케인셰이드 파이렛글러브'],
+    }),
+  },
+  {
+    id: 'arcaneCape',
+    name: '아케인셰이드 망토',
+    slot: 'cape',
+    source: boss(VERUS_HILLA, 'rare'),
+    items: byLine({
+      warrior: [1102940, '아케인셰이드 나이트케이프'],
+      magician: [1102941, '아케인셰이드 메이지케이프'],
+      archer: [1102942, '아케인셰이드 아처케이프'],
+      thief: [1102943, '아케인셰이드 시프케이프'],
+      pirate: [1102944, '아케인셰이드 파이렛케이프'],
     }),
   },
   {
@@ -414,7 +567,8 @@ EQUIP_ENTRIES.forEach((entry) => {
   ids.forEach((id) => entryByItem.set(id, entry));
 });
 
-export const equipItemName = (itemId: number) => names.get(itemId) ?? `아이템 ${itemId}`;
+/** 보스 드롭 알림이 같이 쓰도록 의자 이름도 돌려준다 */
+export const equipItemName = (itemId: number) => names.get(itemId) ?? chairOf(itemId)?.name ?? `아이템 ${itemId}`;
 export const equipEntryOf = (itemId: number): EquipEntry | null => entryByItem.get(itemId) ?? null;
 export const isEquipItem = (itemId: number) => entryByItem.has(itemId);
 
@@ -472,8 +626,8 @@ export interface BossDrop {
 }
 
 /**
- * 보스 한 번 처치의 장비 드롭. 아직 없는 아이템마다 등급 확률로 굴리고, 그 등급이 천장만큼 안 나왔으면 하나를 준다.
- * 모을 것이 남지 않은 등급은 세지 않는다. 연습전은 부르지 않는다
+ * 보스 한 번 처치의 장비·의자 드롭. 아직 없는 아이템마다 등급 확률로 굴리고, 그 등급이 천장만큼 안 나왔으면 하나를 준다.
+ * 의자는 레어 칸에 섞여 레어 천장을 같이 센다. 모을 것이 남지 않은 등급은 세지 않는다. 연습전은 부르지 않는다
  */
 export function rollBossDrops(
   bossId: number,
@@ -489,6 +643,7 @@ export function rollBossDrops(
       (entry) => entry.source.kind === 'boss' && entry.source.bossId === bossId && entry.source.tier === tier,
     )
       .flatMap((entry) => entryItems(entry, path))
+      .concat(tier === 'rare' ? chairsOfBoss(bossId).map((chair) => chair.id) : [])
       .filter((id) => !owned.includes(id));
     if (pool.length === 0) return;
     const kills = (counts[tier] ?? 0) + 1;
@@ -505,16 +660,18 @@ export function rollBossDrops(
  * 연습전은 보상이 없어 굴리지도 세지도 않는다. 새로 얻은 아이템 ID 를 돌려준다
  */
 export function awardBossDrops(
-  character: { equipOwned: number[]; equipPity: EquipPity },
+  character: { equipOwned: number[]; equipPity: EquipPity; chairOwned: number[] },
   bossId: number,
   path: JobPath | null,
   practice: boolean,
   random = Math.random,
 ): number[] {
   if (practice) return [];
-  const { drops, pity } = rollBossDrops(bossId, path, character.equipOwned, character.equipPity, random);
+  const owned = [...character.equipOwned, ...character.chairOwned];
+  const { drops, pity } = rollBossDrops(bossId, path, owned, character.equipPity, random);
   character.equipPity = pity;
-  character.equipOwned.push(...drops);
+  character.equipOwned.push(...drops.filter((id) => !isChairItem(id)));
+  character.chairOwned.push(...drops.filter(isChairItem));
   return drops;
 }
 
@@ -527,15 +684,22 @@ export function pityProgress(
   return { kills: pity[bossId]?.[tier] ?? 0, limit: DROP_PITY[tier] };
 }
 
+function bossDropNote(bossId: number, tier: DropTier, pity: EquipPity): string {
+  const bossName = BOSSES.find((each) => each.id === bossId)?.name ?? '보스';
+  const { kills, limit } = pityProgress(bossId, tier, pity);
+  return `${bossName} 처치 · ${tier === 'rare' ? '낮은' : '아주 낮은'} 확률 · ${kills}/${limit}`;
+}
+
 /** 아직 없는 칸에 적는 얻는 법. 「핑크빈 처치 · 낮은 확률 · 7/10」·「Lv.150 달성」·「장비 상점 5,000 메소」 */
 export function howToGet(entry: EquipEntry, pity: EquipPity): string {
   const { source } = entry;
   if (source.kind === 'level') return `Lv.${source.level} 달성 선물`;
   if (source.kind === 'shop') return `장비 상점 ${source.price.toLocaleString()} 메소`;
-  const bossName = BOSSES.find((each) => each.id === source.bossId)?.name ?? '보스';
-  const { kills, limit } = pityProgress(source.bossId, source.tier, pity);
-  return `${bossName} 처치 · ${source.tier === 'rare' ? '낮은' : '아주 낮은'} 확률 · ${kills}/${limit}`;
+  return bossDropNote(source.bossId, source.tier, pity);
 }
+
+/** 의자는 레어 천장을 같이 센다 */
+export const chairHowToGet = (chair: Chair, pity: EquipPity) => bossDropNote(chair.bossId, 'rare', pity);
 
 /** 레벨에 닿은 선물 중 아직 안 받은 것을 준다. 이미 그 레벨을 넘은 캐릭터도 처음 불렀을 때 받는다 */
 export function grantLevelGifts(

@@ -59,6 +59,10 @@ export interface Character {
   equipPity: EquipPity;
   /** 받은 레벨 선물 아이템 ID. 같은 선물을 두 번 주지 않는다 */
   equipGifts: number[];
+  /** 보스가 떨어뜨려 모은 의자 아이템 ID */
+  chairOwned: number[];
+  /** 쉴 때 앉는 의자. null 이면 의자 없이 선다 */
+  chairSelected: number | null;
   /** 스킬창에서 고른 사냥 스킬. null 이면 자동(차수마다 정해 둔 스킬). 겉모습만 바뀌고 보상은 같다 */
   huntSkillId: number | null;
   /** 보스 도전 창에서 지정한 다음 보스(몹 ID). 다음 보스 차례에 무작위 대신 이 보스가 나오고, 잡으면 지운다. 보상은 같다 */
@@ -135,6 +139,8 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     equipWorn: {},
     equipPity: {},
     equipGifts: [],
+    chairOwned: [],
+    chairSelected: null,
     huntSkillId: null,
     reservedBossId: null,
     bossBag: [],

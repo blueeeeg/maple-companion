@@ -1,3 +1,4 @@
+import { isChairItem } from '../game/chairs';
 import type { JobBranchId, JobLineId, JobPath } from '../game/jobs';
 import { cashShopUiUrl, itemIconUrl, wzImageUrl } from '../maple/api';
 import { applyArt, cropArt, loadWithRetry, loadedImage } from './art';
@@ -259,7 +260,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       const [first] = items;
       itemIcon.replaceChildren(loadedImage(itemIconUrl(first.itemId)));
       itemName.textContent = items.length > 1 ? `${first.name} 외 ${items.length - 1}개 획득!` : `${first.name} 획득!`;
-      itemSource.textContent = `${source} · 장비 창에서 입을 수 있어요`;
+      itemSource.textContent = `${source} · ${isChairItem(first.itemId) ? '장비 창 「의자」에서 앉을 수 있어요' : '장비 창에서 입을 수 있어요'}`;
       itemNotice.hidden = false;
       if (itemTimer !== null) window.clearTimeout(itemTimer);
       itemTimer = window.setTimeout(() => (itemNotice.hidden = true), ITEM_NOTICE_MS);

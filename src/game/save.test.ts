@@ -363,3 +363,40 @@ describe('장비 컬렉션 저장', () => {
     });
   });
 });
+
+describe('의자 저장', () => {
+  const PINK_BEAN_CHAIR = 3010225;
+  const ZAKUM_CHAIR = 3010455;
+
+  it('의자가 생기기 전 저장은 빈 목록에 고른 의자 없음으로 읽는다', () => {
+    const { characters } = normalizeRoster({ characters: [{ id: 'a', name: '모험가', activeSeconds: 1 } as Character] });
+    expect(characters[0]).toMatchObject({ chairOwned: [], chairSelected: null });
+  });
+
+  it('모르는 의자·깨진 값은 버리고, 가진 적 없는 의자를 골라 뒀으면 고르지 않은 것으로 친다', () => {
+    const saved = { ...character('a'), chairOwned: [PINK_BEAN_CHAIR, 3019999, 'x', PINK_BEAN_CHAIR, 1002357], chairSelected: ZAKUM_CHAIR };
+    const [read] = normalizeRoster({ characters: [saved as unknown as Character] }).characters;
+    expect(read.chairOwned).toEqual([PINK_BEAN_CHAIR]);
+    expect(read.chairSelected).toBeNull();
+    const kept = { ...character('a'), chairOwned: [PINK_BEAN_CHAIR], chairSelected: PINK_BEAN_CHAIR };
+    expect(normalizeRoster({ characters: [kept] }).characters[0].chairSelected).toBe(PINK_BEAN_CHAIR);
+    const broken = { ...character('a'), chairOwned: 'x', chairSelected: '3010225' };
+    expect(normalizeRoster({ characters: [broken as unknown as Character] }).characters[0]).toMatchObject({ chairOwned: [], chairSelected: null });
+  });
+
+  it('같은 캐릭터면 모은 의자는 합치고 고른 의자는 더 자란 쪽 것이다', () => {
+    const file = roster([character('a', { activeSeconds: 100, chairOwned: [PINK_BEAN_CHAIR], chairSelected: PINK_BEAN_CHAIR })]);
+    const local = roster([character('a', { activeSeconds: 50, chairOwned: [ZAKUM_CHAIR], chairSelected: ZAKUM_CHAIR })]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.chairOwned).toEqual([PINK_BEAN_CHAIR, ZAKUM_CHAIR]);
+    expect(merged.chairSelected).toBe(PINK_BEAN_CHAIR);
+    const [other] = mergeRosters(local, file).characters;
+    expect(other.chairSelected).toBe(PINK_BEAN_CHAIR);
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
+  });
+
+  it('파일로 쓰고 다시 읽어도 같다', () => {
+    const saved = roster([character('a', { chairOwned: [ZAKUM_CHAIR], chairSelected: ZAKUM_CHAIR })]);
+    expect(parseRoster(JSON.stringify(saved), null, 0).characters[0]).toMatchObject({ chairOwned: [ZAKUM_CHAIR], chairSelected: ZAKUM_CHAIR });
+  });
+});

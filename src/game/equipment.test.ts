@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_APPEARANCE } from './appearance';
 import { BOSSES, ZAKUM_ID } from './bosses';
 import { composeLook } from './cashShop';
+import { chairOf } from './chairs';
 import { type Character, characterJob, createCharacter } from './characters';
 import {
   DROP_PITY,
@@ -10,6 +11,7 @@ import {
   awardBossDrops,
   buyEquipItem,
   canWear,
+  chairHowToGet,
   collectionProgress,
   entryItems,
   equipGear,
@@ -18,6 +20,7 @@ import {
   grantLevelGifts,
   hiddenByCash,
   howToGet,
+  isEquipItem,
   rollBossDrops,
   wearEquipment,
   wieldableTypes,
@@ -39,6 +42,11 @@ const FRYING_PAN = 1322027;
 const SKULL_SHIELD = 1092004;
 const CASH_HAT = 1000000;
 const CASH_WEAPON = 1703482;
+const CHAOS_PINK_BEAN_SUIT = 1052526;
+const PINK_BEAN_FACE = 1012532;
+const PINK_BEAN_CHAIR = 3010225;
+const BLACK_BEAN_CHAIR = 3010592;
+const PINK_BEAN_RARE = [PINK_BEAN_HAT, PINK_BEAN_SUIT, CHAOS_PINK_BEAN_SUIT, PINK_BEAN_FACE, PINK_BEAN_CHAIR, BLACK_BEAN_CHAIR];
 
 const never = () => 0.99;
 const always = () => 0;
@@ -52,12 +60,73 @@ const character = (branch: JobBranchId | null, level: number, change: Partial<Ch
 });
 
 describe('컬렉션 목록', () => {
-  it('보스 드롭·레벨 선물·장비 상점 50칸이고 눈장식 마크는 없다', () => {
-    expect(EQUIP_ENTRIES).toHaveLength(50);
+  it('보스 드롭 72칸·레벨 선물 8칸·장비 상점 13칸이고 거의 안 보이는 마크·귀고리는 없다', () => {
+    expect(EQUIP_ENTRIES).toHaveLength(93);
     const ids = EQUIP_ENTRIES.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(EQUIP_ENTRIES.filter((entry) => entry.source.kind === 'shop')).toHaveLength(13);
-    expect(EQUIP_ENTRIES.some((entry) => entry.slot === 'eyeAccessory' && entry.source.kind === 'boss')).toBe(false);
+    const count = (kind: string) => EQUIP_ENTRIES.filter((entry) => entry.source.kind === kind).length;
+    expect([count('boss'), count('level'), count('shop')]).toEqual([72, 8, 13]);
+    // 카오스 핑크빈 마크·낙엽 귀고리·나뭇잎 귀고리
+    [1022144, 1032032, 1032025].forEach((id) => expect(isEquipItem(id)).toBe(false));
+  });
+
+  it('보스마다 칸 수', () => {
+    const perBoss = Object.fromEntries(
+      BOSSES.map((boss) => [
+        boss.name,
+        EQUIP_ENTRIES.filter((entry) => entry.source.kind === 'boss' && entry.source.bossId === boss.id).length,
+      ]),
+    );
+    expect(perBoss).toEqual({
+      마노: 5,
+      머쉬맘: 5,
+      스텀피: 4,
+      다일: 4,
+      자쿰: 6,
+      '좀비 머쉬맘': 5,
+      '주니어 발록': 4,
+      '크림슨 발록': 5,
+      피아누스: 6,
+      파풀라투스: 5,
+      레비아탄: 5,
+      아카이럼: 5,
+      핑크빈: 5,
+      매그너스: 4,
+      '진 힐라': 4,
+    });
+  });
+
+  it('더한 칸은 방어구·장신구가 레어, 시리즈 무기가 매우 레어다', () => {
+    const tier = (id: string) => {
+      const { source } = EQUIP_ENTRIES.find((entry) => entry.id === id)!;
+      return source.kind === 'boss' ? source.tier : null;
+    };
+    expect(tier('dyleWeapon')).toBe('veryRare');
+    expect(tier('balrogWeapon80')).toBe('veryRare');
+    ['brownToolkGalley', 'hardLeatherGlove', 'kentaGoggles', 'chaosPinkBeanSuit', 'timelessHat', 'tyrantGlove', 'novaCloak', 'arcaneGlove', 'arcaneCape', 'thorns'].forEach(
+      (id) => expect(tier(id)).toBe('rare'),
+    );
+  });
+
+  it('계열마다 다른 칸은 그 계열 것 하나로 풀린다', () => {
+    const entry = (id: string) => EQUIP_ENTRIES.find((each) => each.id === id)!;
+    expect(entryItems(entry('timelessHat'), 'hero')).toEqual([1002776]);
+    expect(entryItems(entry('timelessHat'), 'captain')).toEqual([1002780]);
+    expect(entryItems(entry('tyrantBoots'), 'bishop')).toEqual([1072744]);
+    expect(entryItems(entry('tyrantGlove'), 'marksman')).toEqual([1082545]);
+    expect(entryItems(entry('novaCloak'), 'shadower')).toEqual([1102479]);
+    expect(entryItems(entry('arcaneGlove'), 'viper')).toEqual([1082699]);
+    expect(entryItems(entry('arcaneCape'), 'darkKnight')).toEqual([1102940]);
+    expect(entryItems(entry('arcaneCape'), null)).toEqual([]);
+  });
+
+  it('다일·발록(Lv80) 시리즈는 갈래 무기 종류 하나로 풀린다', () => {
+    const entry = (id: string) => EQUIP_ENTRIES.find((each) => each.id === id)!;
+    expect(entryItems(entry('dyleWeapon'), 'paladin')).toEqual([1422010]);
+    expect(entryItems(entry('dyleWeapon'), 'nightLord')).toEqual([1472029]);
+    expect(entryItems(entry('balrogWeapon80'), 'darkKnight')).toEqual([1432054]);
+    expect(entryItems(entry('balrogWeapon80'), 'captain')).toEqual([1492035]);
+    expect(equipItemName(1432054)).toBe('발록의 호진공창');
   });
 
   it('보스 드롭은 지금 보스 목록에 있는 보스이고 자쿰도 떨어뜨린다', () => {
@@ -66,7 +135,14 @@ describe('컬렉션 목록', () => {
       if (entry.source.kind === 'boss') expect(bossIds.has(entry.source.bossId)).toBe(true);
     });
     const zakum = EQUIP_ENTRIES.filter((entry) => entry.source.kind === 'boss' && entry.source.bossId === ZAKUM_ID);
-    expect(zakum.map((entry) => entry.name)).toEqual(['자쿰의 투구', '자쿰의 나뭇가지', '카오스 자쿰의 투구', '자쿰의 포이즈닉 무기']);
+    expect(zakum.map((entry) => entry.name)).toEqual([
+      '자쿰의 투구',
+      '자쿰의 나뭇가지',
+      '카오스 자쿰의 투구',
+      '자쿰의 포이즈닉 무기',
+      '자쿰의 돌주먹',
+      '분노한 자쿰의 망토',
+    ]);
   });
 
   it('칸의 자리와 아이템 부위가 맞다', () => {
@@ -133,19 +209,25 @@ describe('무기·방패를 들 수 있는 갈래', () => {
 describe('보스 드롭', () => {
   it('등급 확률보다 작게 굴리면 떨어진다. 레어 20% · 매우 레어 5%', () => {
     const rare = rollBossDrops(PINK_BEAN, 'hero', [], {}, () => 0.1);
-    expect(rare.drops).toEqual([PINK_BEAN_HAT, PINK_BEAN_SUIT]);
+    expect(rare.drops).toEqual(PINK_BEAN_RARE);
     expect(rollBossDrops(PINK_BEAN, 'hero', [], {}, () => 0.04).drops).toContain(CHAOS_PINK_BEAN_HAT);
     expect(rollBossDrops(PINK_BEAN, 'hero', [], {}, () => 0.2).drops).toEqual([]);
   });
 
   it('갈래가 못 드는 무기는 안 떨어진다', () => {
-    expect(rollBossDrops(ZAKUM_ID, 'hero', [], {}, always).drops).toEqual([ZAKUM_HELMET, CHAOS_ZAKUM_HELMET, 1302312]);
-    expect(rollBossDrops(ZAKUM_ID, 'bishop', [], {}, always).drops).toEqual([ZAKUM_HELMET, ZAKUM_BRANCH, CHAOS_ZAKUM_HELMET, 1382242]);
+    const zakumRare = [1082447, 1102871, 3010455, 3017079];
+    expect(rollBossDrops(ZAKUM_ID, 'hero', [], {}, always).drops).toEqual([ZAKUM_HELMET, ...zakumRare, CHAOS_ZAKUM_HELMET, 1302312]);
+    expect(rollBossDrops(ZAKUM_ID, 'bishop', [], {}, always).drops).toEqual([
+      ZAKUM_HELMET,
+      ZAKUM_BRANCH,
+      ...zakumRare,
+      CHAOS_ZAKUM_HELMET,
+      1382242,
+    ]);
   });
 
   it('가진 아이템은 다시 안 나오고 다 모은 등급은 세지 않는다', () => {
-    const owned = [PINK_BEAN_HAT, PINK_BEAN_SUIT];
-    const result = rollBossDrops(PINK_BEAN, 'hero', owned, {}, always);
+    const result = rollBossDrops(PINK_BEAN, 'hero', PINK_BEAN_RARE, {}, always);
     expect(result.drops).toEqual([CHAOS_PINK_BEAN_HAT]);
     expect(result.pity[PINK_BEAN].rare).toBeUndefined();
   });
@@ -161,8 +243,16 @@ describe('보스 드롭', () => {
     expect(drops.findIndex((each) => each.length > 0) + 1).toBe(DROP_PITY.rare);
     expect(drops[9]).toHaveLength(1);
     expect(drops[19]).toHaveLength(1);
-    expect(drops[29]).toEqual([CHAOS_PINK_BEAN_HAT]);
-    expect(drops.flat().sort()).toEqual([PINK_BEAN_HAT, CHAOS_PINK_BEAN_HAT, PINK_BEAN_SUIT].sort());
+    expect(drops[29]).toHaveLength(2);
+    expect(drops[29]).toContain(CHAOS_PINK_BEAN_HAT);
+    expect(drops.flat().filter((id) => id !== CHAOS_PINK_BEAN_HAT)).toHaveLength(3);
+  });
+
+  it('의자는 레어 칸에 섞여 레어 천장을 같이 센다', () => {
+    const result = rollBossDrops(PINK_BEAN, 'hero', [], { [PINK_BEAN]: { rare: 9 } }, never);
+    expect(result.drops).toEqual([BLACK_BEAN_CHAIR]);
+    expect(result.pity[PINK_BEAN].rare).toBe(0);
+    expect(rollBossDrops(PINK_BEAN, 'hero', [], {}, () => 0.1).pity[PINK_BEAN].rare).toBe(0);
   });
 
   it('그 등급이 나오면 천장을 다시 센다', () => {
@@ -176,8 +266,11 @@ describe('보스 드롭', () => {
     expect(awardBossDrops(fighter, PINK_BEAN, 'hero', true, always)).toEqual([]);
     expect(fighter.equipPity).toEqual({});
     expect(fighter.equipOwned).toEqual([]);
-    expect(awardBossDrops(fighter, PINK_BEAN, 'hero', false, always)).toHaveLength(3);
+    expect(awardBossDrops(fighter, PINK_BEAN, 'hero', false, always)).toHaveLength(7);
     expect(fighter.equipOwned).toContain(PINK_BEAN_SUIT);
+    expect(fighter.equipOwned).not.toContain(PINK_BEAN_CHAIR);
+    expect(fighter.chairOwned).toEqual([PINK_BEAN_CHAIR, BLACK_BEAN_CHAIR]);
+    expect(awardBossDrops(fighter, PINK_BEAN, 'hero', false, always)).toEqual([]);
   });
 });
 
@@ -188,6 +281,8 @@ describe('얻는 법', () => {
     expect(howToGet(entry('chaosZakumHelmet'), {})).toBe('자쿰 처치 · 아주 낮은 확률 · 0/30');
     expect(howToGet(entry('highnessHat'), {})).toBe('Lv.150 달성 선물');
     expect(howToGet(entry('workGloves'), {})).toBe('장비 상점 5,000 메소');
+    expect(chairHowToGet(chairOf(PINK_BEAN_CHAIR)!, { [PINK_BEAN]: { rare: 7 } })).toBe('핑크빈 처치 · 낮은 확률 · 7/10');
+    expect(equipItemName(PINK_BEAN_CHAIR)).toBe('핑크빈 의자');
   });
 });
 
@@ -281,9 +376,9 @@ describe('장비 상점', () => {
 
 describe('컬렉션 셈', () => {
   it('갈래가 못 모으는 칸은 셈에서 뺀다', () => {
-    expect(collectionProgress([], 'hero').total).toBe(45);
-    expect(collectionProgress([], 'paladin').total).toBe(41);
-    expect(collectionProgress([], 'bishop').total).toBe(48);
+    expect(collectionProgress([], 'hero').total).toBe(87);
+    expect(collectionProgress([], 'paladin').total).toBe(80);
+    expect(collectionProgress([], 'bishop').total).toBe(91);
     expect(collectionProgress([ZAKUM_HELMET, 1082146], 'hero').owned).toBe(2);
   });
 });

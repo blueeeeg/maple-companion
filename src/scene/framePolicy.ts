@@ -13,7 +13,7 @@ export interface SceneActivity {
   cameraSettled: boolean;
   /** 포털처럼 늘 도는 것을 뺀, 잠깐 떠 있는 이펙트(대미지 숫자·배너·메소 등) 수 */
   transientEffects: number;
-  /** 서 있는 동안에도 도는 애니메이션(캐릭터 서기·포털)의 가장 짧은 프레임 딜레이 */
+  /** 서 있는 동안에도 도는 애니메이션(캐릭터 서기·포털·앉은 의자)의 가장 짧은 프레임 딜레이 */
   shortestLoopDelayMs: number;
 }
 

@@ -41,6 +41,7 @@ import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture, storeAnimation } from '../maple/textures';
 import { fetchStoredJson, keepArt } from '../maple/artStore';
 import { loadPortalFrames } from '../maple/portal';
+import { type ChairArt, type LoadedChairLayer, chairArtOf, loadChairLayers } from '../maple/chairArt';
 import {
   type LadderRope,
   type NavAction,
@@ -55,6 +56,7 @@ import {
 } from '../maple/navigation';
 import type { Point } from '../maple/ground';
 import { createBossGauge } from './bossGauge';
+import { chairLoopDelayMs, frameTopLeft, layerAnchor, layerOrder, seatFacing, seatedBodyOffset, seatedLook } from './chairPlacement';
 import { FULL_FPS, IDLE_FPS, targetFps } from './framePolicy';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
 import { lerpColor } from './color';
@@ -199,6 +201,10 @@ export interface Scene {
    * notReady. 겉모습뿐이다
    */
   castSkill(skillId: number): Promise<CastResult>;
+  /** 쉴 때 앉을 의자. null 이면 의자 없이 선다 */
+  setChair(chairId: number | null): void;
+  /** 자리 비움. 의자가 있으면 돌아다니지 않고 계속 앉아 있는다 */
+  setResting(resting: boolean): void;
 }
 
 export type CastResult = 'ok' | 'noArt' | 'failed' | 'late' | 'notReady';
@@ -331,6 +337,17 @@ async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnima
     animations: { stand: stand.animation, walk: walk.animation, attack: attack.animation },
     still: stand.still || walk.still || attack.still,
   };
+}
+
+/** 의자 동작(sitAction)을 캐릭터 API 가 못 그리면 앉기로 대신한다 */
+async function loadSitAnimation(look: number[], action: string): Promise<Animation> {
+  keepArt('chairLook', [characterArtBase(look)]);
+  try {
+    return (await loadHeroAction(look, action)).animation;
+  } catch (error) {
+    if (action === 'sit') throw error;
+    return (await loadHeroAction(look, 'sit')).animation;
+  }
 }
 
 /** 지금 모습에서 기기에 받아 둘 동작. 정지 그림으로 대신한 서기·걷기도 다시 받고, 스킬·사다리·로프 동작은 네트워크가 막혀도 그려진다 */
@@ -481,7 +498,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   const hero = new Sprite();
   hero.anchor.set(0.5);
-  actors.addChild(hero);
+  // 의자 레이어는 z 가 음수면 캐릭터 뒤, 0 이상이면 앞이다. 둘 다 앞 레이어 아래라 맵 앞 그림에 같이 가린다
+  const chairBack = new Container();
+  const chairFront = new Container();
+  chairBack.visible = false;
+  chairFront.visible = false;
+  actors.addChild(chairBack, hero, chairFront);
 
   let ground: GroundPath | null = null;
   let heroAnimations: HeroAnimations | null = null;
@@ -503,6 +525,20 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   /** 한 번 받아 본 스킬의 원작 동작 이름 */
   const knownActions = new Map<number, string[]>();
   let facing: -1 | 1 = -1;
+  let chairId: number | null = null;
+  /** 고른 의자의 그림과 앉은 동작. 다 받아야 앉는다 */
+  let chair: {
+    art: ChairArt;
+    layers: { loaded: LoadedChairLayer; delays: number[]; sprite: Sprite }[];
+    sit: Animation;
+    loopDelayMs: number;
+  } | null = null;
+  let chairKey = '';
+  /** chairKey 를 못 받았을 때 다시 받을 시각 */
+  let chairRetryAt = Infinity;
+  let seated = false;
+  let seatClockMs = 0;
+  let resting = false;
   let behavior: Behavior = { kind: 'wander', targetX: 0, pauseMs: 1000 };
   let encounter: Encounter | null = null;
   let encounterLoading = false;
@@ -934,7 +970,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
     if (behavior.kind === 'wander') {
       if (behavior.pauseMs > 0) {
-        behavior.pauseMs -= dtMs;
+        if (!(resting && chair)) behavior.pauseMs -= dtMs;
         if (heroAction !== 'attack') setHeroAction('stand');
       } else if (moveToward(behavior.targetX)) {
         behavior = { kind: 'wander', targetX: randomGroundX(), pauseMs: 1500 + Math.random() * 3000 };
@@ -957,6 +993,104 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
     hero.y = groundY(ground, hero.x);
     updateHeroSprite(dtMs);
+  }
+
+  /** 고른 의자의 그림과 지금 모습의 앉은 동작을 받는다. 받는 동안은 앞 의자를 그대로 쓴다 */
+  function loadChair(): void {
+    const art = chairId === null ? null : chairArtOf(chairId);
+    if (!art || heroLook.length === 0) {
+      chairKey = '';
+      clearChair();
+      return;
+    }
+    const look = seatedLook(heroLook, art);
+    const key = `${art.id}|${look.join(',')}`;
+    if (key === chairKey && performance.now() < chairRetryAt) return;
+    chairKey = key;
+    chairRetryAt = Infinity;
+    Promise.all([loadChairLayers(art), loadSitAnimation(look, art.sitAction ?? 'sit')]).then(
+      ([layers, sit]) => {
+        if (chairKey === key) placeChair(art, layers, sit);
+      },
+      (error: unknown) => {
+        if (chairKey !== key) return;
+        console.warn('[scene] 의자 그림을 못 받아 잠시 뒤 다시 받는다', error);
+        chairRetryAt = performance.now() + LOOK_RETRY_MS;
+      },
+    );
+  }
+
+  function clearChair(): void {
+    if (seated) standUp();
+    [chairBack, chairFront].forEach((layer) => layer.removeChildren().forEach((sprite) => sprite.destroy()));
+    chair = null;
+  }
+
+  function placeChair(art: ChairArt, layers: LoadedChairLayer[], sit: Animation): void {
+    clearChair();
+    const { back, front } = layerOrder(layers.map((loaded) => ({ z: loaded.data.z, loaded })));
+    const place = (container: Container) => (each: { loaded: LoadedChairLayer }) => {
+      const sprite = new Sprite(each.loaded.frames[0].texture);
+      container.addChild(sprite);
+      return { loaded: each.loaded, delays: each.loaded.frames.map((frame) => frame.delay), sprite };
+    };
+    chair = { art, layers: [...back.map(place(chairBack)), ...front.map(place(chairFront))], sit, loopDelayMs: chairLoopDelayMs(art) };
+  }
+
+  /** 마을·사냥터 바닥에서 돌아다니다 멈춰 선 동안. 싸움·맵 이동·사다리·스킬 동작 중에는 앉지 않는다 */
+  function restingNow(): boolean {
+    return (
+      chair !== null &&
+      heroAnimations !== null &&
+      ground !== null &&
+      !navMotion &&
+      !parkedAtPortal &&
+      !castPose &&
+      !encounter &&
+      !bossBusy &&
+      behavior.kind === 'wander' &&
+      behavior.pauseMs > 0 &&
+      heroAction === 'stand'
+    );
+  }
+
+  /** 서기·걷기 그림을 고른 뒤에 앉은 그림으로 덮는다. 일어설 때는 같은 프레임에 서기 그림이 이미 들어 있다 */
+  function updateSeat(dtMs: number): void {
+    if (!restingNow()) {
+      if (seated) standUp();
+      return;
+    }
+    if (seated) seatClockMs += dtMs;
+    else {
+      seated = true;
+      seatClockMs = 0;
+      chairBack.visible = true;
+      chairFront.visible = true;
+    }
+    const { art, layers, sit } = chair!;
+    const face = seatFacing(art, facing);
+    const body = seatedBodyOffset(art);
+    hero.texture = sit.frames[frameAt(sit.delays, seatClockMs, true)];
+    hero.scale.x = -face;
+    // 발(hero 위치)은 그대로 두고 그림만 옮겨서 이름표·카메라·이펙트는 발을 따라간다
+    hero.pivot.set(-body.x, -body.y);
+    [chairBack, chairFront].forEach((layer) => {
+      layer.position.set(hero.x, hero.y);
+      layer.scale.x = -face;
+    });
+    layers.forEach(({ loaded, delays, sprite }) => {
+      const frame = loaded.frames[frameAt(delays, seatClockMs, true)];
+      const at = frameTopLeft(layerAnchor(art, loaded.data), frame.origin);
+      sprite.texture = frame.texture;
+      sprite.position.set(at.x, at.y);
+    });
+  }
+
+  function standUp(): void {
+    seated = false;
+    hero.pivot.set(0, 0);
+    chairBack.visible = false;
+    chairFront.visible = false;
   }
 
   function updateEncounter(dtMs: number): void {
@@ -1421,7 +1555,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   function stillForMs(): number {
     if (navMotion || castPose || heroAction !== 'stand') return 0;
     if (parkedAtPortal) return Infinity;
-    return behavior.kind === 'wander' ? Math.max(0, behavior.pauseMs) : 0;
+    if (behavior.kind !== 'wander') return 0;
+    return behavior.pauseMs > 0 && resting && chair ? Infinity : Math.max(0, behavior.pauseMs);
   }
 
   /** 서 있을 때는 rAF 를 멈추고 타이머로 IDLE_FPS 만큼만 그린다. rAF 를 걸어 두기만 해도 WebView 가 매 화면 갱신마다 깨어난다 */
@@ -1434,7 +1569,11 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       fading: fade.alpha !== fadeTarget,
       cameraSettled,
       transientEffects: effects.length - loops.length,
-      shortestLoopDelayMs: Math.min(...loops, ...(heroAnimations?.stand.delays ?? [])),
+      // 앉아 있으면 의자 프레임도 포털처럼 늘 돈다
+      shortestLoopDelayMs: Math.min(
+        ...loops,
+        ...(seated && chair ? [chair.loopDelayMs, ...chair.sit.delays] : (heroAnimations?.stand.delays ?? [])),
+      ),
     });
     if (fps !== IDLE_FPS) {
       if (fps === FULL_FPS && !app.ticker.started) {
@@ -1464,6 +1603,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function step(dtMs: number): void {
     updateHero(dtMs);
+    updateSeat(dtMs);
     updateEncounter(dtMs);
     updateCamera(Math.min(1, dtMs / 250));
     bossGauge.update(dtMs);
@@ -1508,6 +1648,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     setJob(job) {
       heroTier = job.tier;
       heroLook = job.look;
+      loadChair();
       // 스킬창에서 스킬을 누르는 순간 바로 움직이게 공용 동작(alert)을 모습이 바뀔 때마다 받아 둔다
       void castMotion([]);
       fallbackRange = job.fallbackRange;
@@ -1735,6 +1876,14 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       } finally {
         unpark();
       }
+    },
+    setChair(next) {
+      if (next === chairId) return;
+      chairId = next;
+      loadChair();
+    },
+    setResting(next) {
+      resting = next;
     },
     setRoutePortals(portals) {
       routePortals = portals;

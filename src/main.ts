@@ -32,6 +32,7 @@ import {
 import { bossTurn, settleBossFight } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
+import { selectChair } from './game/chairs';
 import {
   awardBossDrops,
   buyEquipItem,
@@ -301,6 +302,9 @@ const equipWindow = createEquipWindow(root, {
   onUnequip(slot) {
     changeGear((character) => (character.equipWorn = unequipGear(character.equipWorn, slot)));
   },
+  onSelectChair(chairId) {
+    changeGear((character) => (character.chairSelected = selectChair(character.chairOwned, character.chairSelected, chairId)));
+  },
   onClose: closeInfoWindow,
 });
 const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
@@ -469,6 +473,8 @@ function equipState(character: Character): EquipWindowState {
     worn: character.equipWorn,
     cash: character.cashEquipped,
     pity: character.equipPity,
+    chairOwned: character.chairOwned,
+    chairSelected: character.chairSelected,
     look: job.look,
     standAction: job.standAction,
   };
@@ -972,6 +978,7 @@ async function tick(): Promise<void> {
   }
 
   scene.setJob(job);
+  scene.setChair(character.chairSelected);
   scene.setName(character.name);
   if (pendingGifts.length > 0 && isShown()) {
     hud.notifyItems(
@@ -980,6 +987,7 @@ async function tick(): Promise<void> {
     );
     pendingGifts = [];
   }
+  const resting = snapshot.idleSeconds >= snapshot.idleLimitSeconds;
   hud.render({
     level: info.level,
     jobTitle: job.title,
@@ -989,8 +997,9 @@ async function tick(): Promise<void> {
     xpIntoLevel: info.xpIntoLevel,
     xpForLevel: info.xpForLevel,
     muted: isMuted(),
-    resting: snapshot.idleSeconds >= snapshot.idleLimitSeconds,
+    resting,
   });
+  scene.setResting(resting);
 
   const pinned = pinnedTown(settings, info.level);
   if (!town) {

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { chairArtOf } from '../maple/chairArt';
+import { chairLoopDelayMs } from './chairPlacement';
 import { FULL_FPS, IDLE_FPS, type SceneActivity, targetFps } from './framePolicy';
 
 const standing: SceneActivity = {
@@ -18,6 +20,14 @@ describe('targetFps', () => {
 
   it('제자리에 서서 포털만 돌면 낮춘다', () => {
     expect(targetFps(standing)).toBe(IDLE_FPS);
+  });
+
+  it('앉은 의자도 포털처럼 센다. 100ms 보다 짧은 프레임이 도는 의자면 낮추지 않는다', () => {
+    const seated = (chairId: number) => ({ ...standing, stillForMs: Infinity, shortestLoopDelayMs: Math.min(100, chairLoopDelayMs(chairArtOf(chairId)!)) });
+    // 버섯친구 의자 180ms · 하늘색 나무 의자 한 장 · 블루 드래곤 의자 96ms
+    expect(targetFps(seated(3010423))).toBe(IDLE_FPS);
+    expect(targetFps(seated(3010001))).toBe(IDLE_FPS);
+    expect(targetFps(seated(3010430))).toBe(FULL_FPS);
   });
 
   it('윗층 포털에 세워 둔 동안처럼 끝이 없는 정지도 낮춘다', () => {

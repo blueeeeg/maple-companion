@@ -5,7 +5,6 @@ import {
   type EquipPity,
   type EquipSlot,
   type EquipWorn,
-  collectionProgress,
   entryItems,
   equipItemName,
   hiddenByCash,
@@ -15,6 +14,7 @@ import type { JobPath } from '../game/jobs';
 import { cashShopUiUrl, characterAnimationUrl, itemIconUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
+import { type ChairCell, EQUIP_TABS, type EquipTab, chairCells, tabCount, tabEntries } from './equipTabs';
 import { BUTTON_SKINS, dressMapleButton } from './mapleButton';
 
 export interface EquipWindowState {
@@ -23,6 +23,8 @@ export interface EquipWindowState {
   worn: EquipWorn;
   cash: CashEquipped;
   pity: EquipPity;
+  chairOwned: number[];
+  chairSelected: number | null;
   /** 맵 캐릭터와 같은 모습(컬렉션 장비·캐시 아이템 포함) */
   look: number[];
   standAction: string;
@@ -31,6 +33,8 @@ export interface EquipWindowState {
 export interface EquipWindowHandlers {
   onEquip(itemId: number): void;
   onUnequip(slot: EquipSlot): void;
+  /** 고른 의자를 다시 고르면 내린다 */
+  onSelectChair(chairId: number): void;
   onClose(): void;
 }
 
@@ -40,14 +44,6 @@ export interface EquipWindow {
   hide(): void;
 }
 
-type Filter = 'all' | 'boss' | 'level' | 'shop';
-
-const FILTERS: [Filter, string][] = [
-  ['all', '전체'],
-  ['boss', '보스'],
-  ['level', '레벨'],
-  ['shop', '상점'],
-];
 /** 판(172 폭)에 33칸 다섯 줄 × 세 줄 */
 const PAGE_SIZE = 15;
 
@@ -179,14 +175,14 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
   const pageNumber = pick('.equip-page-number');
 
   let state: EquipWindowState | null = null;
-  let filter: Filter = 'all';
+  let filter: EquipTab = 'all';
   let page = 0;
   let selectedId: string | null = null;
   let hoveredId: string | null = null;
   let lookUrl = '';
   /** 색이 여럿인 칸(컬러 목장갑·모험가의 망토)에서 보고 있는 색 */
   const variants = new Map<string, number>();
-  const filterButtons = new Map<Filter, HTMLButtonElement>();
+  const filterButtons = new Map<EquipTab, HTMLButtonElement>();
 
   const owns = (itemId: number) => state?.owned.includes(itemId) ?? false;
   const items = (entry: EquipEntry) => (state ? entryItems(entry, state.path) : []);
@@ -201,11 +197,15 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
     return list.find(owns) ?? list[0];
   }
 
-  function visibleEntries(): EquipEntry[] {
-    return EQUIP_ENTRIES.filter((entry) => items(entry).length > 0 && (filter === 'all' || entry.source.kind === filter));
-  }
+  const visibleEntries = (): EquipEntry[] => (state ? tabEntries(filter, state.path) : []);
+  const visibleChairs = (): ChairCell[] =>
+    state && filter === 'chair' ? chairCells(state.chairOwned, state.chairSelected, state.pity) : [];
+  /** 의자 칸은 장비 칸 id 와 겹치지 않게 앞에 붙인다 */
+  const chairCellId = (chairId: number) => `chair-${chairId}`;
+  const chairCellOf = (id: string | null) =>
+    state && id ? (chairCells(state.chairOwned, state.chairSelected, state.pity).find((cell) => chairCellId(cell.chair.id) === id) ?? null) : null;
 
-  const pageCount = () => Math.max(1, Math.ceil(visibleEntries().length / PAGE_SIZE));
+  const pageCount = () => Math.max(1, Math.ceil((filter === 'chair' ? visibleChairs() : visibleEntries()).length / PAGE_SIZE));
 
   function noteFor(entry: EquipEntry, itemId: number): { text: string; tone: string } {
     if (!state) return { text: '', tone: '' };
@@ -283,25 +283,68 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
     return button;
   }
 
+  function markChairCell(button: HTMLButtonElement, each: ChairCell) {
+    const id = chairCellId(each.chair.id);
+    button.classList.toggle('is-locked', !each.owned);
+    button.classList.toggle('is-equipped', each.selected);
+    button.classList.toggle('is-selected', id === selectedId);
+    button.setAttribute('aria-pressed', String(id === selectedId));
+    const label = `${each.chair.name} · ${each.note}`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    const icon = button.querySelector<HTMLElement>('.equip-cell-icon')!;
+    if (icon.dataset.itemId !== String(each.chair.id)) showIcon(icon, each.chair.id);
+  }
+
+  function chairCell(each: ChairCell): HTMLButtonElement {
+    const id = chairCellId(each.chair.id);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'equip-cell';
+    button.dataset.entryId = id;
+    button.innerHTML = `<span class="equip-cell-icon"></span><span class="equip-cell-mark" aria-hidden="true"></span>`;
+    const hover = () => {
+      hoveredId = id;
+      renderDetail();
+    };
+    const leave = () => {
+      if (hoveredId !== id) return;
+      hoveredId = null;
+      renderDetail();
+    };
+    button.addEventListener('pointerenter', hover);
+    button.addEventListener('pointerleave', leave);
+    button.addEventListener('focus', hover);
+    button.addEventListener('blur', leave);
+    button.addEventListener('click', () => {
+      selectedId = id;
+      render();
+    });
+    markChairCell(button, each);
+    return button;
+  }
+
   let shownEntries = '';
   function renderGrid() {
-    const visible = visibleEntries();
     page = Math.min(page, pageCount() - 1);
-    const pageEntries = visible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-    const key = pageEntries.map((entry) => entry.id).join(',');
+    const chairs = filter === 'chair' ? visibleChairs().slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE) : [];
+    const pageEntries = filter === 'chair' ? [] : visibleEntries().slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    const key = [...pageEntries.map((entry) => entry.id), ...chairs.map((each) => chairCellId(each.chair.id))].join(',');
     if (key !== shownEntries) {
       shownEntries = key;
       // 원작 장비창처럼 빈 자리도 칸으로 채워 판 모양을 지킨다
-      const empty = Array.from({ length: PAGE_SIZE - pageEntries.length }, () => {
+      const empty = Array.from({ length: PAGE_SIZE - pageEntries.length - chairs.length }, () => {
         const slot = document.createElement('span');
         slot.className = 'equip-cell is-empty';
         return slot;
       });
-      grid.replaceChildren(...pageEntries.map(cell), ...empty);
+      grid.replaceChildren(...pageEntries.map(cell), ...chairs.map(chairCell), ...empty);
     } else {
-      grid.querySelectorAll<HTMLButtonElement>('button.equip-cell').forEach((button) =>
-        markCell(button, EQUIP_ENTRIES.find((entry) => entry.id === button.dataset.entryId)!),
-      );
+      grid.querySelectorAll<HTMLButtonElement>('button.equip-cell').forEach((button) => {
+        const chairCellState = chairs.find((each) => chairCellId(each.chair.id) === button.dataset.entryId);
+        if (chairCellState) markChairCell(button, chairCellState);
+        else markCell(button, EQUIP_ENTRIES.find((entry) => entry.id === button.dataset.entryId)!);
+      });
     }
     pageNumber.textContent = `${page + 1} / ${pageCount()}`;
     pagePrevious.disabled = page === 0;
@@ -315,7 +358,20 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
   const selectedEntry = () => EQUIP_ENTRIES.find((entry) => entry.id === selectedId) ?? null;
 
   function renderDetail() {
+    const chairShown = chairCellOf(hoveredId ?? selectedId);
+    if (chairShown) {
+      detail.dataset.tone = chairShown.tone;
+      detailName.textContent = chairShown.chair.name;
+      detailNote.textContent = chairShown.note;
+      return;
+    }
     const entry = EQUIP_ENTRIES.find((each) => each.id === (hoveredId ?? selectedId)) ?? null;
+    if (!entry && filter === 'chair') {
+      detail.dataset.tone = 'hint';
+      detailName.textContent = '의자를 고르면 쉴 때 앉아요';
+      detailNote.textContent = '보스를 잡으면 낮은 확률로 떨어져요';
+      return;
+    }
     if (!entry || !state) {
       detail.dataset.tone = 'hint';
       detailName.textContent = '칸을 누르면 입고 벗어요';
@@ -331,11 +387,18 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
   }
 
   function renderWear() {
+    const chairChosen = chairCellOf(selectedId);
+    if (chairChosen) {
+      wear.disabled = !chairChosen.owned;
+      wear.textContent = chairChosen.selected ? '내리기' : '앉기';
+      return;
+    }
     const entry = selectedEntry();
     const itemId = entry ? shownItem(entry) : null;
     const owned = itemId !== null && owns(itemId);
     wear.disabled = !owned;
-    wear.textContent = entry && owned && state?.worn[entry.slot] === itemId ? '벗기' : '입기';
+    if (!entry && filter === 'chair') wear.textContent = '앉기';
+    else wear.textContent = entry && owned && state?.worn[entry.slot] === itemId ? '벗기' : '입기';
   }
 
   function renderLook(current: EquipWindowState) {
@@ -358,21 +421,22 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
 
   function render() {
     if (!state) return;
-    const progress = collectionProgress(state.owned, state.path);
-    count.textContent = `컬렉션 ${progress.owned}/${progress.total}`;
+    count.textContent = tabCount(filter, state);
     renderGrid();
     renderDetail();
     renderWear();
     renderLook(state);
   }
 
-  FILTERS.forEach(([each, label]) => {
+  EQUIP_TABS.forEach(([each, label]) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'equip-filter';
     button.setAttribute('role', 'tab');
     button.textContent = label;
     button.addEventListener('click', () => {
+      // 의자 탭과 장비 탭을 오가면 고른 칸이 판에 없어서 「입기」·「앉기」가 엉뚱한 칸을 가리킨다
+      if ((each === 'chair') !== (filter === 'chair')) selectedId = null;
       filter = each;
       page = 0;
       render();
@@ -382,6 +446,11 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
   });
 
   wear.addEventListener('click', () => {
+    const chairChosen = chairCellOf(selectedId);
+    if (chairChosen) {
+      if (chairChosen.owned) handlers.onSelectChair(chairChosen.chair.id);
+      return;
+    }
     const entry = selectedEntry();
     if (!entry || !state) return;
     const itemId = shownItem(entry);
