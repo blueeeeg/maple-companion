@@ -36,7 +36,7 @@ import {
   preloadBossGauge,
 } from '../maple/bossMob';
 import { type Calibration, type GroundPath, calibrateFootholds, groundY, mainGround } from '../maple/ground';
-import { type Pixels, alignOverlay, exactCalibrationFrom, frontRenderLayers } from '../maple/layers';
+import { type Pixels, alignOverlay, exactCalibrationFrom, frontRenderLayers, ladderRopeMasks } from '../maple/layers';
 import { type EffectLayer, type Skill, canDrawSkill, loadSkill } from '../maple/skills';
 import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, loadTexture, storeAnimation } from '../maple/textures';
 import { fetchStoredJson, keepArt } from '../maple/artStore';
@@ -253,6 +253,8 @@ interface Stage {
   groundLayer: number;
   /** 포털까지 오르내리는 길. 맵 월드 좌표다. 못 만들면 null 이고 바닥만 걷는다 */
   nav: NavGraph | null;
+  /** 맵 월드 좌표. page 를 못 받은 것은 앞 레이어에서 빼지 못한다 */
+  ladders: LadderRope[];
 }
 
 type Behavior =
@@ -376,10 +378,14 @@ function exactCalibration(mapId: number, groundLayer: number, rough: Calibration
 }
 
 /** layer 에 선 캐릭터를 가리는 레이어들을 한 장으로 겹친다. 원점이 같아 어느 layer 로 받아도 전체 렌더 위 위치가 같다 */
-function loadFrontStack(mapId: number, layer: number, calibration: Calibration) {
+function loadFrontStack(mapId: number, layer: number, calibration: Calibration, ladders: LadderRope[]) {
   const minX = Math.round(-calibration.dx) - FRONT_SEARCH;
   const minY = Math.round(-calibration.dy) - FRONT_SEARCH;
-  return loadLayerStack(frontRenderLayers(layer).map((each) => mapLayerRenderUrl(mapId, each, minX, minY)));
+  const layers = frontRenderLayers(layer);
+  return loadLayerStack(
+    layers.map((each) => mapLayerRenderUrl(mapId, each, minX, minY)),
+    ladderRopeMasks(ladders, layers, { x: minX, y: minY }),
+  );
 }
 
 /**
@@ -408,9 +414,10 @@ async function loadFront(
   mapId: number,
   groundLayer: number,
   calibration: Calibration,
+  ladders: LadderRope[],
   base: Pixels,
 ): Promise<{ texture: Texture; x: number; y: number } | null> {
-  const stack = await loadFrontStack(mapId, groundLayer, calibration);
+  const stack = await loadFrontStack(mapId, groundLayer, calibration, ladders);
   if (!stack) return null;
   const at = alignOverlay(base, stack.pixels, { x: -FRONT_SEARCH, y: -FRONT_SEARCH }, FRONT_SEARCH);
   if (!at) {
@@ -1075,7 +1082,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     if (!upperFronts.has(layer)) {
       upperFronts.set(layer, null);
       const load = townLoads;
-      loadFrontStack(stage.mapId, layer, stage.calibration).then(
+      loadFrontStack(stage.mapId, layer, stage.calibration, stage.ladders).then(
         (stack) => {
           if (load === townLoads) upperFronts.set(layer, stack?.texture ?? null);
           else stack?.texture.destroy(true);
@@ -1136,6 +1143,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       image,
       calibration,
       nav,
+      ladders: paged,
       groundLayer: worldGround.layer,
       ground: {
         points: worldGround.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
@@ -1156,7 +1164,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     setFront(null);
     const load = ++townLoads;
     // 앞 레이어는 서버가 그리는 데 오래 걸려서 마을을 먼저 보여 주고 받는 대로 덮는다. 전체 렌더에도 같은 그림이 있어 늦게 붙어도 티가 안 난다
-    loadFront(stage.mapId, stage.groundLayer, stage.calibration, stage.image.pixels)
+    loadFront(stage.mapId, stage.groundLayer, stage.calibration, stage.ladders, stage.image.pixels)
       .then((front) => {
         if (load === townLoads) setFront(front);
         else front?.texture.destroy(true);

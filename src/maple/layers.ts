@@ -1,4 +1,5 @@
 import { type Calibration, type Point, correctCalibration } from './ground';
+import type { LadderRope } from './navigation';
 
 const MAP_LAYERS = 8;
 
@@ -9,6 +10,40 @@ const MAP_LAYERS = 8;
 export function frontRenderLayers(groundLayer: number): number[] {
   const first = (groundLayer + 1) * 2;
   return Array.from({ length: Math.max(0, MAP_LAYERS * 2 - first) }, (_, index) => first + index);
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// 줄 그림이 x 에서 옆으로 퍼지는 폭과 위 끝(y1)보다 솟는 높이. 로프 위 끝 말뚝과 사다리 기둥까지 덮게 렌더로 재어 잡았다
+const ROPE_HALF_WIDTH = 14;
+const LADDER_HALF_WIDTH = 32;
+const LADDER_ROPE_RISE = 24;
+const LADDER_ROPE_DROP = 4;
+
+/**
+ * renderLayers 마다 앞 레이어에서 지울 사다리·로프 그림 자리. origin 은 그 레이어 그림 왼쪽 위의 맵 좌표다.
+ * 줄 그림은 그 page 의 오브젝트 레이어에 있어서 더 낮은 발판을 걷는 캐릭터가 줄 끝(말뚝·사다리 아래 끝) 뒤로 숨는다.
+ * 지나가기만 해도 줄 뒤로 밀려 보이지 않게 앞 레이어에서는 빼고 캐릭터 뒤의 전체 렌더에만 남긴다
+ */
+export function ladderRopeMasks(ladders: readonly LadderRope[], renderLayers: readonly number[], origin: Point): Rect[][] {
+  return renderLayers.map((layer) =>
+    ladders
+      .filter((ladder) => ladder.page !== undefined && ladder.page * 2 === layer)
+      .map((ladder) => {
+        const half = ladder.isLadder ? LADDER_HALF_WIDTH : ROPE_HALF_WIDTH;
+        return {
+          x: ladder.x - half - origin.x,
+          y: ladder.y1 - LADDER_ROPE_RISE - origin.y,
+          width: half * 2,
+          height: ladder.y2 - ladder.y1 + LADDER_ROPE_RISE + LADDER_ROPE_DROP,
+        };
+      }),
+  );
 }
 
 export interface Pixels {

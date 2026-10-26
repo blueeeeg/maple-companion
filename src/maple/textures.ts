@@ -3,7 +3,7 @@ import { MAP_RENDER_TIMEOUT_MS } from './api';
 import { artStore, fetchStored } from './artStore';
 import { gifFrameDelays } from './gif';
 import type { AlphaMap } from './ground';
-import type { Pixels } from './layers';
+import type { Pixels, Rect } from './layers';
 
 const textures = new Map<string, Promise<Texture>>();
 
@@ -117,16 +117,27 @@ function loadOptionalBitmap(url: string): Promise<ImageBitmap | null> {
   );
 }
 
-/** 원점을 같게 받은 레이어 이미지들을 순서대로 겹쳐 한 장으로 만든다. 모두 비어 있으면 null */
-export async function loadLayerStack(urls: string[]): Promise<{ texture: Texture; pixels: Pixels } | null> {
-  const bitmaps = (await Promise.all(urls.map(loadOptionalBitmap))).filter((bitmap) => bitmap !== null);
-  if (bitmaps.length === 0) return null;
-  const width = Math.max(...bitmaps.map((bitmap) => bitmap.width));
-  const height = Math.max(...bitmaps.map((bitmap) => bitmap.height));
+/** 원점을 같게 받은 레이어 이미지들을 순서대로 겹쳐 한 장으로 만든다. masks[i] 자리는 i 번째 레이어에서만 지운다. 모두 비어 있으면 null */
+export async function loadLayerStack(urls: string[], masks: Rect[][] = []): Promise<{ texture: Texture; pixels: Pixels } | null> {
+  const layers = (await Promise.all(urls.map(loadOptionalBitmap)))
+    .map((bitmap, index) => ({ bitmap, mask: masks[index] ?? [] }))
+    .filter((layer): layer is { bitmap: ImageBitmap; mask: Rect[] } => layer.bitmap !== null);
+  if (layers.length === 0) return null;
+  const width = Math.max(...layers.map(({ bitmap }) => bitmap.width));
+  const height = Math.max(...layers.map(({ bitmap }) => bitmap.height));
   const canvas = new OffscreenCanvas(width, height);
   const context = canvas.getContext('2d', { willReadFrequently: true })!;
-  bitmaps.forEach((bitmap) => {
-    context.drawImage(bitmap, 0, 0);
+  layers.forEach(({ bitmap, mask }) => {
+    if (mask.length === 0) {
+      context.drawImage(bitmap, 0, 0);
+    } else {
+      // 먼저 겹친 아래 레이어는 남기고 이 레이어 그림만 지운다
+      const single = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const singleContext = single.getContext('2d')!;
+      singleContext.drawImage(bitmap, 0, 0);
+      mask.forEach((rect) => singleContext.clearRect(rect.x, rect.y, rect.width, rect.height));
+      context.drawImage(single, 0, 0);
+    }
     bitmap.close();
   });
   const { data } = context.getImageData(0, 0, width, height);

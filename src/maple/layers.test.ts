@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CALIBRATION_PASSES, type Pixels, alignOverlay, exactCalibrationFrom, frontRenderLayers } from './layers';
+import {
+  CALIBRATION_PASSES,
+  type Pixels,
+  alignOverlay,
+  exactCalibrationFrom,
+  frontRenderLayers,
+  ladderRopeMasks,
+} from './layers';
 
 describe('캐릭터를 가리는 레이어', () => {
   it('다음 맵 레이어의 오브젝트부터 마지막 레이어의 타일까지다', () => {
@@ -9,6 +16,33 @@ describe('캐릭터를 가리는 레이어', () => {
 
   it('맨 위 레이어에 서 있으면 가리는 것이 없다', () => {
     expect(frontRenderLayers(7)).toEqual([]);
+  });
+});
+
+describe('앞 레이어에서 빼는 사다리·로프 그림', () => {
+  const rope = { x: 183, y1: -254, y2: 35, isLadder: false, page: 2 };
+  const ladder = { x: 637, y1: -400, y2: -170, isLadder: true, page: 3 };
+
+  it('page 의 오브젝트 레이어에서만 줄 둘레를 레이어 그림 원점 기준으로 지운다', () => {
+    const layers = frontRenderLayers(1);
+    const masks = ladderRopeMasks([rope, ladder], layers, { x: -1000, y: -500 });
+    expect(masks).toHaveLength(layers.length);
+    const at = (layer: number) => masks[layers.indexOf(layer)];
+    expect(at(4)).toHaveLength(1);
+    expect(at(6)).toHaveLength(1);
+    expect(masks.flat()).toHaveLength(2);
+    const [ropeRect] = at(4);
+    // 줄 x 를 가운데에 두고 위 끝 말뚝까지 덮는다
+    expect(ropeRect.x + ropeRect.width / 2).toBe(rope.x + 1000);
+    expect(ropeRect.y).toBeLessThan(rope.y1 + 500 - 15);
+    expect(ropeRect.y + ropeRect.height).toBeGreaterThanOrEqual(rope.y2 + 500);
+    // 사다리는 로프보다 넓다
+    expect(at(6)[0].width).toBeGreaterThan(ropeRect.width);
+  });
+
+  it('page 를 모르거나 캐릭터보다 낮은 page 의 줄은 지우지 않는다', () => {
+    const { page: _, ...unknown } = rope;
+    expect(ladderRopeMasks([unknown, { ...rope, page: 1 }], frontRenderLayers(1), { x: 0, y: 0 }).flat()).toEqual([]);
   });
 });
 
