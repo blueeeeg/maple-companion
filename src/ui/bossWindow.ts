@@ -1,7 +1,7 @@
 import { BOSSES, type BossSpec, ZAKUM_ID } from '../game/bosses';
 import { type BossTurn, formatBossWait } from '../game/bossChallenge';
 import { type WzValue, mobFrameUrl, mobGageIconLinkUrl, mobGageUrl, wzImageUrl } from '../maple/api';
-import { applyArt, loadWithRetry } from './art';
+import { applyArt, cropArt, loadWithRetry } from './art';
 import { type FrameRecipe, rebuildBossFrame } from './buttonArt';
 import { PRIORITY, loadImageAsset, loadStoredJson } from './cashAssets';
 import { BUTTON_SKINS, type ButtonSkin, dressMapleButton, prefetchButtonSkins } from './mapleButton';
@@ -113,23 +113,18 @@ const faceUrl = (boss: BossSpec) => mobFrameUrl(boss.id, 'stand', 0);
 let bossFrame: Promise<Record<keyof typeof FRAME_STATES, string>> | null = null;
 function loadBossFrame(): Promise<Record<keyof typeof FRAME_STATES, string>> {
   if (!bossFrame) {
-    const build = async (state: string) => {
-      const url = FRAME_SOURCE(state);
-      await loadWithRetry(url);
-      const image = new Image();
-      image.crossOrigin = 'anonymous';
-      image.src = url;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      const context = canvas.getContext('2d')!;
-      context.drawImage(image, 0, 0);
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-      pixels.data.set(rebuildBossFrame(pixels.data, canvas.width, FRAME_RECIPE));
-      context.putImageData(pixels, 0, 0);
-      return canvas.toDataURL();
-    };
+    const build = (state: string) =>
+      cropArt(FRAME_SOURCE(state), `boss-frame-${JSON.stringify(FRAME_RECIPE)}`, (image) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        pixels.data.set(rebuildBossFrame(pixels.data, canvas.width, FRAME_RECIPE));
+        context.putImageData(pixels, 0, 0);
+        return canvas.toDataURL();
+      });
     const names = Object.keys(FRAME_STATES) as (keyof typeof FRAME_STATES)[];
     bossFrame = Promise.all(names.map((name) => build(FRAME_STATES[name]))).then(
       (urls) => Object.fromEntries(names.map((name, index) => [name, urls[index]])) as Record<keyof typeof FRAME_STATES, string>,

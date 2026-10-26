@@ -1,6 +1,6 @@
 import type { JobBranchId, JobLineId, JobPath } from '../game/jobs';
 import { cashShopUiUrl, itemIconUrl, wzImageUrl } from '../maple/api';
-import { applyArt, loadWithRetry, loadedImage } from './art';
+import { applyArt, cropArt, loadWithRetry, loadedImage } from './art';
 import { PRACTICE_BANNER_URL } from './bossWindow';
 import { type GlyphBox, isQuickKeyBlue, keyOutBackground, keyOutFaint } from './glyph';
 import {
@@ -70,10 +70,11 @@ const QUICK_KEY_INSIDE = { x: 3, y: 3, width: 22, height: 14 };
 
 /**
  * 빅뱅 전 상태 바의 스탯·스킬 단축 버튼에서 파란 바탕을 빼고 막대그래프·책 그림(16×12, 18×12)만 떼어 낸다.
- * 옆의 캐시샵·⚙️ 버튼처럼 HUD 의 어두운 칸 안에 원본 크기로 넣는다. 못 받으면 글자 버튼으로 남는다
+ * 옆의 캐시샵·⚙️ 버튼처럼 HUD 의 어두운 칸 안에 원본 크기로 넣는다. 받을 때까지는 글자 버튼이다
  */
 function quickKeyGlyph(node: string): Promise<string> {
-  return cropGlyph(wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`), (pixels, width) =>
+  const url = wzImageUrl(`UI/_Canvas/StatusBar.img/${node}/normal/0`);
+  return cropGlyph(url, `quick-key-${Object.values(QUICK_KEY_INSIDE).join(',')}`, (pixels, width) =>
     keyOutBackground(pixels, width, QUICK_KEY_INSIDE, isQuickKeyBlue),
   );
 }
@@ -85,26 +86,28 @@ function quickKeyGlyph(node: string): Promise<string> {
 const BOSS_GLYPH_MIN_ALPHA = 48;
 const BOSS_MENU_GLYPH = wzImageUrl('UI/_Canvas/StatusBar3.img/mainBar/submenu/community/button:boss/normal/0');
 
-async function cropGlyph(url: string, keyOut: (pixels: Uint8ClampedArray, width: number) => GlyphBox | null): Promise<string> {
-  await loadWithRetry(url);
-  const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.src = url;
-  await image.decode();
-  const canvas = document.createElement('canvas');
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight;
-  const context = canvas.getContext('2d')!;
-  context.drawImage(image, 0, 0);
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const box = keyOut(pixels.data, canvas.width);
-  if (!box) throw new Error(`${url} 그림이 비었다`);
-  context.putImageData(pixels, 0, 0);
-  const glyph = document.createElement('canvas');
-  glyph.width = box.width;
-  glyph.height = box.height;
-  glyph.getContext('2d')!.drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
-  return glyph.toDataURL();
+/** 뗀 그림은 기기에 남긴다. 떼는 법(keyOut)을 바꾸면 version 을 올린다 */
+function cropGlyph(
+  url: string,
+  version: string,
+  keyOut: (pixels: Uint8ClampedArray, width: number) => GlyphBox | null,
+): Promise<string> {
+  return cropArt(url, version, (image) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    const box = keyOut(pixels.data, canvas.width);
+    if (!box) throw new Error(`${url} 그림이 비었다`);
+    context.putImageData(pixels, 0, 0);
+    const glyph = document.createElement('canvas');
+    glyph.width = box.width;
+    glyph.height = box.height;
+    glyph.getContext('2d')!.drawImage(canvas, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+    return glyph.toDataURL();
+  });
 }
 
 export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
@@ -208,7 +211,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   );
   const boss = pick<HTMLButtonElement>('.hud-boss');
   boss.addEventListener('click', handlers.onOpenBoss);
-  cropGlyph(BOSS_MENU_GLYPH, (pixels, width) => keyOutFaint(pixels, width, BOSS_GLYPH_MIN_ALPHA)).then(
+  cropGlyph(BOSS_MENU_GLYPH, `boss-glyph-${BOSS_GLYPH_MIN_ALPHA}`, (pixels, width) => keyOutFaint(pixels, width, BOSS_GLYPH_MIN_ALPHA)).then(
     (src) => boss.replaceChildren(loadedImage(src)),
     () => {},
   );
@@ -219,7 +222,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   // 원작 캐시샵의 캐시 동전 그림(13×13)을 받으면 글자 아이콘과 바꾼다
   const coin = cashShopUiUrl('CashItem/0');
   loadWithRetry(coin).then(
-    () => shop.replaceChildren(loadedImage(coin)),
+    (src) => shop.replaceChildren(loadedImage(src)),
     () => {},
   );
 

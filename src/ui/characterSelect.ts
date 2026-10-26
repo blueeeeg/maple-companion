@@ -115,22 +115,22 @@ function playFrames(element: HTMLElement, frames: Frame[], delay: number, offset
   let index = 0;
   let timer = 0;
   let stopped = false;
-  const draw = () => {
-    const { node, width, height, originX, originY } = frames[index];
+  const draw = (sources: string[]) => {
+    const { width, height, originX, originY } = frames[index];
     Object.assign(element.style, {
       left: `${offset.x - originX}px`,
       top: `${offset.y - originY}px`,
       width: `${width}px`,
       height: `${height}px`,
-      backgroundImage: `url("${loginUiUrl(node)}")`,
+      backgroundImage: `url("${sources[index]}")`,
     });
     index = (index + 1) % frames.length;
   };
   Promise.all(frames.map((each) => loadWithRetry(loginUiUrl(each.node)))).then(
-    () => {
+    (sources) => {
       if (stopped) return;
-      draw();
-      timer = window.setInterval(draw, delay);
+      draw(sources);
+      timer = window.setInterval(() => draw(sources), delay);
     },
     () => {},
   );
@@ -356,7 +356,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
     const url = standUrl(describeJob(1, null, draft).look);
     preview.dataset.want = url;
     loadWithRetry(url).then(
-      () => {
+      (src) => {
         if (preview.dataset.want !== url) return;
         preview.onload = () => {
           // 발이 정중앙인 그림이라 반쪽 크기를 정수로 내려 칸 바닥 가운데에 발을 맞춘다
@@ -365,7 +365,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
           preview.hidden = false;
         };
         preview.onerror = () => (preview.hidden = true);
-        preview.src = url;
+        preview.src = src;
       },
       () => {},
     );

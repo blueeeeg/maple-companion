@@ -1,5 +1,5 @@
 import { wzImageUrl } from '../maple/api';
-import { loadWithRetry } from './art';
+import { cropArt } from './art';
 import { type ThreeSlice, stripPieces, stripWidth } from './buttonArt';
 
 /**
@@ -45,15 +45,11 @@ const strips = new Map<string, Promise<string>>();
 /** 상태 그림 하나에서 글자 없는 띠(끝 + 가운데 + 끝)를 떼어 data URL 로 돌려준다 */
 function strip(skin: ButtonSkin, state: StateName): Promise<string> {
   const url = skinUrl(skin, state);
-  const key = `${url}#${skin.capLeft},${skin.fillX},${skin.fillWidth},${skin.capRight}`;
+  const slice = `${skin.capLeft},${skin.fillX},${skin.fillWidth},${skin.capRight}`;
+  const key = `${url}#${slice}`;
   let pending = strips.get(key);
   if (!pending) {
-    pending = (async () => {
-      await loadWithRetry(url);
-      const image = new Image();
-      image.crossOrigin = 'anonymous';
-      image.src = url;
-      await image.decode();
+    pending = cropArt(url, `strip-${slice}`, (image) => {
       const pieces = stripPieces(image.naturalWidth, skin);
       if (!pieces) throw new Error(`${url} 에서 띠를 뗄 수 없다`);
       const canvas = document.createElement('canvas');
@@ -62,7 +58,7 @@ function strip(skin: ButtonSkin, state: StateName): Promise<string> {
       const context = canvas.getContext('2d')!;
       pieces.forEach(({ sx, dx, width }) => context.drawImage(image, sx, 0, width, image.naturalHeight, dx, 0, width, image.naturalHeight));
       return canvas.toDataURL();
-    })();
+    });
     pending.catch(() => strips.delete(key));
     strips.set(key, pending);
   }

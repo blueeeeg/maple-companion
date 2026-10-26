@@ -84,10 +84,9 @@ let stretchedFrame: Promise<string> | null = null;
 /** 원작 창 틀(184×290)을 이 창 크기로 늘린 그림. 늘리는 곳은 무늬 없는 한 열이라 정수 픽셀 그대로다 */
 function stretchFrame(): Promise<string> {
   stretchedFrame ??= (async () => {
-    await loadWithRetry(ART.frame);
+    const src = await loadWithRetry(ART.frame);
     const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.src = ART.frame;
+    image.src = src;
     await image.decode();
     const { width, height } = EQUIP_WINDOW;
     const canvas = document.createElement('canvas');
