@@ -1,6 +1,16 @@
 import { type Appearance, DEFAULT_APPEARANCE } from './appearance';
 import { type CashEquipped, composeLook } from './cashShop';
-import { type JobLineId, type JobView, advancementTier, describeJob } from './jobs';
+import {
+  JOB_BRANCHES,
+  type JobBranchId,
+  type JobLineId,
+  type JobView,
+  advancementTier,
+  defaultBranch,
+  describeJob,
+  jobPath,
+  pathTier,
+} from './jobs';
 import { BOSS_EVERY_ENCOUNTERS } from './bosses';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS } from './encounters';
 import { XP_PER_ACTIVE_SECOND, levelInfo } from './progression';
@@ -20,6 +30,12 @@ export interface Character {
   /** 이 캐릭터로 플레이하는 동안 쌓인 활동 시간. 레벨과 사냥 횟수가 여기서 나온다 */
   activeSeconds: number;
   jobLine: JobLineId | null;
+  /** 2차 전직 때 고른 갈래. 아직 안 골랐으면 null 이고 그동안은 1차에 머문다 */
+  jobBranch: JobBranchId | null;
+  /** 갈래가 생기기 전 저장이라 2차 갈래를 저절로 받았다. 맵에 들어오면 한 번 무료로 다시 고르게 묻고 답하면 내린다 */
+  freeJobChange: boolean;
+  /** 2차 갈래를 바꾼 기록. 처음 고른 것은 전직이라 advancedAt 에 남고 여기에는 바꾼 것만 쌓인다 */
+  jobHistory: JobChange[];
   killXp: number;
   meso: number;
   monsterBook: Record<string, number>;
@@ -50,6 +66,15 @@ export interface Character {
   advancedAt: AdvancementLog;
 }
 
+export interface JobChange {
+  at: number;
+  from: JobBranchId;
+  to: JobBranchId;
+}
+
+/** 2차 갈래를 바꾸는 값. 갈래 칸이 없던 캐릭터의 한 번은 무료다 */
+export const JOB_CHANGE_MESO = 50_000;
+
 export interface Roster {
   version: 2;
   characters: Character[];
@@ -61,6 +86,12 @@ export interface Roster {
 /** 캐릭터가 한 명뿐이던 시절의 저장 형식 */
 export interface LegacySave {
   jobLine: JobLineId | null;
+  /** 2차 전직 때 고른 갈래. 아직 안 골랐으면 null 이고 그동안은 1차에 머문다 */
+  jobBranch: JobBranchId | null;
+  /** 갈래가 생기기 전 저장이라 2차 갈래를 저절로 받았다. 맵에 들어오면 한 번 무료로 다시 고르게 묻고 답하면 내린다 */
+  freeJobChange: boolean;
+  /** 2차 갈래를 바꾼 기록. 처음 고른 것은 전직이라 advancedAt 에 남고 여기에는 바꾼 것만 쌓인다 */
+  jobHistory: JobChange[];
   killXp: number;
   meso: number;
   monsterBook: Record<string, number>;
@@ -79,6 +110,9 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     appearance: { ...appearance },
     activeSeconds: 0,
     jobLine: null,
+    jobBranch: null,
+    freeJobChange: false,
+    jobHistory: [],
     killXp: 0,
     meso: 0,
     monsterBook: {},
@@ -112,6 +146,7 @@ export function migrateLegacySave(legacy: Partial<LegacySave>, id: string, globa
     encountersResolved: legacy.encountersResolved ?? 0,
     ...legacyHuntProgress(legacy.encountersResolved),
   };
+  Object.assign(character, legacyBranch(character));
   character.advancedAt = baselineAdvancements(reachedTier(character));
   return { version: 2, characters: [character], selectedId: id, muted: legacy.muted ?? false };
 }
@@ -126,6 +161,44 @@ export function legacyHuntProgress(encountersResolved: number | undefined): Pick
     huntSeconds: resolved * ENCOUNTER_EVERY_ACTIVE_SECONDS,
     bossChargeSeconds: (resolved % BOSS_EVERY_ENCOUNTERS) * ENCOUNTER_EVERY_ACTIVE_SECONDS,
   };
+}
+
+/**
+ * 갈래 칸이 없던 저장. 2차를 이미 했으면 그때 하나뿐이던 길(계열의 첫 갈래)로 읽고 한 번 무료로 다시 고르게 한다.
+ * 아직 2차 전이면 Lv.30 에 고른다
+ */
+export function legacyBranch(
+  character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine'>,
+): Pick<Character, 'jobBranch' | 'freeJobChange'> {
+  const level = levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp).level;
+  if (!character.jobLine || advancementTier(level) < 2) return { jobBranch: null, freeJobChange: false };
+  return { jobBranch: defaultBranch(character.jobLine), freeJobChange: true };
+}
+
+export type JobChangeCheck = 'ok' | 'notYet' | 'same' | 'otherLine' | 'meso';
+
+/** 그 갈래로 바꿀 수 있는지. 2차 갈래를 고른 뒤에 같은 계열 안에서만 바꾼다. 계열은 캐릭터 슬롯이 나누는 몫이라 못 바꾼다 */
+export function jobChangeCheck(character: Character, to: JobBranchId, free: boolean): JobChangeCheck {
+  if (!character.jobLine || !character.jobBranch) return 'notYet';
+  if (character.jobBranch === to) return 'same';
+  if (JOB_BRANCHES[to]?.line !== character.jobLine) return 'otherLine';
+  if (!free && character.meso < JOB_CHANGE_MESO) return 'meso';
+  return 'ok';
+}
+
+/**
+ * 2차 갈래를 바꾼다. 레벨·경험치·기록·옷장은 그대로이고 이름·장비·스킬만 새 갈래 것이 된다.
+ * 고른 사냥 스킬은 다른 갈래 스킬일 수 있어 자동으로 돌린다. free 는 갈래 칸이 없던 캐릭터의 한 번이다
+ */
+export function changeJobBranch(character: Character, to: JobBranchId, now: number, free = false): JobChangeCheck {
+  const check = jobChangeCheck(character, to, free && character.freeJobChange);
+  if (check !== 'ok') return check;
+  if (!(free && character.freeJobChange)) character.meso -= JOB_CHANGE_MESO;
+  character.jobHistory = [...character.jobHistory, { at: now, from: character.jobBranch!, to }];
+  character.jobBranch = to;
+  character.freeJobChange = false;
+  character.huntSkillId = null;
+  return 'ok';
 }
 
 /** 오류 문구. 쓸 수 있는 이름이면 null */
@@ -172,6 +245,7 @@ export interface CharacterSummary {
   level: number;
   jobTitle: string;
   look: number[];
+  standAction: string;
 }
 
 /**
@@ -179,23 +253,24 @@ export interface CharacterSummary {
  * 공격 스킬은 스킬창에서 고른 것이고, 못 고른 상태면 자동 스킬 그대로다
  */
 export function characterJob(character: Character, level: number): JobView {
-  const job = describeJob(level, character.jobLine, character.appearance);
+  const path = jobPath(character.jobLine, character.jobBranch);
+  const job = describeJob(level, path, character.appearance);
   return {
     ...job,
     look: composeLook(job.look, character.cashEquipped),
-    skillId: huntSkill(character.jobLine, job.tier, character.huntSkillId),
+    skillId: huntSkill(path, job.tier, character.huntSkillId),
     autoSkillId: job.skillId,
   };
 }
 
-/** 지금 몇 차인지. 직업을 아직 안 골랐으면 레벨이 넘어도 0 이다 */
-export function reachedTier(character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine'>): number {
-  if (!character.jobLine) return 0;
-  return advancementTier(levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp).level);
+/** 지금 몇 차인지. 직업을 아직 안 골랐으면 레벨이 넘어도 0, 2차 갈래를 안 골랐으면 1 이다 */
+export function reachedTier(character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine' | 'jobBranch'>): number {
+  const { level } = levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp);
+  return pathTier(level, jobPath(character.jobLine, character.jobBranch));
 }
 
 export function summarizeCharacter(character: Character): CharacterSummary {
   const { level } = levelInfo(characterXp(character));
   const job = characterJob(character, level);
-  return { id: character.id, name: character.name, level, jobTitle: job.title, look: job.look };
+  return { id: character.id, name: character.name, level, jobTitle: job.title, look: job.look, standAction: job.standAction };
 }

@@ -108,7 +108,7 @@ const levelGlyphUrl = (glyph: string) => loginUiUrl(`CharSelect/lv/${glyph}`);
 const pageDigitUrl = (digit: string) => loginUiUrl(`CharSelect/pageNew/number/${digit}`);
 const PAGE_DIGITS = [...new Set([...Array.from({ length: PAGE_COUNT }, (_, index) => twoDigits(index + 1)), twoDigits(PAGE_COUNT)].join(''))];
 
-const standUrl = (look: number[]) => characterAnimationUrl(look, 'stand1');
+const standUrl = (look: number[], action = 'stand1') => characterAnimationUrl(look, action);
 
 /** 발 위치를 원점으로 프레임마다 원작 origin 에 맞춰 옮겨 그린다. 돌려준 함수로 멈춘다 */
 function playFrames(element: HTMLElement, frames: Frame[], delay: number, offset = { x: 0, y: 0 }): () => void {
@@ -237,8 +237,8 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
     stopEffects = [];
   }
 
-  function addSprite(feet: HTMLElement, look: number[]) {
-    const url = standUrl(look);
+  function addSprite(feet: HTMLElement, look: number[], standAction: string) {
+    const url = standUrl(look, standAction);
     loadWithRetry(url).then(
       () => {
         if (!feet.isConnected) return;
@@ -291,7 +291,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
           feet.append(burst, glow);
           stopEffects.push(playFrames(burst, BURST_FRAMES, BURST_DELAY, BURST_OFFSET), playFrames(glow, GLOW_FRAMES, GLOW_DELAY));
         }
-        addSprite(feet, character.look);
+        addSprite(feet, character.look, character.standAction);
         name.textContent = character.name;
         slot.title = `${character.name} · Lv.${character.level} ${character.jobTitle}`;
         slot.addEventListener('click', () => {

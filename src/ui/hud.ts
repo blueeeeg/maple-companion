@@ -1,14 +1,26 @@
-import type { JobLineId } from '../game/jobs';
+import type { JobBranchId, JobLineId, JobPath } from '../game/jobs';
 import { cashShopUiUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry, loadedImage } from './art';
 import { PRACTICE_BANNER_URL } from './bossWindow';
 import { type GlyphBox, isQuickKeyBlue, keyOutBackground, keyOutFaint } from './glyph';
-import { JOB_CHOICE_KEY, createNpcDialog, openAdvancementCongratulation, openJobChoice } from './npcDialog';
+import {
+  BRANCH_CHOICE_KEY,
+  JOB_CHOICE_KEY,
+  type JobChangeHandlers,
+  type JobChangeOffer,
+  createNpcDialog,
+  openAdvancementCongratulation,
+  openBranchChoice,
+  openJobChange,
+  openJobChoice,
+} from './npcDialog';
 
 export interface HudState {
   level: number;
   jobTitle: string;
   canChooseJob: boolean;
+  /** 2차 갈래를 고를 계열. 고를 것이 없으면 null */
+  branchChoice: JobLineId | null;
   ratio: number;
   xpIntoLevel: number;
   xpForLevel: number;
@@ -18,6 +30,7 @@ export interface HudState {
 
 export interface HudHandlers {
   onChooseJob(id: JobLineId): void;
+  onChooseBranch(id: JobBranchId): void;
   onToggleMute(): void;
   onOpenCharacterSelect(): void;
   onOpenCashShop(): void;
@@ -34,8 +47,12 @@ export interface Hud {
   notify(text: string): void;
   /** 직업을 묻는 NPC 대화를 연다. 다른 대화가 떠 있으면 그 뒤에 연다 */
   openJobChoice(): void;
+  /** 2차 전직 레벨에 그 계열 전직관이 갈래를 묻는다 */
+  openBranchChoice(line: JobLineId): void;
+  /** 같은 계열의 다른 갈래로 바꾸는 대화 */
+  openJobChange(offer: JobChangeOffer, handlers: JobChangeHandlers): void;
   /** 2차 이상 전직 때 그 직업 전직관의 축하 대화를 띄운다. 게임을 멈추지 않는다 */
-  congratulate(jobLine: JobLineId, tier: number): void;
+  congratulate(path: JobPath, tier: number): void;
   /** 떠 있거나 기다리는 NPC 대화를 모두 닫는다 */
   closeDialogs(): void;
   /** 연습전 동안 보스 게이지 아래에 원작 연습 모드 표시를 띄운다. null 이면 내린다 */
@@ -121,6 +138,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   );
   const dialog = createNpcDialog(root);
   const openChoice = () => openJobChoice(dialog, handlers.onChooseJob);
+  const openBranch = (line: JobLineId) => openBranchChoice(dialog, line, handlers.onChooseBranch);
+  let branchChoice: JobLineId | null = null;
 
   const pick = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
   const level = pick('.hud-level');
@@ -133,7 +152,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   const notice = pick('.notice');
   let noticeTimer: number | null = null;
 
-  advance.addEventListener('click', openChoice);
+  advance.addEventListener('click', () => (branchChoice ? openBranch(branchChoice) : openChoice()));
 
   // HUD 가 좁아서(긴 직업 이름·휴식 중·스탯·스킬 버튼이면 이미 꽉 찬다) 소리·BGM·설정·캐릭터 선택은 버튼 하나의 메뉴로 묶는다
   const menuButton = pick<HTMLButtonElement>('.hud-menu-button');
@@ -193,9 +212,11 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     render(state) {
       level.textContent = `Lv.${state.level}`;
       job.textContent = state.jobTitle;
-      advance.hidden = !state.canChooseJob;
+      branchChoice = state.branchChoice;
+      advance.hidden = !state.canChooseJob && !state.branchChoice;
       // 직업 선택 대화를 띄운 채 다른 캐릭터로 바꾸면 그 캐릭터에는 맞지 않는 대화가 남는다
       if (!state.canChooseJob) dialog.cancel(JOB_CHOICE_KEY);
+      if (!state.branchChoice) dialog.cancel(BRANCH_CHOICE_KEY);
       rest.hidden = !state.resting;
       mute.textContent = state.muted ? '🔊 소리 켜기' : '🔇 소리 끄기';
       expFill.style.width = `${(state.ratio * 100).toFixed(2)}%`;
@@ -211,7 +232,9 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       noticeTimer = window.setTimeout(() => (notice.hidden = true), NOTICE_MS);
     },
     openJobChoice: openChoice,
-    congratulate: (jobLine, tier) => openAdvancementCongratulation(dialog, jobLine, tier),
+    openBranchChoice: openBranch,
+    openJobChange: (offer, changeHandlers) => openJobChange(dialog, offer, changeHandlers),
+    congratulate: (path, tier) => openAdvancementCongratulation(dialog, path, tier),
     closeDialogs: dialog.clear,
     setPractice(bossName) {
       practice.hidden = bossName === null;

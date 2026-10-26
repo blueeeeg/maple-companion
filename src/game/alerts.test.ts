@@ -37,6 +37,14 @@ describe('같은 일은 한 번만', () => {
     expect(advancement('a', 2)).not.toBe(choice(10));
   });
 
+  it('2차 갈래 고르기는 캐릭터마다 하나이고 전직관 이름을 적는다', () => {
+    const alert = describeAlert({ kind: 'branch-choice', characterId: 'a', characterName: '바다', level: 30, instructor: '카이린' });
+    expect(alert.key).toBe('branch-choice:a');
+    expect(alert.key).not.toBe(describeAlert({ kind: 'job-choice', characterId: 'a', characterName: '바다', level: 30 }).key);
+    expect(alert.title).toBe('바다 전직 가능!');
+    expect(alert.body).toContain('카이린에게 2차 전직 갈래');
+  });
+
   it('알림 문구에 캐릭터 이름과 차수가 들어간다', () => {
     expect(describeAlert({ kind: 'job-choice', characterId: 'a', characterName: '단풍이', level: 10 })).toMatchObject({
       title: '단풍이 전직 가능!',

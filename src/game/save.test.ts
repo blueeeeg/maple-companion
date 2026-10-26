@@ -211,3 +211,94 @@ describe('보스 지정 저장', () => {
     expect(mergeRosters(mergeRosters(file, grown), grown)).toEqual(mergeRosters(file, grown));
   });
 });
+
+describe('2차 갈래 저장', () => {
+  const fourthJobSeconds = totalXpForLevel(105);
+
+  it('갈래 칸이 없던 저장은 2차를 했으면 하나뿐이던 길로 읽고 한 번 무료로 다시 고르게 한다', () => {
+    const old = { id: 'a', name: '바다', activeSeconds: fourthJobSeconds, killXp: 0, jobLine: 'pirate' } as Character;
+    const [read] = normalizeRoster({ characters: [old] }).characters;
+    expect(read).toMatchObject({ jobBranch: 'viper', freeJobChange: true, jobHistory: [] });
+    expect(read.advancedAt).toEqual({ 1: null, 2: null, 3: null, 4: null });
+  });
+
+  it('2차 전이던 예전 저장은 아직 갈래가 없고 Lv.30 에 고른다', () => {
+    const old = { id: 'a', name: '바다', activeSeconds: totalXpForLevel(20), killXp: 0, jobLine: 'pirate' } as Character;
+    expect(normalizeRoster({ characters: [old] }).characters[0]).toMatchObject({ jobBranch: null, freeJobChange: false });
+  });
+
+  it('예전 한 명 저장을 옮겨도 2차를 했으면 첫 갈래다', () => {
+    const legacy = JSON.stringify({ jobLine: 'warrior', killXp: 0, meso: 0, monsterBook: {}, encountersResolved: 0, muted: false });
+    const [moved] = parseRoster(null, legacy, totalXpForLevel(35), 'legacy').characters;
+    expect(moved).toMatchObject({ jobBranch: 'hero', freeJobChange: true });
+  });
+
+  it('고른 갈래·다시 고르기 답·바꾼 기록은 그대로 읽는다', () => {
+    const saved = character('a', {
+      activeSeconds: fourthJobSeconds,
+      jobLine: 'pirate',
+      jobBranch: 'captain',
+      freeJobChange: false,
+      jobHistory: [{ at: 10, from: 'viper', to: 'captain' }],
+    });
+    const [read] = normalizeRoster(JSON.parse(JSON.stringify({ characters: [saved] }))).characters;
+    expect(read).toMatchObject({ jobBranch: 'captain', freeJobChange: false, jobHistory: [{ at: 10, from: 'viper', to: 'captain' }] });
+  });
+
+  it('갈래 칸이 있는데 아직 안 골랐으면(null) 다시 고르기를 주지 않는다', () => {
+    const saved = character('a', { activeSeconds: fourthJobSeconds, jobLine: 'pirate', jobBranch: null });
+    expect(normalizeRoster(JSON.parse(JSON.stringify({ characters: [saved] }))).characters[0]).toMatchObject({
+      jobBranch: null,
+      freeJobChange: false,
+    });
+  });
+
+  it('다른 계열 갈래나 모르는 값은 안 고른 것으로, 깨진 기록은 빼고 읽는다', () => {
+    const broken = {
+      ...character('a', { activeSeconds: fourthJobSeconds, jobLine: 'pirate' }),
+      jobBranch: 'hero',
+      freeJobChange: true,
+      jobHistory: [{ at: 1, from: 'viper', to: 'captain' }, { at: 'x', from: 'viper', to: 'captain' }, { at: 2, from: 'nope', to: 'captain' }, null],
+    } as unknown as Character;
+    const [read] = normalizeRoster({ characters: [broken] }).characters;
+    expect(read).toMatchObject({ jobBranch: null, freeJobChange: false, jobHistory: [{ at: 1, from: 'viper', to: 'captain' }] });
+  });
+
+  it('합칠 때 갈래는 마지막으로 바꾼 쪽, 바꾼 기록은 양쪽을 합친다', () => {
+    const base = { activeSeconds: fourthJobSeconds, jobLine: 'pirate' as const };
+    // 파일 쪽에서 캡틴으로 바꿨고, localStorage 쪽은 바이퍼로 사냥을 더 했다
+    const file = roster([character('a', { ...base, jobBranch: 'captain', jobHistory: [{ at: 50, from: 'viper', to: 'captain' }] })]);
+    const local = roster([character('a', { ...base, activeSeconds: fourthJobSeconds + 500, jobBranch: 'viper', huntSkillId: 5121016 })]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.activeSeconds).toBe(fourthJobSeconds + 500);
+    expect(merged.jobBranch).toBe('captain');
+    // 다른 쪽 갈래를 가져왔으니 바이퍼 사냥 스킬은 자동으로 돌린다
+    expect(merged.huntSkillId).toBeNull();
+    expect(merged.jobHistory).toEqual([{ at: 50, from: 'viper', to: 'captain' }]);
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
+  });
+
+  it('같은 기록은 한 번만, 시간 순서로 합친다', () => {
+    const base = { activeSeconds: fourthJobSeconds, jobLine: 'pirate' as const, jobBranch: 'viper' as const };
+    const a = { at: 10, from: 'viper' as const, to: 'captain' as const };
+    const b = { at: 20, from: 'captain' as const, to: 'viper' as const };
+    const file = roster([character('a', { ...base, jobHistory: [b] })]);
+    const local = roster([character('a', { ...base, jobHistory: [a, b] })]);
+    expect(mergeRosters(file, local).characters[0].jobHistory).toEqual([a, b]);
+  });
+
+  it('한쪽에서 다시 고르기에 답했으면 다른 쪽이 더 자랐어도 또 묻지 않는다', () => {
+    const base = { activeSeconds: fourthJobSeconds, jobLine: 'pirate' as const };
+    const answered = roster([character('a', { ...base, jobBranch: 'viper', freeJobChange: false })]);
+    const pending = roster([character('a', { ...base, activeSeconds: fourthJobSeconds + 9, jobBranch: 'viper', freeJobChange: true, huntSkillId: 5121016 })]);
+    const [merged] = mergeRosters(answered, pending).characters;
+    expect(merged).toMatchObject({ jobBranch: 'viper', freeJobChange: false, huntSkillId: 5121016 });
+  });
+
+  it('한쪽에서만 갈래를 골랐으면 그 갈래를 쓴다', () => {
+    const base = { activeSeconds: fourthJobSeconds, jobLine: 'pirate' as const };
+    const chose = roster([character('a', { ...base, jobBranch: 'captain' })]);
+    const notYet = roster([character('a', { ...base, activeSeconds: fourthJobSeconds + 9, jobBranch: null })]);
+    expect(mergeRosters(notYet, chose).characters[0].jobBranch).toBe('captain');
+  });
+});

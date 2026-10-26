@@ -1,4 +1,4 @@
-import { JOB_LINES, type JobLineId } from '../game/jobs';
+import { JOB_BRANCHES, JOB_LINES, type JobBranchId, type JobLineId, type JobPath, lineOf, tierName } from '../game/jobs';
 import { npcDialogUrl, npcStandUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry, loadedImage } from './art';
 
@@ -10,6 +10,8 @@ export interface Npc {
 export interface NpcOption {
   label: string;
   select(): void;
+  /** 고를 수 없는 선택지. 왜 못 고르는지는 대화 글에 적는다 */
+  disabled?: boolean;
 }
 
 /** 대화창 한 쪽. 버튼은 handler 가 있는 것만 오른쪽 아래에 나오고, 「대화 그만하기」는 늘 왼쪽 아래에 있다 */
@@ -29,7 +31,7 @@ export interface NpcDialog {
    * 대화를 연다. 다른 대화가 열려 있으면 그 대화가 끝난 뒤에 연다. 같은 key 의 대화가 기다리고 있으면 새것으로 바꾸고,
    * 이미 열려 있으면 무시한다. passive 대화는 화면을 어둡게 하지 않고 창 밖 클릭을 막지 않는다
    */
-  open(key: string, first: NpcPage, passive?: boolean): void;
+  open(key: string, first: NpcPage, passive?: boolean, onDismiss?: () => void): void;
   /** 지금 대화의 다음 쪽 */
   show(page: NpcPage): void;
   /** 지금 대화를 닫고 기다리던 대화가 있으면 연다 */
@@ -43,6 +45,8 @@ export interface Conversation {
   key: string;
   first: NpcPage;
   passive: boolean;
+  /** 「대화 그만하기」·Esc 로 닫았을 때. 다른 캐릭터로 바꾸느라 버린 대화에는 부르지 않는다 */
+  onDismiss?: () => void;
 }
 
 /** 같은 key 가 이미 기다리면 그 자리를 새 대화로 바꾸고, 없으면 뒤에 붙인다 */
@@ -273,6 +277,7 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
         button.className = 'npc-option';
         button.innerHTML = '<span class="npc-dot" aria-hidden="true"></span>';
         button.append(option.label);
+        button.disabled = option.disabled === true;
         button.addEventListener('click', option.select);
         list.appendChild(button);
       });
@@ -305,22 +310,28 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
     if (next) begin(next);
   }
 
-  buttons.close.addEventListener('click', end);
+  function dismiss() {
+    const onDismiss = current?.onDismiss;
+    end();
+    onDismiss?.();
+  }
+
+  buttons.close.addEventListener('click', dismiss);
   (['no', 'yes', 'next', 'ok'] as const).forEach((key) =>
     buttons[key].addEventListener('click', () => page?.[key]?.()),
   );
   overlay.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') end();
+    if (event.key === 'Escape') dismiss();
   });
 
   return {
-    open(key, first, passive = false) {
+    open(key, first, passive = false, onDismiss) {
       if (current?.key === key) {
         // 축하 창이 떠 있는 사이 또 전직하면 새 축하로 바꾼다. 직업 선택은 고르던 쪽을 그대로 둔다
         if (passive) render(first);
         return;
       }
-      const conversation = { key, first, passive };
+      const conversation = { key, first, passive, onDismiss };
       if (current) queue = queueConversation(queue, conversation);
       else begin(conversation);
     },
@@ -350,19 +361,34 @@ interface Instructor {
   confirm: string;
   /** jobName 은 「파이터」처럼 차수를 뺀 이름 */
   congratulate(tier: number, jobName: string): string;
+  /** 2차 전직 때 갈래를 묻는 말 */
+  askBranch: string;
+  /** path 는 「크루세이더 → 히어로」처럼 이어지는 3·4차 */
+  confirmBranch(jobName: string, path: string): string;
+  /** 갈래를 바꾸러 왔을 때. 값과 가진 메소는 그 아래 줄에 붙는다 */
+  askChange(current: string): string;
+  /** 갈래가 생기기 전 캐릭터에게 한 번 무료로 다시 고르게 할 때 */
+  offerFree(current: string): string;
+  confirmChange(jobName: string): string;
 }
 
 /** 직업 이름만 파랗게 칠하고 뒤 조사는 검게 둔다 */
 const blueWithJosa = (word: string, withFinal: string, withoutFinal: string) =>
   `#b${word}#k${hasFinalConsonant(word) ? withFinal : withoutFinal}`;
 
-/** 1차 전직관. 2차부터도 같은 전직관이 축하한다 */
+/** 1차 전직관. 2차 갈래 고르기·갈래 바꾸기와 2차부터의 축하도 같은 전직관이 한다 */
 const INSTRUCTORS: Record<JobLineId, Instructor> = {
   warrior: {
     npc: { id: 1022000, name: '주먹펴고 일어서' },
     intro: '페리온의 전사 전직관, 주먹펴고 일어서다.\n전사는 강한 힘과 체력으로 맨 앞에서 싸우지.',
     confirm: '정말 #b전사#k가 되겠나?\n한번 정한 길은 되돌릴 수 없다.',
     congratulate: (tier, jobName) => `${tier}차 전직을 축하한다.\n이제 자네는 ${blueWithJosa(jobName, '이다', '다')}.\n더 강해져라.`,
+    askBranch: '2차 전직을 할 때가 됐군.\n전사의 길은 셋이다. #b어느 길로 가겠나?#k',
+    confirmBranch: (jobName, path) => `정말 #b${jobName}#k의 길을 걷겠나?\n${path}로 이어지는 길이다.`,
+    askChange: (current) => `지금은 #b${current}#k의 길을 걷고 있군.\n같은 전사의 다른 길로 바꿔 주겠다.`,
+    offerFree: (current) =>
+      `전사의 길이 셋으로 갈라졌다.\n지금은 #b${current}#k의 길이지.\n이번 한 번은 공짜로 다른 길로 바꿔 주겠다.`,
+    confirmChange: (jobName) => `${blueWithJosa(jobName, '으로', '로')} 바꾸겠나?\n레벨과 경험치, 기록은 그대로다.`,
   },
   magician: {
     npc: { id: 1032001, name: '하인즈' },
@@ -370,6 +396,12 @@ const INSTRUCTORS: Record<JobLineId, Instructor> = {
     confirm: '정말 #b마법사#k의 길을 걷겠나?\n한번 정하면 되돌릴 수 없다네.',
     congratulate: (tier, jobName) =>
       `${tier}차 전직을 축하하네.\n이제 자네는 ${blueWithJosa(jobName, '이라네', '라네')}.\n지혜를 더 갈고닦게.`,
+    askBranch: '2차 전직을 할 때가 되었군.\n마법사의 길은 셋이라네. #b어느 마법을 익히겠나?#k',
+    confirmBranch: (jobName, path) => `#b${jobName}#k의 길을 걷겠나?\n${path}로 이어진다네.`,
+    askChange: (current) => `지금은 #b${current}#k의 길을 걷고 있군.\n다른 마법을 익히고 싶은가?`,
+    offerFree: (current) =>
+      `마법사의 길이 셋으로 나뉘었다네.\n자네는 지금 ${blueWithJosa(current, '이', '')}지.\n이번 한 번은 값 없이 다른 길로 바꿔 주겠네.`,
+    confirmChange: (jobName) => `${blueWithJosa(jobName, '으로', '로')} 바꾸겠나?\n레벨과 경험치, 기록은 그대로라네.`,
   },
   archer: {
     npc: { id: 1012100, name: '헬레나' },
@@ -377,12 +409,23 @@ const INSTRUCTORS: Record<JobLineId, Instructor> = {
     confirm: '정말 #b궁수#k가 되겠어요?\n한번 정하면 되돌릴 수 없어요.',
     congratulate: (tier, jobName) =>
       `${tier}차 전직 축하해요!\n이제 ${blueWithJosa(jobName, '이에요', '예요')}.\n앞으로도 힘내요.`,
+    askBranch: '2차 전직할 때가 됐네요.\n활과 석궁, #b어느 쪽을 쥘래요?#k',
+    confirmBranch: (jobName, path) => `#b${jobName}#k의 길로 갈래요?\n${path}로 이어져요.`,
+    askChange: (current) => `지금은 #b${current}#k의 길이네요.\n다른 길로 바꿔 줄까요?`,
+    offerFree: (current) =>
+      `궁수의 길이 둘로 나뉘었어요.\n지금은 ${blueWithJosa(current, '이에요', '예요')}.\n이번 한 번은 그냥 바꿔 줄게요.`,
+    confirmChange: (jobName) => `${blueWithJosa(jobName, '으로', '로')} 바꿀래요?\n레벨과 경험치, 기록은 그대로예요.`,
   },
   thief: {
     npc: { id: 1052001, name: '다크로드' },
     intro: '커닝시티의 도적 전직관, 다크로드다.\n도적은 재빠른 몸놀림으로 적의 빈틈을 노린다.',
     confirm: '#b도적#k이 되겠나?\n한번 정하면 돌이킬 수 없다.',
     congratulate: (tier, jobName) => `${tier}차 전직이다.\n이제 넌 ${blueWithJosa(jobName, '이다', '다')}.\n그림자처럼 더 날카로워져라.`,
+    askBranch: '2차 전직이다.\n표창이냐 단검이냐. #b골라라.#k',
+    confirmBranch: (jobName, path) => `${blueWithJosa(jobName, '이', '가')} 되겠나?\n${path}로 이어진다.`,
+    askChange: (current) => `지금은 ${blueWithJosa(current, '이', '')}군.\n다른 길을 원하나?`,
+    offerFree: (current) => `도적의 길이 둘로 갈렸다.\n넌 지금 ${blueWithJosa(current, '이다', '다')}.\n이번 한 번은 값 없이 바꿔 주지.`,
+    confirmChange: (jobName) => `${blueWithJosa(jobName, '으로', '로')} 바꾸겠나?\n레벨과 경험치, 기록은 그대로다.`,
   },
   pirate: {
     npc: { id: 1090000, name: '카이린' },
@@ -390,10 +433,18 @@ const INSTRUCTORS: Record<JobLineId, Instructor> = {
     confirm: '정말 #b해적#k이 될 거야?\n한번 정하면 되돌릴 수 없어.',
     congratulate: (tier, jobName) =>
       `${tier}차 전직 축하해!\n이제 넌 ${blueWithJosa(jobName, '이야', '야')}.\n더 넓은 바다로 가 보자고!`,
+    askBranch: '2차 전직할 때가 됐네.\n주먹이야, 총이야? #b골라 봐.#k',
+    confirmBranch: (jobName, path) => `${blueWithJosa(jobName, '이', '가')} 될 거야?\n${path}로 이어지는 길이야.`,
+    askChange: (current) => `지금은 ${blueWithJosa(current, '이', '')}구나.\n다른 길로 바꾸고 싶어?`,
+    offerFree: (current) =>
+      `해적의 길이 둘로 나뉘었어.\n넌 지금 ${blueWithJosa(current, '이야', '야')}.\n이번 한 번은 공짜로 바꿔 줄게.`,
+    confirmChange: (jobName) => `${blueWithJosa(jobName, '으로', '로')} 바꿀 거야?\n레벨과 경험치, 기록은 그대로야.`,
   },
 };
 
 export const JOB_CHOICE_KEY = 'job-choice';
+export const BRANCH_CHOICE_KEY = 'branch-choice';
+const JOB_CHANGE_KEY = 'job-change';
 const CONGRATULATION_KEY = 'job-congratulation';
 
 /** 초상화를 미리 받아 둬서 전직관 쪽으로 넘어갈 때 창 높이가 늦게 바뀌지 않게 한다 */
@@ -433,13 +484,109 @@ export function openJobChoice(dialog: NpcDialog, onChoose: (id: JobLineId) => vo
   dialog.open(JOB_CHOICE_KEY, ask);
 }
 
+/** 선택지에 붙이는 갈래 이름. 「건슬링어 → 발키리 → 캡틴」 */
+export const branchRoute = (id: JobBranchId): string => JOB_BRANCHES[id].names.join(' → ');
+const laterNames = (id: JobBranchId) => JOB_BRANCHES[id].names.slice(1).join(', ');
+
+/** 2차 전직 레벨에 그 계열 전직관이 갈래를 묻는다. 「예」를 누르면 onChoose 를 부른다 */
+export function openBranchChoice(dialog: NpcDialog, line: JobLineId, onChoose: (id: JobBranchId) => void): void {
+  const instructor = INSTRUCTORS[line];
+  const ask: NpcPage = {
+    npc: instructor.npc,
+    text: instructor.askBranch,
+    options: JOB_LINES[line].branches.map((id) => ({
+      label: branchRoute(id),
+      select: () =>
+        dialog.show({
+          npc: instructor.npc,
+          text: instructor.confirmBranch(JOB_BRANCHES[id].names[0], laterNames(id)),
+          no: () => dialog.show(ask),
+          yes: () => {
+            dialog.end();
+            onChoose(id);
+          },
+        }),
+    })),
+  };
+  dialog.open(BRANCH_CHOICE_KEY, ask);
+}
+
+export interface JobChangeOffer {
+  current: JobBranchId;
+  /** 지금 차수. 대화의 직업 이름을 지금 차수 이름(바이퍼·캡틴)으로 적는다 */
+  tier: number;
+  /** 갈래가 생기기 전 캐릭터의 한 번. 값을 받지 않고 「지금 그대로」도 고를 수 있다 */
+  free: boolean;
+  price: number;
+  meso: number;
+}
+
+export interface JobChangeHandlers {
+  onChange(to: JobBranchId): void;
+  /** 무료 다시 고르기에서 지금 갈래를 그대로 두거나 대화를 닫았을 때 */
+  onKeep(): void;
+}
+
+const mesoText = (value: number) => Math.floor(value).toLocaleString();
+
+/** 값과 가진 메소. 모자라면 왜 못 고르는지 빨갛게 적는다. 무료 한 번은 전직관 말에 들어 있다 */
+export function jobChangePriceText(offer: Pick<JobChangeOffer, 'free' | 'price' | 'meso'>): string {
+  if (offer.free) return '';
+  const lines = [`값: #r${mesoText(offer.price)} 메소#k`, `가진 메소: ${mesoText(offer.meso)}`];
+  if (offer.meso < offer.price) lines.push(`#r메소가 ${mesoText(offer.price - offer.meso)} 모자라 바꿀 수 없다#k`);
+  return lines.join('\n');
+}
+
+/** 같은 계열의 다른 갈래로 바꾸는 대화. 값을 내는 바꾸기는 「예」로 한 번 더 묻는다 */
+export function openJobChange(dialog: NpcDialog, offer: JobChangeOffer, handlers: JobChangeHandlers): void {
+  const line = JOB_BRANCHES[offer.current].line;
+  const instructor = INSTRUCTORS[line];
+  const current = tierName(offer.current, offer.tier);
+  const poor = !offer.free && offer.meso < offer.price;
+  const others = JOB_LINES[line].branches.filter((id) => id !== offer.current);
+  const ask: NpcPage = {
+    npc: instructor.npc,
+    text: offer.free ? instructor.offerFree(current) : `${instructor.askChange(current)}\n${jobChangePriceText(offer)}`,
+    options: [
+      ...others.map((id) => ({
+        label: branchRoute(id),
+        disabled: poor,
+        select: () =>
+          dialog.show({
+            npc: instructor.npc,
+            text: `${instructor.confirmChange(tierName(id, offer.tier))}${offer.free ? '' : `\n#r${mesoText(offer.price)} 메소#k를 낸다.`}`,
+            no: () => dialog.show(ask),
+            yes: () => {
+              dialog.end();
+              handlers.onChange(id);
+            },
+          }),
+      })),
+      ...(offer.free
+        ? [
+            {
+              label: `지금 그대로 (${current})`,
+              select: () => {
+                dialog.end();
+                handlers.onKeep();
+              },
+            },
+          ]
+        : []),
+    ],
+  };
+  dialog.open(JOB_CHANGE_KEY, ask, false, offer.free ? handlers.onKeep : undefined);
+}
+
 /** 2차부터 6차까지. 게임은 계속 돌고 「확인」으로 닫는다 */
-export function openAdvancementCongratulation(dialog: NpcDialog, jobLine: JobLineId, tier: number): void {
-  const instructor = INSTRUCTORS[jobLine];
-  const jobName = JOB_LINES[jobLine].names[Math.min(tier, 4) - 1];
+export function openAdvancementCongratulation(dialog: NpcDialog, path: JobPath, tier: number): void {
+  const instructor = INSTRUCTORS[lineOf(path)];
   dialog.open(
     CONGRATULATION_KEY,
-    { npc: instructor.npc, text: instructor.congratulate(tier, jobName), ok: () => dialog.end() },
+    { npc: instructor.npc, text: instructor.congratulate(tier, tierName(path, tier)), ok: () => dialog.end() },
     true,
   );
 }
+
+/** OS 알림에 적는 전직관 이름 */
+export const instructorName = (line: JobLineId): string => INSTRUCTORS[line].npc.name;

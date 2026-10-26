@@ -1,5 +1,6 @@
-import { ADVANCEMENT_LEVELS } from '../game/jobs';
-import { type AdvancementLog, type BossRecord, formatDay, formatTogetherTime } from '../game/records';
+import type { JobChange } from '../game/characters';
+import { ADVANCEMENT_LEVELS, tierName } from '../game/jobs';
+import { type AdvancementLog, type BossRecord, formatDay, formatMonthDay, formatTogetherTime } from '../game/records';
 import { MESO_HUD_ICON_URL, characterAnimationUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
@@ -20,12 +21,21 @@ export interface StatWindowState {
   bosses: BossRecord;
   meso: number;
   advancedAt: AdvancementLog;
+  /** 2차 갈래를 바꾼 기록 */
+  jobHistory: JobChange[];
+  /** 2차 갈래를 고른 뒤라 같은 계열의 다른 갈래로 바꿀 수 있다 */
+  canChangeJob: boolean;
+  /** 갈래를 바꾸는 값. 갈래 칸이 없던 캐릭터의 한 번은 0 이다 */
+  jobChangePrice: number;
   /** 맵 캐릭터와 같은 모습(캐시 아이템 포함) */
   look: number[];
+  standAction: string;
 }
 
 export interface StatWindowHandlers {
   onClose(): void;
+  /** 「직업 바꾸기」. 전직관 대화를 연다 */
+  onChangeJob(): void;
 }
 
 export interface StatWindow {
@@ -56,10 +66,23 @@ type RowKey = 'level' | 'job' | 'exp' | 'hunts' | 'bosses' | 'meso' | 'advanceme
 
 const number = (value: number) => Math.floor(value).toLocaleString();
 
-function advancementText(tier: number, log: AdvancementLog, reached: number): string {
+/** 「10-27 인파이터 → 건슬링어」. 이름은 지금 차수의 이름이다 */
+export function jobChangeText(change: JobChange, tier: number): string {
+  return `${formatMonthDay(change.at)} ${tierName(change.from, tier)} → ${tierName(change.to, tier)}`;
+}
+
+function jobChangeTitle(state: StatWindowState): string {
+  if (state.jobChangePrice === 0) return '같은 계열의 다른 길로 바꿔요. 이번 한 번은 무료예요';
+  const price = `${number(state.jobChangePrice)} 메소`;
+  if (state.meso < state.jobChangePrice) return `메소가 모자라요. 직업을 바꾸려면 ${price}가 필요해요`;
+  return `같은 계열의 다른 길로 바꿔요. ${price}`;
+}
+
+function advancementText(tier: number, log: AdvancementLog, reached: number, short = false): string {
   if (tier > reached) return `Lv.${ADVANCEMENT_LEVELS[tier - 1]}에 전직`;
   const at = log[tier as keyof AdvancementLog];
-  return typeof at === 'number' ? formatDay(at) : '기록 전';
+  if (typeof at !== 'number') return '기록 전';
+  return short ? formatMonthDay(at) : formatDay(at);
 }
 
 function summaryValues(state: StatWindowState): Record<RowKey, { text: string; title?: string }> {
@@ -79,7 +102,11 @@ function summaryValues(state: StatWindowState): Record<RowKey, { text: string; t
       : { text: '아직 없음' },
     meso: { text: number(state.meso) },
     advancement: {
-      text: state.tier === 0 ? '아직 전직 전' : `${state.tier}차 · ${advancementText(state.tier, state.advancedAt, state.tier)}`,
+      // 「직업 바꾸기」 버튼이 붙으면 칸이 좁아 날짜를 월-일로 줄인다
+      text:
+        state.tier === 0
+          ? '아직 전직 전'
+          : `${state.tier}차 · ${advancementText(state.tier, state.advancedAt, state.tier, state.canChangeJob)}`,
       title: '눌러서 차수별 전직 날짜 보기',
     },
   };
@@ -133,6 +160,12 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
   /** 지금 쪽의 값 칸. 틱마다 칸을 새로 만들지 않고 글자만 바꿔서 누르고 있던 버튼의 포커스가 남는다 */
   let cells = new Map<string, HTMLElement>();
   const mesoAmount = document.createElement('span');
+  const advancementAmount = document.createElement('span');
+  const changeJob = document.createElement('button');
+  changeJob.type = 'button';
+  changeJob.className = 'stat-change-job';
+  changeJob.textContent = '직업 바꾸기';
+  changeJob.addEventListener('click', handlers.onChangeJob);
 
   function addRow(key: string, label: string, action?: { run: () => void; label: string }) {
     const term = document.createElement('dt');
@@ -167,10 +200,15 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
           // 아이콘을 못 받으면 금액만 남는다
           detail.append(loadedImage(MESO_HUD_ICON_URL), mesoAmount);
         }
+        if (key === 'advancement') {
+          detail.className = 'stat-advancement';
+          detail.append(advancementAmount, changeJob);
+        }
       });
       return;
     }
     ADVANCEMENT_LEVELS.forEach((_, index) => addRow(`tier${index + 1}`, `${index + 1}차`));
+    state?.jobHistory.forEach((_, index) => addRow(`change${index}`, '직업 변경'));
     const back = document.createElement('button');
     back.type = 'button';
     back.className = 'stat-back';
@@ -182,20 +220,28 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
   function fillPage(current: StatWindowState) {
     if (page === 'summary') {
       Object.entries(summaryValues(current)).forEach(([key, { text, title }]) => {
-        const cell = key === 'meso' ? mesoAmount : cells.get(key);
+        const cell = key === 'meso' ? mesoAmount : key === 'advancement' ? advancementAmount : cells.get(key);
         if (!cell) return;
         cell.textContent = text;
         cells.get(key)!.title = title ?? '';
       });
+      changeJob.hidden = !current.canChangeJob;
+      changeJob.title = jobChangeTitle(current);
       return;
     }
     ADVANCEMENT_LEVELS.forEach((_, index) => {
       cells.get(`tier${index + 1}`)!.textContent = advancementText(index + 1, current.advancedAt, current.tier);
     });
+    current.jobHistory.forEach((change, index) => {
+      const cell = cells.get(`change${index}`);
+      if (!cell) return;
+      cell.textContent = jobChangeText(change, current.tier);
+      cell.title = cell.textContent;
+    });
   }
 
   function renderLook(current: StatWindowState) {
-    const url = characterAnimationUrl(current.look, 'stand1');
+    const url = characterAnimationUrl(current.look, current.standAction);
     if (url === lookUrl) return;
     lookUrl = url;
     const place = (src: string) => {
@@ -253,7 +299,10 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
       close.focus();
     },
     update(next) {
+      // 열어 둔 전직 기록 쪽에 바꾼 기록이 늘면 줄을 다시 만든다
+      const rebuild = page === 'advancements' && next.jobHistory.length !== state?.jobHistory.length;
       state = next;
+      if (rebuild) buildPage();
       if (!screen.hidden) render();
     },
     hide() {

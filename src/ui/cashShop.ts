@@ -27,6 +27,8 @@ export interface CashShopState {
   gender: Gender;
   /** 캐시 아이템을 입히기 전의 직업·차수 장비 모습 */
   jobLook: number[];
+  /** 무기에 그림이 있는 서기 동작(창은 stand2) */
+  standAction: string;
   meso: number;
   wardrobe: number[];
   equipped: CashEquipped;
@@ -385,7 +387,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
    * 맵 캐릭터와 같은 움직이는 GIF 주소라 지금 모습은 맵이 받아 둔 것을 그대로 쓴다
    */
   function renderPreview() {
-    const url = characterAnimationUrl(previewLook(), 'stand1');
+    const url = characterAnimationUrl(previewLook(), state?.standAction ?? 'stand1');
     if (preview.dataset.want === url) return;
     preview.dataset.want = url;
     window.clearTimeout(previewTimer);

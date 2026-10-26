@@ -2,8 +2,10 @@ import './styles.css';
 import { bgmPlayback, createBgm, likelyBgmMaps, shouldPlayBgm } from './audio/bgm';
 import {
   type Character,
+  JOB_CHANGE_MESO,
   MAX_CHARACTERS,
   activityDelta,
+  changeJobBranch,
   characterJob,
   characterXp,
   createCharacter,
@@ -31,7 +33,7 @@ import { bossTurn, settleBossFight } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
-import { advancementTier, describeJob } from './game/jobs';
+import { JOB_BRANCHES, type JobBranchId, advancementTier, describeJob, jobPath, pathTier } from './game/jobs';
 import { levelInfo } from './game/progression';
 import { bossRecord, noteAdvancements } from './game/records';
 import { canCast, findSkill, skillDataPrefetchOrder } from './game/skillBook';
@@ -65,6 +67,7 @@ import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui
 import { type CashShopState, createCashShop } from './ui/cashShop';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
+import { instructorName } from './ui/npcDialog';
 import { type MusicWindowState, createMusicWindow, prefetchMusicWindow } from './ui/musicWindow';
 import { createSettingsScreen } from './ui/settings';
 import { type SkillCheck, type SkillWindowState, createSkillWindow, prefetchSkillWindow } from './ui/skillWindow';
@@ -135,6 +138,8 @@ let lastCastAt = -Infinity;
 let prefetchedSkillBook = '';
 /** 개발용. `?boss=8860000` 이면 그 보스, `?boss=1` 이면 레벨에 맞는 보스와 바로 한 번 싸운다. 사냥 횟수에는 안 센다 */
 let forcedBoss = import.meta.env.DEV ? new URLSearchParams(location.search).get('boss') : null;
+/** 이번 실행에 무료 갈래 다시 고르기를 띄운 캐릭터. 답하기 전에 닫으면 같은 실행에서는 다시 띄우지 않는다 */
+let offeredFreeChange = '';
 /** 이번 실행에 OS 알림으로 알린 일. 전직은 레벨이 오르는 순간에만 알려서 다시 켜도 같은 일이 또 오지 않는다 */
 const sentAlerts = new Set<string>();
 
@@ -146,8 +151,24 @@ const hud = createHud(root, {
     const character = selectedCharacter(roster);
     if (!character) return;
     character.jobLine = id;
+    character.jobBranch = null;
     writeRoster(roster);
-    void tick().then(() => scene.celebrate('전직!'));
+    void tick().then(() => {
+      scene.celebrate('전직!');
+      // 직업을 늦게 골라 이미 2차 전직 레벨이면 갈래도 바로 묻는다
+      const { branchChoice } = characterJob(character, levelInfo(characterXp(character)).level);
+      if (branchChoice) hud.openBranchChoice(branchChoice);
+    });
+  },
+  onChooseBranch(id) {
+    const character = selectedCharacter(roster);
+    if (!character || character.jobBranch || JOB_BRANCHES[id].line !== character.jobLine) return;
+    character.jobBranch = id;
+    writeRoster(roster);
+    void tick().then(() => {
+      scene.celebrate('전직!');
+      hud.notify(`전직 완료: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
+    });
   },
   onToggleMute() {
     // 설정에서 음량을 0 으로 내려 둔 채 소리를 켜면 들리지 않으니 기본 음량으로 되돌린다
@@ -235,7 +256,7 @@ const settingsScreen = createSettingsScreen(root, {
   onCancel: closeSettings,
 });
 
-const statWindow = createStatWindow(root, { onClose: closeInfoWindow });
+const statWindow = createStatWindow(root, { onClose: closeInfoWindow, onChangeJob: openJobChange });
 const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
 const bossWindow = createBossWindow(root, { onReserve: reserveBoss, onChallenge: challengeBoss, onClose: closeInfoWindow });
 const musicWindow = createMusicWindow(root, {
@@ -348,9 +369,11 @@ function openCharacterSelect(): void {
 
 function cashShopState(character: Character): CashShopState {
   const { level } = levelInfo(characterXp(character));
+  const job = describeJob(level, jobPath(character.jobLine, character.jobBranch), character.appearance);
   return {
     gender: character.appearance.gender,
-    jobLook: describeJob(level, character.jobLine, character.appearance).look,
+    jobLook: job.look,
+    standAction: job.standAction,
     meso: character.meso,
     wardrobe: character.wardrobe,
     equipped: character.cashEquipped,
@@ -382,13 +405,17 @@ function statState(character: Character): StatWindowState {
     bosses: bossRecord(character.monsterBook),
     meso: character.meso,
     advancedAt: character.advancedAt,
+    jobHistory: character.jobHistory,
+    canChangeJob: character.jobBranch !== null && job.tier >= 2,
+    jobChangePrice: character.freeJobChange ? 0 : JOB_CHANGE_MESO,
     look: job.look,
+    standAction: job.standAction,
   };
 }
 
 function skillState(character: Character): SkillWindowState {
   const job = characterJob(character, levelInfo(characterXp(character)).level);
-  return { jobLine: character.jobLine, tier: job.tier, huntSkillId: character.huntSkillId };
+  return { path: jobPath(character.jobLine, character.jobBranch), tier: job.tier, huntSkillId: character.huntSkillId };
 }
 
 /** 캐시샵처럼 맵·BGM 을 멈추고 창 안에 캐릭터 정보창·스킬창·보스 도전 창을 띄운다. HUD 의 스탯·스킬·보스 버튼이 연다 */
@@ -400,6 +427,46 @@ function openInfoWindow(kind: 'stat' | 'skill' | 'boss'): void {
   if (kind === 'stat') statWindow.show(statState(character));
   else if (kind === 'skill') skillWindow.show(skillState(character));
   else bossWindow.show(bossState(character));
+}
+
+/**
+ * 같은 계열의 다른 2차 갈래로 바꾸는 대화. 캐릭터 정보창의 「직업 바꾸기」가 열고, 갈래 칸이 없던 캐릭터는 맵에 들어오면
+ * 한 번 무료로 연다. 대화가 맵 위에 뜨게 정보창은 닫는다
+ */
+function openJobChange(): void {
+  const character = selectedCharacter(roster);
+  if (!character?.jobBranch) return;
+  if (screen !== 'map') closeInfoWindow();
+  const free = character.freeJobChange;
+  const { tier } = characterJob(character, levelInfo(characterXp(character)).level);
+  hud.openJobChange(
+    { current: character.jobBranch, tier, free, price: JOB_CHANGE_MESO, meso: character.meso },
+    {
+      onChange: (to) => changeBranch(character, to, free),
+      onKeep() {
+        if (!character.freeJobChange) return;
+        character.freeJobChange = false;
+        writeRoster(roster);
+        hud.notify(`지금 길(${characterJob(character, levelInfo(characterXp(character)).level).title})을 그대로 걸어요`);
+      },
+    },
+  );
+}
+
+/** 레벨·경험치·기록·옷장은 두고 이름·장비·스킬만 바꾼다. 고른 사냥 스킬은 자동으로 돌아간다 */
+function changeBranch(character: Character, to: JobBranchId, free: boolean): void {
+  if (selectedCharacter(roster) !== character) return;
+  const result = changeJobBranch(character, to, Date.now(), free);
+  if (result === 'meso') {
+    hud.notify(`메소가 모자라요. 직업을 바꾸려면 ${JOB_CHANGE_MESO.toLocaleString()} 메소가 필요해요`);
+    return;
+  }
+  if (result !== 'ok') return;
+  writeRoster(roster);
+  void tick().then(() => {
+    scene.celebrate('전직!');
+    hud.notify(`직업을 바꿨어요: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
+  });
 }
 
 function openStat(): void {
@@ -505,11 +572,12 @@ async function castSkill(skillId: number): Promise<SkillCheck> {
   const character = selectedCharacter(roster);
   if (!character) return 'failed';
   const { tier } = characterJob(character, levelInfo(characterXp(character)).level);
-  if (!canCast(character.jobLine, tier, skillId)) return 'failed';
+  const path = jobPath(character.jobLine, character.jobBranch);
+  if (!canCast(path, tier, skillId)) return 'failed';
   if (performance.now() - lastCastAt < CAST_COOLDOWN_MS) return 'cooldown';
   lastCastAt = performance.now();
   closeInfoWindow();
-  const name = findSkill(character.jobLine, skillId)?.name ?? '스킬';
+  const name = findSkill(path, skillId)?.name ?? '스킬';
   void scene.castSkill(skillId).then((result) => {
     if (result === 'noArt') hud.notify(`${name} · 그릴 이펙트가 없어 동작만 했어요`);
     else if (result === 'failed') hud.notify(`${name} 이펙트를 받지 못했어요. 다시 누르면 다시 받아요`);
@@ -685,11 +753,17 @@ function handleLevelUp(character: Character, from: number, to: number): void {
     hud.openJobChoice();
     alertUser({ kind: 'job-choice', ...who, level: to });
   }
-  if (character.jobLine && advancementTier(to) > advancementTier(from)) {
-    const job = describeJob(to, character.jobLine, character.appearance);
+  const path = jobPath(character.jobLine, character.jobBranch);
+  // 2차 갈래를 아직 안 골랐으면 2차 전직 레벨이 된 그때 계열 전직관이 갈래를 묻는다. 고를 때까지 1차에 머문다
+  if (character.jobLine && !character.jobBranch && advancementTier(from) < 2 && advancementTier(to) >= 2) {
+    hud.openBranchChoice(character.jobLine);
+    alertUser({ kind: 'branch-choice', ...who, level: to, instructor: instructorName(character.jobLine) });
+  }
+  if (path && pathTier(to, path) > pathTier(from, path)) {
+    const job = describeJob(to, path, character.appearance);
     scene.celebrate(`${job.tier}차 전직!`);
     hud.notify(`전직 완료: ${job.title}`);
-    hud.congratulate(character.jobLine, job.tier);
+    hud.congratulate(path, job.tier);
     alertUser({ kind: 'advancement', ...who, tier: job.tier, jobTitle: job.title });
   }
 
@@ -743,17 +817,17 @@ async function tick(): Promise<void> {
   // 전직 날짜는 화면과 상관없이 그 차수가 된 틱에 적는다. 직업을 늦게 골랐으면 고른 틱이 그 날이다
   if (noteAdvancements(character.advancedAt, job.tier, Date.now()).length > 0) writeRoster(roster);
   // 스킬창을 열 때 아이콘을 기다리지 않게 켤 때와 직업·차수가 바뀔 때 뒤에서 받아 둔다
-  const skillBookKey = `${character.jobLine}|${job.tier}`;
+  const path = jobPath(character.jobLine, character.jobBranch);
+  const skillBookKey = `${path}|${job.tier}`;
   if (skillBookKey !== prefetchedSkillBook) {
     prefetchedSkillBook = skillBookKey;
-    const { jobLine } = character;
     // 아이콘을 다 받은 뒤에 스킬창에서 쓰거나 사냥에 쓸(자동 포함) 스킬 데이터를 작은 것부터 하나씩 받아 기기에 남긴다
-    void prefetchSkillWindow(jobLine, job.tier).then(() =>
-      prefetchSkillData(skillDataPrefetchOrder(jobLine, job.tier, job.skillId, SKILL_STORE_CAP_BYTES / 1024)),
+    void prefetchSkillWindow(path, job.tier).then(() =>
+      prefetchSkillData(skillDataPrefetchOrder(path, job.tier, job.skillId, SKILL_STORE_CAP_BYTES / 1024)),
     );
   }
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
-  const trayStatus = job.canChooseJob ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
+  const trayStatus = job.canChooseJob || job.branchChoice ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
   if (trayStatus !== lastTrayStatus) {
     desktop.setTrayStatus(trayStatus);
     lastTrayStatus = trayStatus;
@@ -769,6 +843,10 @@ async function tick(): Promise<void> {
     handleLevelUp(character, lastLevel.level, info.level);
   }
   lastLevel = { characterId: character.id, level: info.level };
+  if (character.freeJobChange && offeredFreeChange !== character.id) {
+    offeredFreeChange = character.id;
+    openJobChange();
+  }
 
   scene.setJob(job);
   scene.setName(character.name);
@@ -776,6 +854,7 @@ async function tick(): Promise<void> {
     level: info.level,
     jobTitle: job.title,
     canChooseJob: job.canChooseJob,
+    branchChoice: job.branchChoice,
     ratio: info.ratio,
     xpIntoLevel: info.xpIntoLevel,
     xpForLevel: info.xpForLevel,
@@ -867,7 +946,9 @@ notifier.onOpen(() => {
   if (availableUpdate) hud.notify(updateNotice(availableUpdate).body);
   const character = selectedCharacter(roster);
   if (!character || screen !== 'map') return;
-  if (characterJob(character, levelInfo(characterXp(character)).level).canChooseJob) hud.openJobChoice();
+  const job = characterJob(character, levelInfo(characterXp(character)).level);
+  if (job.canChooseJob) hud.openJobChoice();
+  else if (job.branchChoice) hud.openBranchChoice(job.branchChoice);
 });
 startUpdateChecks({
   onFound(version, firstTime) {

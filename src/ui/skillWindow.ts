@@ -1,4 +1,4 @@
-import { ADVANCEMENT_LEVELS, JOB_LINES, type JobLineId } from '../game/jobs';
+import { ADVANCEMENT_LEVELS, type JobPath, tierName } from '../game/jobs';
 import {
   SKILL_TIERS,
   type SkillEntry,
@@ -16,7 +16,8 @@ import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 import { BUTTON_SKINS, dressMapleButton, prefetchButtonSkins } from './mapleButton';
 
 export interface SkillWindowState {
-  jobLine: JobLineId | null;
+  /** 직업 길. 2차 갈래를 고르기 전에는 계열이다 */
+  path: JobPath | null;
   /** 0 이면 초보자 */
   tier: number;
   /** 고른 사냥 스킬. null 이면 자동 */
@@ -113,18 +114,13 @@ const iconUrl = (entry: SkillEntry) => wzImageUrl(skillIconPath(entry));
  * 스킬창 그림과 이 직업 길의 스킬 아이콘을 뒤에서 미리 받아 둔다. 아이콘은 캐시샵처럼 기기(IndexedDB)에 남겨서
  * 다음 실행부터는 네트워크 없이 바로 그린다. 창을 열면 지금 탭 아이콘이 미리 받기보다 먼저 받아진다. 아이콘을 다 받으면 끝난다
  */
-export async function prefetchSkillWindow(jobLine: JobLineId | null, tier: number): Promise<void> {
-  const icons = iconPrefetchOrder(jobLine, tier).map((entry) => loadImageAsset(iconUrl(entry), PRIORITY.prefetch));
+export async function prefetchSkillWindow(path: JobPath | null, tier: number): Promise<void> {
+  const icons = iconPrefetchOrder(path, tier).map((entry) => loadImageAsset(iconUrl(entry), PRIORITY.prefetch));
   [...Object.values(ART), ...Object.values(ROW_ART), ...Object.values(SCROLL_ART), ...SKILL_TIERS.flatMap((each) => Object.values(tabArt(each)))].forEach(
     (url) => loadWithRetry(url).catch(() => {}),
   );
   prefetchButtonSkins(BUTTON_SKINS.skillGreen, BUTTON_SKINS.skillOrange);
   await Promise.allSettled(icons);
-}
-
-function tierTitle(jobLine: JobLineId | null, tier: number): string {
-  if (tier === 0 || !jobLine) return '초보자';
-  return JOB_LINES[jobLine].names[Math.min(tier, 4) - 1];
 }
 
 export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandlers): SkillWindow {
@@ -198,8 +194,8 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
     return button;
   });
 
-  const reached = () => (state?.jobLine ? state.tier : 0);
-  const currentHunt = () => (state ? huntSkill(state.jobLine, state.tier, state.huntSkillId) : null);
+  const reached = () => (state?.path ? state.tier : 0);
+  const currentHunt = () => (state ? huntSkill(state.path, state.tier, state.huntSkillId) : null);
 
   function selectTab(tier: number) {
     if (!state || tier < 0 || tier > reached()) return;
@@ -229,7 +225,7 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
   }
 
   async function choose(skillId: number | null) {
-    const entry = skillId === null ? null : findSkill(state?.jobLine ?? null, skillId);
+    const entry = skillId === null ? null : findSkill(state?.path ?? null, skillId);
     const result = await run(skillId ?? -1, entry?.name ?? '자동', () => handlers.onChoose(skillId));
     if (result === null) return;
     if (result === 'ok') showNote(skillId === null ? '자동으로 골라 싸워요' : `사냥 스킬을 바꿨어요 · ${entry?.name}`);
@@ -327,7 +323,7 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
       button.setAttribute('aria-selected', String(tier === tab));
       button.setAttribute('aria-disabled', String(locked));
       button.title = locked
-        ? state?.jobLine
+        ? state?.path
           ? `Lv.${ADVANCEMENT_LEVELS[tier - 1]}에 ${tier}차 전직하면 열려요`
           : '직업을 고르면 열려요'
         : tier === 0
@@ -346,11 +342,11 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
 
   function renderList() {
     if (!state) return;
-    const skills = tierSkills(state.jobLine, tab);
+    const skills = tierSkills(state.path, tab);
     const top = list.scrollTop;
     list.replaceChildren(...skills.map(skillRow));
     list.scrollTop = top;
-    bannerTitle.textContent = tierTitle(state.jobLine, tab);
+    bannerTitle.textContent = tierName(state.path, tab);
     book.dataset.kind = tab === 0 ? 'beginner' : 'job';
     const matrixKind = tab === 5 ? 'v' : tab === 6 ? 'hexa' : null;
     matrix.hidden = matrixKind === null;
@@ -369,7 +365,7 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
       return;
     }
     const using = currentHunt();
-    const name = using === null ? null : findSkill(state.jobLine, using)?.name;
+    const name = using === null ? null : findSkill(state.path, using)?.name;
     if (using === null) hunt.textContent = '사냥 · 기본 공격(전직하면 스킬로 싸워요)';
     else if (state.huntSkillId === null) hunt.textContent = `사냥 · 자동 (${name})`;
     else hunt.textContent = `사냥 · ${name}`;
@@ -456,7 +452,7 @@ export function createSkillWindow(root: HTMLElement, handlers: SkillWindowHandle
     update(next) {
       // 틱마다 불려도 바뀐 것이 없으면 목록(아이콘)을 다시 그리지 않는다
       const changed =
-        !state || state.jobLine !== next.jobLine || state.tier !== next.tier || state.huntSkillId !== next.huntSkillId;
+        !state || state.path !== next.path || state.tier !== next.tier || state.huntSkillId !== next.huntSkillId;
       state = next;
       if (tab > reached()) tab = reached();
       if (changed && !screen.hidden) render();

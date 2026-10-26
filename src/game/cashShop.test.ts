@@ -24,7 +24,7 @@ import { TOWNS, rewardTown, unlockedTowns } from './towns';
 import { parseRoster } from './save';
 
 // 전사 2차: 흑룡포(한벌옷 1050011)·모자 1002023·신발 1072039·검 1302000
-const warrior = describeJob(30, 'warrior', DEFAULT_APPEARANCE).look;
+const warrior = describeJob(30, 'hero', DEFAULT_APPEARANCE).look;
 const beginner = describeJob(1, null, DEFAULT_APPEARANCE).look;
 const CASH_HAT = 1000000;
 const CASH_OVERALL = 1050004;
@@ -216,7 +216,7 @@ describe('목록 거르기', () => {
   });
 
   it('캐시 무기는 한손검(30) 그림이 있거나 무기 종류가 맞아야 보인다', () => {
-    const archer = describeJob(30, 'archer', DEFAULT_APPEARANCE).look;
+    const archer = describeJob(30, 'bowmaster', DEFAULT_APPEARANCE).look;
     expect(cashWeaponFits(['30', '49'], archer)).toBe(true);
     expect(cashWeaponFits(['33'], archer)).toBe(false);
     expect(cashWeaponFits(['33', '45'], archer)).toBe(true);

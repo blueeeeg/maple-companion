@@ -1744,6 +1744,7 @@ body {
 .npc-option {
   display: inline-flex;
   align-items: center;
+  text-align: left;
   gap: 4px;
   padding: 1px 0;
   border: 0;
@@ -1772,6 +1773,12 @@ body {
 .has-dot-art .npc-option:hover .npc-dot,
 .has-dot-art .npc-option:focus-visible .npc-dot {
   background-image: var(--dot1);
+}
+
+.npc-option:disabled {
+  color: #8a8a8a;
+  cursor: default;
+  text-decoration: none;
 }
 
 /* 버튼은 아래 파란 띠 가운데(아래에서 7px). 「대화 그만하기」는 왼쪽, 나머지는 오른쪽 */
@@ -2542,6 +2549,46 @@ body {
   flex: none;
   width: 11.5px;
   height: 12px;
+}
+
+.stat-rows dd.stat-advancement {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 1px;
+}
+
+.stat-advancement span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-change-job {
+  flex: none;
+  height: 12px;
+  margin-left: auto;
+  padding: 0 3px;
+  border: 1px solid #c77a12;
+  border-radius: 3px;
+  background: linear-gradient(#ffd27a, #f0a02a);
+  color: #5a3200;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 10px;
+  cursor: pointer;
+}
+
+.stat-change-job:hover,
+.stat-change-job:focus-visible {
+  background: linear-gradient(#ffe2a6, #f6b450);
+  outline: none;
+}
+
+/* 갈래를 바꾼 기록이 붙으면 일곱 줄을 넘어 판 안에서 내려 본다 */
+.stat-rows.is-advancements {
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .stat-back {

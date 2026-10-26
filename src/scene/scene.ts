@@ -322,9 +322,9 @@ async function loadHeroAction(look: number[], action: string): Promise<{ animati
 async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnimations; still: boolean }> {
   keepArt('look', [characterArtBase(job.look)]);
   const [stand, walk, attack] = await Promise.all(
-    ['stand1', 'walk1', job.attackAction].map((action) => loadHeroAction(job.look, action)),
+    [job.standAction, job.walkAction, job.attackAction].map((action) => loadHeroAction(job.look, action)),
   );
-  storeHeroActions(job.look, job.attackAction);
+  storeHeroActions(job.look, [job.standAction, job.walkAction, job.attackAction]);
   return {
     animations: { stand: stand.animation, walk: walk.animation, attack: attack.animation },
     still: stand.still || walk.still || attack.still,
@@ -332,17 +332,17 @@ async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnima
 }
 
 /** 지금 모습에서 기기에 받아 둘 동작. 정지 그림으로 대신한 서기·걷기도 다시 받고, 스킬·사다리·로프 동작은 네트워크가 막혀도 그려진다 */
-const STORED_HERO_ACTIONS = ['stand1', 'walk1', 'alert', 'jump', 'ladder', 'rope'];
+const STORED_HERO_ACTIONS = ['alert', 'jump', 'ladder', 'rope'];
 /** 맵·캐릭터를 다 받은 뒤에 받기 시작해 처음 그리는 데 끼어들지 않는다 */
 const STORE_HERO_ACTIONS_DELAY_MS = 5000;
 let storedHeroLook = '';
 
 /** 지금 모습의 동작을 기기에만 하나씩 받아 둔다. 실패한 동작은 넘어가고 모습이 바뀌면 그만둔다 */
-function storeHeroActions(look: number[], attackAction: string): void {
-  const key = `${look.join(',')}|${attackAction}`;
+function storeHeroActions(look: number[], jobActions: string[]): void {
+  const key = `${look.join(',')}|${jobActions.join(',')}`;
   if (key === storedHeroLook) return;
   storedHeroLook = key;
-  [...new Set([...STORED_HERO_ACTIONS, attackAction])].reduce<Promise<unknown>>(
+  [...new Set([...jobActions, ...STORED_HERO_ACTIONS])].reduce<Promise<unknown>>(
     (previous, action) =>
       previous.then(() => {
         if (storedHeroLook !== key) return;
@@ -1503,7 +1503,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       // 스킬창에서 스킬을 누르는 순간 바로 움직이게 공용 동작(alert)을 모습이 바뀔 때마다 받아 둔다
       void castMotion([]);
       fallbackRange = job.fallbackRange;
-      const key = `${job.look.join(',')}|${job.attackAction}|${job.skillId}`;
+      const key = `${job.look.join(',')}|${job.standAction}|${job.walkAction}|${job.attackAction}|${job.skillId}`;
       if (key === lookKey && performance.now() < lookRetryAt) return;
       lookKey = key;
       lookRetryAt = Infinity;

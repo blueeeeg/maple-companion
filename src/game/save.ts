@@ -3,14 +3,17 @@ import { normalizeReservedBoss } from './bossChallenge';
 import { normalizeCashData } from './cashShop';
 import {
   type Character,
+  type JobChange,
   type LegacySave,
   type Roster,
   createCharacter,
   emptyRoster,
+  legacyBranch,
   legacyHuntProgress,
   migrateLegacySave,
   reachedTier,
 } from './characters';
+import { JOB_BRANCHES, type JobBranchId } from './jobs';
 import { mergeAdvancements, normalizeAdvancements } from './records';
 
 const STORAGE_KEY = 'maple-companion:characters';
@@ -36,8 +39,11 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
     };
     const { huntSkillId } = character;
     const raw = character as Partial<Character>;
+    const branch = normalizeBranch(filled, raw);
     return {
       ...filled,
+      ...branch,
+      jobHistory: normalizeJobHistory(raw.jobHistory),
       huntSkillId: typeof huntSkillId === 'number' && Number.isInteger(huntSkillId) ? huntSkillId : null,
       // 보스 지정이 생기기 전 저장이거나 지금은 없는 보스면 지정 없음(무작위)이다
       reservedBossId: normalizeReservedBoss(character.reservedBossId),
@@ -51,10 +57,37 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
         : [],
       lastTownId: typeof raw.lastTownId === 'string' ? raw.lastTownId : null,
       // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다
-      advancedAt: normalizeAdvancements(character.advancedAt, reachedTier(filled)),
+      advancedAt: normalizeAdvancements(character.advancedAt, reachedTier({ ...filled, ...branch })),
     };
   });
   return { ...emptyRoster(), ...parsed, characters };
+}
+
+const BRANCH_IDS = new Set<unknown>(Object.keys(JOB_BRANCHES));
+const isBranchOf = (value: unknown, line: Character['jobLine']): value is JobBranchId =>
+  BRANCH_IDS.has(value) && JOB_BRANCHES[value as JobBranchId].line === line;
+
+/**
+ * 갈래 칸이 없던 저장은 legacyBranch 로 읽는다(2차를 했으면 첫 갈래 + 무료 다시 고르기 한 번).
+ * 칸이 있는데 깨졌거나 계열이 안 맞으면 아직 안 고른 것으로 친다. 다시 Lv.30 처럼 고르게 된다
+ */
+function normalizeBranch(filled: Character, raw: Partial<Character>): Pick<Character, 'jobBranch' | 'freeJobChange'> {
+  if (!('jobBranch' in raw)) return legacyBranch(filled);
+  const jobBranch = isBranchOf(raw.jobBranch, filled.jobLine) ? raw.jobBranch : null;
+  return { jobBranch, freeJobChange: jobBranch !== null && raw.freeJobChange === true };
+}
+
+function normalizeJobHistory(saved: unknown): JobChange[] {
+  if (!Array.isArray(saved)) return [];
+  return saved.filter(
+    (entry): entry is JobChange =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof entry.at === 'number' &&
+      Number.isFinite(entry.at) &&
+      BRANCH_IDS.has(entry.from) &&
+      BRANCH_IDS.has(entry.to),
+  );
 }
 
 export function parseRoster(
@@ -86,6 +119,33 @@ export function writeRoster(roster: Roster): void {
 }
 
 const progress = (character: Character) => character.activeSeconds + character.killXp;
+const lastJobChange = (character: Character) => Math.max(0, ...character.jobHistory.map((entry) => entry.at));
+/** 갈래를 고르거나 다시 고르기에 답한 쪽 */
+const branchSettled = (character: Character) => character.jobBranch !== null && !character.freeJobChange;
+
+/**
+ * 갈래는 더 자란 쪽이 아니라 마지막으로 정한 쪽을 따른다. 한쪽에서 갈래를 바꾸고 다른 쪽에서 사냥만 더 했으면
+ * 바꾼 갈래가 남아야 하고, 한쪽에서 다시 고르기에 답했으면 다른 쪽에서 또 묻지 않아야 한다
+ */
+function branchSource(winner: Character, other: Character): Character {
+  if (other.jobLine !== winner.jobLine) return winner;
+  if (lastJobChange(other) !== lastJobChange(winner)) return lastJobChange(other) > lastJobChange(winner) ? other : winner;
+  if (!branchSettled(winner) && branchSettled(other)) return other;
+  return winner;
+}
+
+/** 같은 때 같은 갈래로 바꾼 기록은 하나로 친다 */
+function mergeJobHistory(a: JobChange[], b: JobChange[]): JobChange[] {
+  const seen = new Set<string>();
+  return [...a, ...b]
+    .filter((entry) => {
+      const key = `${entry.at}|${entry.from}|${entry.to}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((x, y) => x.at - y.at);
+}
 
 /**
  * 파일 저장(file)과 localStorage 저장(local)을 합친다. 개발 빌드와 배포 앱이 서로 다른 localStorage 를 써서
@@ -99,12 +159,19 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
     const fromLocal = localById.get(fromFile.id);
     if (!fromLocal) return fromFile;
     const winner = progress(fromLocal) > progress(fromFile) ? fromLocal : fromFile;
+    const other = winner === fromFile ? fromLocal : fromFile;
+    const branchSide = branchSource(winner, other);
     // 사냥 스킬·보스 지정은 메소처럼 더 자란 쪽 것을 쓴다. 덜 자란 쪽 지정은 이미 써 버린 것일 수 있다.
-    // 전직 날짜는 한쪽에만 적혀 있을 수 있어 합친다
+    // 전직 날짜·갈래를 바꾼 기록은 한쪽에만 적혀 있을 수 있어 합친다
     return {
       ...winner,
+      jobBranch: branchSide.jobBranch,
+      freeJobChange: branchSide.freeJobChange,
+      // 갈래를 다른 쪽에서 가져오면 고른 사냥 스킬이 그 갈래 것이 아닐 수 있다
+      huntSkillId: branchSide.jobBranch === winner.jobBranch ? winner.huntSkillId : null,
       wardrobe: [...new Set([...fromFile.wardrobe, ...fromLocal.wardrobe])],
       advancedAt: mergeAdvancements(fromFile.advancedAt, fromLocal.advancedAt),
+      jobHistory: mergeJobHistory(fromFile.jobHistory, fromLocal.jobHistory),
     };
   });
   const fileIds = new Set(fileCharacters.map((character) => character.id));

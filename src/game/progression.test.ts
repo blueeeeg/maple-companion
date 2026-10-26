@@ -46,8 +46,8 @@ describe('전직', () => {
   });
 
   it('이름 뒤에 차수를 붙이고 5·6차는 4차 이름을 쓴다', () => {
-    expect(describeJob(65, 'warrior', DEFAULT_APPEARANCE).title).toBe('크루세이더 · 3차');
-    expect(describeJob(265, 'archer', DEFAULT_APPEARANCE).title).toBe('보우마스터 · 6차');
+    expect(describeJob(65, 'hero', DEFAULT_APPEARANCE).title).toBe('크루세이더 · 3차');
+    expect(describeJob(265, 'bowmaster', DEFAULT_APPEARANCE).title).toBe('보우마스터 · 6차');
   });
 });
 

@@ -27,6 +27,13 @@ export function formatDay(ms: number): string {
   return `${date.getFullYear()}.${two(date.getMonth() + 1)}.${two(date.getDate())}`;
 }
 
+/** 「10-27」 */
+export function formatMonthDay(ms: number): string {
+  const date = new Date(ms);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+}
+
 /** 지금까지 한 전직은 날짜를 모른다(null)로 채운다. 기록 칸이 없던 저장을 처음 읽을 때 쓴다 */
 export function baselineAdvancements(reachedTier: number): AdvancementLog {
   return Object.fromEntries(TIERS.filter((tier) => tier <= reachedTier).map((tier) => [tier, null]));
