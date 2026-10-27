@@ -1,7 +1,8 @@
 import type { Point } from '../maple/ground';
 import { type RouteField, isPassage } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
-import type { Town } from './towns';
+import { CLASSIC_TOWN_ROUTES } from './routeData.classic';
+import { type Town, townEra } from './towns';
 
 /** 포털 하나로 옆 맵에 옮겨 가는 한 걸음 */
 export interface FieldHop {
@@ -20,8 +21,9 @@ export interface FieldMove extends FieldHop {
   hops: FieldHop[];
 }
 
-export function townFields(town: Pick<Town, 'id'>): RouteField[] {
-  return TOWN_ROUTES[town.id] ?? [];
+/** 마을 id 는 시대가 달라도 같아서 시대별 길 목록에서 찾는다 */
+export function townFields(town: Pick<Town, 'id' | 'era'>): RouteField[] {
+  return (townEra(town) === 'classic' ? CLASSIC_TOWN_ROUTES : TOWN_ROUTES)[town.id] ?? [];
 }
 
 /** 지금 맵에서 포털 하나로 닿는 맵들. 사냥터에서는 왔던 맵과 그 너머 맵으로 간다 */

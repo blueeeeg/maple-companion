@@ -1,7 +1,8 @@
 // 마을에서 걸어서 갈 수 있는 사냥터를 maplestory.io 에서 찾아 src/game/routeData.ts 로 쓴다. 개발용 도구다.
-// node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더]
+// node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더] [--era classic]
+// 클래식(GMS 83)은 src/game/routeData.classic.ts 로 쓰고 이름은 scripts/classicNames.ts 로 한글을 채운다
 // 서버가 느려서 요청은 하나씩 보내고 받은 응답은 캐시 폴더에 남긴다. 리소스(그림·소리)는 받지 않는다
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Foothold } from '../src/maple/api.ts';
@@ -23,42 +24,32 @@ import {
   relaxedLevelBand,
   selectRoute,
 } from '../src/game/routeCuration.ts';
-import { TOWNS } from '../src/game/towns.ts';
+import { townsFor } from '../src/game/towns.ts';
 import { type LadderRope, type NavGraph, buildNavGraph } from '../src/maple/navigation.ts';
+import { classicName, nameNotes } from './classicNames.ts';
+import { apiBase, eraArg, getJson, positionalArgs, quote, reportFailures, useCache, wzBase, wzMapPath } from './mapleio.ts';
 
-const API = 'https://maplestory.io/api/KMS/389';
-const WZ = 'https://maplestory.io/api/wz/KMS/389';
+const era = eraArg(process.argv);
+const API = apiBase(era);
+const WZ = wzBase(era);
+const TOWNS = townsFor(era);
 const MAX_DEPTH = 3;
-const TIMEOUT_MS = 30_000;
+/** 데이터로는 사냥터처럼 보이지만 고르지 않는 맵과 그 까닭 */
+const EXCLUDED_MAPS: Record<typeof era, Record<number, string>> = {
+  current: {},
+  classic: {
+    230000003: '아쿠아리움 동물원. 전시용 Zoo 몹만 있다',
+    100000002: '헤네시스 마을 안 집(뒤에 장로 스탄의 집). 사냥터가 아니다',
+    // 아래 맵은 바닥 레이어 그림으로 지면 보정을 정확히 맞추지 못한다(감사에서 두 번 다 어림값). 세 개의 문은 어림값도 틀려 캐릭터가 뜬다
+    106000001: '지면 보정을 정확히 못 맞춤',
+    107000001: '지면 보정을 정확히 못 맞춤',
+    107000200: '지면 보정을 정확히 못 맞춤',
+    270000000: '지면 보정을 정확히 못 맞추고 어림값도 틀림',
+  },
+};
 
-const cacheDir = process.argv[2] ?? join(tmpdir(), 'maple-routes-cache');
-const outFile = new URL('../src/game/routeData.ts', import.meta.url);
-/** 끝내 못 받은 주소. 없는 것으로 치고 넘어가니, 남으면 캐시를 둔 채 다시 돌린다 */
-const failures: string[] = [];
-
-async function getJson<T>(url: string): Promise<T | null> {
-  const file = join(cacheDir, url.replace(/^https:\/\/maplestory\.io\/api\//, '').replace(/[^\w.-]+/g, '_') + '.json');
-  try {
-    return JSON.parse(await readFile(file, 'utf8')) as T | null;
-  } catch {
-    // 캐시에 없으면 받는다
-  }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-      // 없는 노드·맵은 404 로 온다. 없다는 사실도 남긴다
-      const body = response.ok ? await response.json() : response.status === 404 ? null : undefined;
-      if (body === undefined) throw new Error(`${response.status}`);
-      await writeFile(file, JSON.stringify(body));
-      return body as T | null;
-    } catch (error) {
-      console.warn(`  재시도 ${attempt + 1} ${url}: ${(error as Error).message}`);
-      await new Promise((resolve) => setTimeout(resolve, 2000 * (attempt + 1)));
-    }
-  }
-  failures.push(url);
-  return null;
-}
+const cacheDir = positionalArgs(process.argv)[2] ?? join(tmpdir(), 'maple-routes-cache');
+const outFile = new URL(era === 'classic' ? '../src/game/routeData.classic.ts' : '../src/game/routeData.ts', import.meta.url);
 
 interface MapJson {
   name: string;
@@ -77,11 +68,6 @@ interface MapData {
   ladders: LadderRope[];
   mobs: MapMob[];
 }
-
-const wzMapPath = (mapId: number) => {
-  const padded = String(mapId).padStart(9, '0');
-  return `Map/Map/Map${padded[0]}/${padded}.img`;
-};
 
 async function wzValue<T>(path: string): Promise<T | null> {
   return (await getJson<{ value: T }>(`${WZ}/${path}`))?.value ?? null;
@@ -147,7 +133,9 @@ async function loadMobs(ids: number[]): Promise<Map<number, MobDetail>> {
     const info = await getJson<{ name: string; meta?: { level?: number }; framebooks?: Record<string, number> }>(
       `${API}/mob/${id}`,
     );
-    if (info) mobs.set(id, { id, name: info.name, level: info.meta?.level ?? 0, framebooks: info.framebooks ?? {} });
+    if (!info) continue;
+    const name = era === 'classic' && info.name ? (await classicName('mob', id)).name : info.name;
+    mobs.set(id, { id, name, level: info.meta?.level ?? 0, framebooks: info.framebooks ?? {} });
   }
   return mobs;
 }
@@ -186,6 +174,12 @@ async function curateTown(
         if (visited.has(portal.toMap)) continue;
         const target = await loadMap(portal.toMap);
         if (!target) continue;
+        const excluded = EXCLUDED_MAPS[era][target.id];
+        if (excluded) {
+          visited.add(target.id);
+          exclude(fromId, portal.toMap, excluded);
+          continue;
+        }
         // 무릉 사원처럼 앱 마을이 아닌 마을 맵은 통로로 지나갈 수 있다. 앱 마을로는 넘어가지 않는다
         const isAppTown = TOWNS.some((each) => each.mapId === target.id);
         if (isAppTown || (target.isTown && maxPassages === 0)) continue;
@@ -210,7 +204,8 @@ async function curateTown(
         links.push({ from: fromId, to: portal.toMap, exitX: portal.x, exitY: portal.y, arrivalX: back.x, arrivalY: back.y });
         const details = await loadMobs(target.mobs.map((mob) => mob.id));
         const monsters = fieldMonsters(target.mobs, details);
-        fields.set(target.id, { mapId: target.id, name: target.name, isTown: isAppTown, monsters });
+        const name = era === 'classic' ? (await classicName('map', target.id)).name : target.name;
+        fields.set(target.id, { mapId: target.id, name, isTown: isAppTown, monsters });
         if (monsters.length === 0) {
           exclude(fromId, portal.toMap, maxPassages > 0 ? '몬스터 없음 (통로로만 지나감)' : '몬스터 없음');
           // 너머에 고를 사냥터가 없으면 selectRoute 가 통로도 넣지 않는다
@@ -231,15 +226,15 @@ async function curateTown(
   return selectRoute(town.mapId, links, fields, band, MAX_ROUTE_FIELDS, maxPassages);
 }
 
-const quote = (text: string) => `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-
 function render(routes: Record<string, RouteField[]>): string {
   const lines = [
     '// scripts/curate-routes.ts 가 만든 파일이다. 손으로 고치지 말고 스크립트를 다시 돌린다',
     "import type { RouteField } from './routeCuration';",
     '',
-    '/** 마을 id → 걸어서 가는 사냥터. KMS 389 맵의 실제 포털 연결이고 좌표는 맵 월드 좌표다 */',
-    'export const TOWN_ROUTES: Record<string, RouteField[]> = {',
+    era === 'classic'
+      ? '/** 클래식 마을 id → 걸어서 가는 사냥터. GMS 83 맵의 실제 포털 연결이고 좌표는 맵 월드 좌표다. 이름은 KMS 389 로 채웠다 */'
+      : '/** 마을 id → 걸어서 가는 사냥터. KMS 389 맵의 실제 포털 연결이고 좌표는 맵 월드 좌표다 */',
+    `export const ${era === 'classic' ? 'CLASSIC_TOWN_ROUTES' : 'TOWN_ROUTES'}: Record<string, RouteField[]> = {`,
   ];
   Object.entries(routes).forEach(([townId, fields]) => {
     if (fields.length === 0) {
@@ -268,7 +263,7 @@ function render(routes: Record<string, RouteField[]>): string {
   return lines.join('\n');
 }
 
-await mkdir(cacheDir, { recursive: true });
+await useCache(cacheDir);
 const exclusions: Exclusion[] = [];
 const routes: Record<string, RouteField[]> = {};
 for (let index = 0; index < TOWNS.length; index += 1) {
@@ -297,9 +292,10 @@ for (let index = 0; index < TOWNS.length; index += 1) {
 }
 console.log('\n제외');
 exclusions.forEach((each) => console.log(`  [${each.townId}] ${each.from} → ${each.to}: ${each.reason}`));
-if (failures.length > 0) {
-  console.log('\n못 받은 주소 (다시 돌리면 이것만 다시 받는다)');
-  failures.forEach((url) => console.log(`  ${url}`));
+if (nameNotes.length > 0) {
+  console.log('\n이름 확인');
+  nameNotes.forEach((note) => console.log(`  ${note}`));
 }
+reportFailures();
 await writeFile(outFile, render(routes));
 console.log(`\n${outFile.pathname} 에 썼다`);

@@ -69,6 +69,13 @@ Windows 에서는 아래 설명의 「메뉴바」를 작업표시줄 오른쪽 
   - 설정 「마을」이 「머물기」면 그 마을과 그 마을 사냥터 안에서만 오간다. 「돌기」면 고른 시간이 되었을 때 사냥터에 있어도 지금처럼 바로 다음 마을 맵으로 옮긴다
   - 사냥터 맵을 못 받아 오면 그 사냥터는 다른 마을로 갈 때까지 건너뛴다. 마을에 들어가면 그 마을 사냥터 맵을 뒤에서 하나씩 미리 받아 둔다
   - 몹이 없는 통로 맵(오르비스탑입구·무릉 사원·세르니움 성문 등)은 사냥하지 않고 걸어서 지나간다. 통로에 들어서면 바로 다음 포털까지 걸어가 이어 탄다. 통로 맵에도 드나드는 포털이 늘 떠 있다. 이어 가다 맵을 못 받아 오면 그 맵에 남았다가 다음 차례에 바로 다른 곳으로 옮긴다
+- 캐릭터를 만들 때 시대를 고른다. 「현재 메이플」(KMS 389)과 「클래식 (빅뱅 이전)」(GMS 83, 빅뱅 v93 직전 데이터)이다. 기본은 현재 메이플이고 만든 뒤에는 못 바꾼다. 캐릭터 선택 화면에서 클래식 캐릭터는 발밑에 「클래식」 표시가 붙는다
+  - 클래식 캐릭터는 마을·사냥터 맵, 몬스터, 맵 BGM, 포털 그림을 GMS 83 에서 받는다. 같은 맵 ID 라도 지형이 달라서(옛 헤네시스는 다른 마을이다) 사냥터 포털 좌표·지면 보정값을 시대마다 따로 둔다
+  - 클래식 마을은 17곳이다(`src/game/classicTowns.ts`). 헤네시스 Lv.1 · 리스항구 5 · 엘리니아 10 · 페리온 15 · 커닝시티 20 · 슬리피우드 25 · 아리안트 28 · 오르비스 30 · 루디브리엄 35 · 아랫마을 38 · 지구방위본부 40 · 아쿠아리움 42 · 무릉 48 · 백초마을 50 · 엘나스 55 · 리프레 75 · 시간의 신전 85. 마을이 열리는 레벨은 그 마을 둘레 v83 몹 레벨에 맞췄다. 사냥터는 지금 시대와 같은 규칙으로 고른 것이다(`src/game/routeData.classic.ts`). 지구방위본부와 시간의 신전은 마을에서만 사냥한다. 지구방위본부는 바닥에서 걸어 갈 수 있는 사냥터 포털이 없고, 시간의 신전은 사냥터로 가는 길목(세 개의 문)의 지면 보정을 못 맞춰서 뺐다. 지면 보정을 정확히 못 맞추는 맵(위험한골짜기·주니어네키의 늪·방황의늪3·세 개의 문)과 사냥터가 아닌 맵(헤네시스 마을 안 집·아쿠아리움 동물원)은 `scripts/curate-routes.ts` `EXCLUDED_MAPS` 에 까닭과 함께 적어 고르지 않는다
+  - 캐릭터 그림도 v83 으로 그린다. 아이템마다 받을 판을 따로 적을 수 있어서, 앱이 입히는 아이템 중 v83 에 있는 것(몸·얼굴·헤어·직업 장비 대부분, `src/maple/classicItems.ts`)만 v83 으로 그리고 캐시 아이템·새 장비는 지금 판 그림으로 섞어 그린다
+  - 마을이 열리는 규칙·셔플 백·「머물기」는 시대와 같다. 「머물기」 마을은 설정 하나라 두 시대에 다 있는 마을(헤네시스 등)은 이어지고, 그 시대에 없는 마을이면 돈다. 보상(경험치·메소)은 시대와 상관없이 지금 시대 마을 기준 그대로다
+  - 1단계라 UI·스킬·장비·캐시샵·보스는 지금 데이터 그대로다. 보스는 클래식 캐릭터도 지금 시대 보스 맵에서 지금 시대 보스와 싸운다
+  - 「BGM 고르기」 목록도 지금 판 곡이다. 클래식 맵 곡은 「맵 따라가기」로만 나오고, 그 곡을 「한 곡 반복」하면 같은 경로의 지금 판 곡을 반복한다
 - 원작처럼 캐릭터 발밑에 이름표(반투명 검은 상자에 흰 글자)가 따라다닌다. 원작 기본 이름표는 그림이 아니라 클라이언트가 그려서 같은 모양으로 그린다. 앞 레이어보다 위, 대미지 숫자보다 아래에 보이고 경험치 바와 겹치지 않는다
 - 기본 활동 3분마다 그 마을 몬스터가 나와 자동으로 사냥한다. 몬스터를 누르면 추가 타격
 - 기본 20번째 사냥마다(활동 약 1시간) 보스가 나온다. 잡을 수 있는 보스를 한 바퀴씩 돌아가며 무작위 순서로 고르고(보스 도전 창에서 다음 보스를 지정할 수 있다), 그 보스를 잡는 원작 맵으로 옮겨 20~40초 싸운 뒤 마을로 돌아온다. 기본 설정이면 경험치는 보통 몬스터의 20배, 메소는 10배. 창을 닫아 둔 사이 돌아온 보스 차례는 애니메이션 없이 정산한다
@@ -195,7 +202,7 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 | `activity.json` | 앱 전체 활동 시간, 창 모드·크기, 자리 비움 판정 시간 |
 | `tray-icon.png`·`custom-tray-icon.png` | 트레이 아이콘 |
 | `app-icon-applied.txt` | macOS 앱 아이콘을 마지막으로 붙인 그림의 해시, 또는 붙이지 못한 기록 |
-| `bgm/` | 한 번 받은 BGM. 곡 경로로 이름을 짓는다(`Bgm00/FloralLife` → `KMS-389-Bgm00-FloralLife.mp3`, 빈칸·따옴표 같은 글자는 `-20` 처럼 바이트 16진수). 여러 맵이 같은 곡이면 한 파일이다. 모두 합쳐 300MB 를 넘으면 오래 안 들은 곡부터 지운다. 지워도 되고, 지우면 다음에 틀 때 다시 받는다 |
+| `bgm/` | 한 번 받은 BGM. 곡 경로로 이름을 짓는다(`Bgm00/FloralLife` → `KMS-389-Bgm00-FloralLife.mp3`, 클래식 맵 곡은 `GMS-83-Bgm00-FloralLife.mp3`, 빈칸·따옴표 같은 글자는 `-20` 처럼 바이트 16진수). 여러 맵이 같은 곡이면 한 파일이다. 모두 합쳐 300MB 를 넘으면 오래 안 들은 곡부터 지운다. 지워도 되고, 지우면 다음에 틀 때 다시 받는다 |
 
 그림·데이터 캐시는 위 폴더가 아니라 WebView 의 IndexedDB(`maple-companion-cache:KMS-389`)에 있다. macOS 는 `~/Library/WebKit/com.maplecompanion.app/WebsiteData/IndexedDB/`, Windows 는 `%LOCALAPPDATA%\com.maplecompanion.app\EBWebView\` 아래다. 모두 maplestory.io 에서 다시 받을 수 있는 것이라 지워도 캐릭터는 그대로다.
 
@@ -210,7 +217,8 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 - 예산을 넘으면 마지막으로 쓴 때가 오래된 것부터 지운다. 지금 맵·옮겨 가기 전 마을과 지금 캐릭터 모습의 그림, `UI/` 아래 화면 그림은 건너뛴다
 - 화면 그림(캐릭터 선택·캐시샵·창 틀·버튼·HUD)은 `<img>`·CSS 에 maplestory.io 주소를 바로 걸지 않고, fetch 로 받아 위 `art` 키에 남긴 뒤 blob 주소로 건다(`src/ui/art.ts`). 그래서 한 번 받은 화면은 다음 실행부터 네트워크 없이 원작 그림으로 뜬다. 떼어 쓰는 그림은 뗀 결과도 `crop` 키에 남기고, 떼는 법이 바뀌면 `{판}` 이 바뀌어 새로 뗀다
 - 화면 그림을 못 받으면 글자·기본 모양으로 두고 거기서 멈추지 않는다. 2초·4초 쉬며 세 번 받아 보고, 그래도 못 받으면 15초·30초·1분·2분·5분(이후 5분마다) 뒤에 다시 받는다. 창이 다시 보이거나(`visibilitychange`) 네트워크가 돌아오면(`online`), 또 그 그림을 쓰는 창을 다시 열면 기다리지 않고 바로 받는다. 404 같은 「그림이 없다」 답만 다시 받지 않는다
-- KMS 버전이 바뀌면 DB 이름이 바뀌고 앞 버전 DB 는 통째로 지운다. 맵 보정값(localStorage `maple-companion:calibration:KMS-389:{맵 ID}`)도 버전마다 따로 둔다
+- KMS 버전이 바뀌면 DB 이름이 바뀌고 앞 버전 DB 는 통째로 지운다. 맵 보정값(localStorage `maple-companion:calibration:KMS-389:{맵 ID}`)도 버전마다 따로 둔다. 클래식 맵은 `maple-companion:calibration:GMS-83:{맵 ID}` 다(`src/scene/calibrationStore.ts`)
+- 클래식 그림·맵 정보도 같은 DB 에 GMS 83 요청 주소 그대로를 키로 남긴다. 주소가 달라서 같은 맵 ID 라도 섞이지 않는다
 - **비우기**: 앱을 끄고 위 `IndexedDB` 폴더를 지운다. 브라우저(`pnpm dev`)에서는 개발자 도구 Application → IndexedDB 에서 지운다
 
 - HUD 의 보스 버튼(원작 메뉴의 「보스」 글자)으로 보스 도전 창을 연다. 원작 보스 목록 모양으로 보스 15마리를 레벨 순으로 늘어놓고 보스마다 처치 수를 적는다. 아직 레벨이 모자란 보스는 회색에 「Lv.N부터」다. 열려 있는 동안 맵과 BGM 이 멈추고, 닫기는 ✕·Esc·창 밖 클릭(`src/ui/bossWindow.ts`, `src/game/bossChallenge.ts`)
@@ -242,6 +250,7 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 - `equipPity`: 보스 몹 ID → `{ rare, veryRare }` 그 등급이 안 나온 채 잡은 수. 그 등급이 나오면 0 이다. 모르는 보스·음수·숫자가 아닌 값은 버린다
 - `equipGifts`: 받은 레벨 선물 아이템 ID. 같은 선물을 두 번 주지 않는다. 칸이 없던 예전 저장은 빈 배열로 읽고, 켤 때 이미 넘은 레벨 선물을 받으며 채운다
 - `chairOwned`: 보스가 떨어뜨려 모은 의자 아이템 ID 배열. 칸이 없던 예전 저장은 빈 배열이고, 의자 목록에 없는 ID·겹친 ID 는 빼고 읽는다
+- `era`: 만들 때 고른 시대(`current` 현재 메이플·`classic` 클래식). 칸이 없던 예전 저장이나 모르는 값은 `current` 로 읽는다. 합칠 때 어느 한쪽이 `classic` 이면 `classic` 이다(`current` 는 칸이 없을 때 채우는 값이라서)
 - `chairSelected`: 쉴 때 앉는 의자 ID. 없으면 `null`(의자 없이 선다). 가진 적 없는 의자거나 숫자가 아니면 `null` 로 읽는다
 
 예전 판은 캐릭터·설정을 WebView localStorage(`maple-companion:characters`·`maple-companion:settings`, 그 전에는 `maple-companion:save`)에 두었다. localStorage 는 앱마다 따로라(개발 빌드 `~/Library/WebKit/maple-companion/`, 배포 앱 `~/Library/WebKit/com.maplecompanion.app/`) 개발 빌드에서 키운 캐릭터가 배포 앱에서는 안 보였다. 지금 판은 켤 때 그 앱의 localStorage 를 아직 안 옮겼으면 `game-state.json` 과 합친다(`src/platform/gameState.ts`).
@@ -255,7 +264,16 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 
 ## 리소스
 
-캐릭터·몬스터·맵·BGM 은 저장소와 앱에 넣지 않는다. 실행 중에 팬 API [maplestory.io](https://maplestory.io) (KMS 389) 에서 받아 온다. 보내는 값은 공개된 맵·몹·아이템 ID 뿐이다.
+캐릭터·몬스터·맵·BGM 은 저장소와 앱에 넣지 않는다. 실행 중에 팬 API [maplestory.io](https://maplestory.io) (KMS 389) 에서 받아 온다. 클래식 캐릭터의 맵·몹·맵 BGM·포털·캐릭터 그림은 같은 API 의 GMS 83 에서 받는다. 주소 꼴은 같고 지역·버전만 다르다(`src/maple/api.ts` `DATA_SOURCES`, 주소 함수의 마지막 인자 `era`). 보내는 값은 공개된 맵·몹·아이템 ID 뿐이다.
+
+GMS 83 에서 다른 점은 이렇다.
+
+- v83 에 없는 맵·몹은 404, 없는 WZ 노드는 404 가 아니라 500(「Object reference not set」)으로 온다. 큐레이션 스크립트(`scripts/mapleio.ts`)는 둘 다 「없음」으로 남기고 다시 받지 않는다. 비어 있는 레이어 렌더가 404 인 것은 지금 판과 같다
+- 포털 그림은 `_Canvas` 가 없고 `Map/MapHelper.img/portal/game/pv/0~7` 에 그대로 있다. 원점이 KMS 389 와 달라 따로 적었다(`src/maple/portal.ts`)
+- 맵 정보 이름은 영문이라 맵에 띄우는 이름은 큐레이션한 한글 이름이다
+- 캐릭터 API 는 `/api/character/{아이템 JSON 목록}` 이고 아이템마다 `region`·`version` 을 적는다. `/api/GMS/83/character/{ID 목록}` 꼴은 400 이다. v83 에 없는 아이템을 v83 으로 적으면 오류 없이 빠진 채 그려져서 `classicItems.ts` 로 가른다
+
+클래식 데이터의 한글 이름은 같은 ID 의 KMS 389 이름이다(`scripts/classicNames.ts`). 그 시대 한국어 데이터는 maplestory.io 에 없다. v83 영문 이름과 최근 GMS(270) 영문 이름이 다르면 뜻이 바뀌었을 수 있다고 알리고 영문 이름을 쓴다. 사람이 보고 같은 것이면(스포아·흰 모래토끼 등) KMS 이름을, 다른 맵으로 바뀐 것이면(엘리니아 북쪽 들판 → 지금은 빛나는 숲의 통로) v83 영문을 옮긴 이름을 `CLASSIC_NAME_OVERRIDES` 에 적는다. 남은 영문 이름은 없다.
 
 맵·캐릭터·몹 그림은 받을 때 기기(IndexedDB)에 남기고 다음부터는 네트워크 없이 그것으로 그린다(`src/maple/artStore.ts`, 위 「저장 위치」). maplestory.io 는 `max-age=86400` 만 줘서 HTTP 캐시는 하루가 지나면 다시 받고, WebKit 디스크 캐시는 몇 MB 짜리 맵 렌더를 남기지 않는 일이 있어 앱이 따로 남긴다. 남긴 바이트를 그대로 읽어 그려서 받은 것과 그림이 같다. 5xx·깨진 그림은 남기지 않고, 남긴 것을 못 읽으면 지우고 다시 받는다. 처음 받을 때는 지금처럼 시간 제한(30초, 맵 렌더 90초) 안에 받는다. 캐릭터는 모습 그대로의 요청 주소가 키라 옷·헤어가 바뀌면 새로 받는다. 캐릭터가 보인 뒤 5초쯤 지나 지금 모습의 서기·걷기·공격·alert·점프·사다리·로프 동작을 하나씩 받아 둔다. 맵 렌더(약 3MB)도 Rust 파일이 아니라 IndexedDB 에 둔다. 예산 400MB 는 WebKit(macOS 14 이상 WKWebView 앱은 디스크의 15%까지)과 WebView2 한도 안이고, 그림이 한곳에 있어야 예산·지우기를 한 번에 하고 브라우저 개발 화면에서도 똑같이 돈다.
 
@@ -389,6 +407,11 @@ pnpm dev                       # 브라우저로 화면만 (http://localhost:142
 pnpm test                      # 단위 테스트
 node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더]   # 마을 사냥터 다시 고르기 → src/game/routeData.ts
 node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더]      # 원작 BGM 목록·맵 곡 다시 읽기 → src/audio/bgmCatalog.ts
+# 클래식(GMS 83). 마을 → 사냥터 → 맵 곡 순서로 돌린다. 아이템은 장비 목록이 바뀌면 돌린다
+node --experimental-strip-types scripts/curate-classic-towns.ts [캐시 폴더]          # → src/game/classicTowns.ts
+node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더] --era classic   # → src/game/routeData.classic.ts
+node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더] --era classic      # → src/audio/bgmCatalog.classic.ts
+node --experimental-strip-types scripts/curate-classic-items.ts [캐시 폴더]          # → src/maple/classicItems.ts
 node --experimental-strip-types scripts/release-icon.ts [그림 PNG]      # 릴리스 앱 아이콘 → src-tauri/icons-release (CI 는 시크릿으로 돌린다)
 pnpm tauri build --target universal-apple-darwin   # 배포용 .app·.dmg (src-tauri/target/universal-apple-darwin/release/bundle)
 pnpm tauri build               # Windows 에서 실행하면 -setup.exe·.msi (src-tauri/target/release/bundle/nsis·msi)
@@ -431,12 +454,17 @@ src/
     appearance.ts    캐릭터 생성에서 고르는 성별·헤어·얼굴·피부
     routes.ts        마을 ↔ 사냥터 포털 이동: 지금 맵에서 갈 수 있는 맵(통로 맵은 포털을 이어 타 지나간다), 옮길 때(사냥 수·머문 시간), 고르기
     routeData.ts     마을별 사냥터(맵 ID·포털 좌표·몬스터). scripts/curate-routes.ts 가 만든다
+    routeData.classic.ts  클래식(GMS 83) 마을별 사냥터. scripts/curate-routes.ts --era classic 이 만든다
+    towns.ts         마을 목록(지금 시대), 시대별 마을 목록·열린 마을·보상 기준 마을·마을 셔플 백
+    classicTowns.ts  클래식 마을(맵·몹 ID, 한글 이름). scripts/curate-classic-towns.ts 가 만든다
     routeCuration.ts 사냥터 고르기 규칙: 바닥에서 포털까지 오갈 길이 있는지, 맵 몬스터 고르기, 레벨 폭·넓힌 폭, 마을에서 너비 우선으로 셋까지, 몹 없는 통로 지나기
   maple/             maplestory.io 주소, 텍스처 로딩, 발판·맵 이미지 맞추기, 대미지 숫자·레벨업 이펙트(basicEff.ts)
     skills.ts        스킬 데이터 받기·그림으로 풀기, 쓰거나 사냥에 쓸 스킬 데이터 미리 받기
     skillStore.ts    스킬 데이터를 IndexedDB 에 남기기(크기 제한·예산·오래 안 쓴 것부터 지우기)
     artStore.ts      맵·캐릭터·몹 그림과 맵 정보 JSON 을 요청 주소 그대로 IndexedDB 에 남기고 먼저 거기서 읽기(400MB 예산, 지금 맵·모습은 안 지우기)
-    portal.ts        원작 포털 그림(MapHelper.img pv), 곧 갈 사냥터 맵을 미리 받아 기기에 남기기
+    api.ts           maplestory.io 주소. 시대(era)마다 KMS 389·GMS 83 을 고르고, 캐릭터 아이템마다 받을 판을 가른다
+    classicItems.ts  앱이 입히는 아이템 중 GMS 83 에도 있는 것. scripts/curate-classic-items.ts 가 만든다
+    portal.ts        원작 포털 그림(MapHelper.img pv, 시대마다), 곧 갈 사냥터 맵을 미리 받아 기기에 남기기
     chairArt.ts      보스 의자의 WZ 값(bodyRelMove·sitAction·effect 레이어 z·pos·프레임 origin·delay·_outlink)과 프레임 그림 받기
     navigation.ts    발판·사다리·로프 길 만들기(걷기·떨어지기·아래 점프·점프·오르기), 길찾기, 길 따라 움직이기
   scene/             PixiJS 화면 (맵, 캐릭터, 몬스터, 카메라, 발판 길을 따라 포털로 들어가 맵 옮기기)
@@ -444,10 +472,12 @@ src/
     framePolicy.ts   지금 장면에 맞는 fps(멈춤 0·서 있기 10·움직임 30)
     heroLoad.ts      캐릭터 그림과 스킬 데이터를 받는 대로 따로 적용(직업을 바꾸면 스킬을 기다리지 않고 무기·동작부터 바뀐다)
     chairPlacement.ts  의자에 앉을 때 캐릭터·의자 레이어를 놓는 계산(기준 A·B, pos=1 이마, z 앞뒤, sitLeft, 숨기는 무기·망토, 도는 프레임 딜레이)
+    calibrationStore.ts  지면 보정값을 시대·맵마다 localStorage 에 읽고 쓰기
     seating.ts       의자를 골랐을 때 앉을지(싸움·맵 이동·스킬 동작이면 선다), 돌아다니지 않고 쉬기, 맵에 들어와 앉을 자리(바닥 끝·포털 비키기)
   audio/bgm.ts       BGM 재생. 맵 따라가기·한 곡 반복·즐겨찾기 무작위, 곡을 통째로 받아 남긴 것으로 틀기, 맵 따라가기일 때 곧 갈 맵 곡 미리 받기, 없으면 스트리밍하다 받은 파일로 갈아 끼우기, 남긴 곡 용량(300MB) 넘으면 오래 안 들은 곡 지우기, 예전 맵 번호 파일 옮기기
   audio/bgmTracks.ts 원작 BGM 목록(곡 경로·폴더·이 앱의 맵 이름), 「헤네시스 · FloralLife」 이름, 찾기·목록 좁히기, 맵 → 곡, 남길 파일 이름
   audio/bgmCatalog.ts  원작 BGM 폴더·곡 이름과 이 앱이 아는 맵의 곡. scripts/curate-bgm.ts 가 만든다
+  audio/bgmCatalog.classic.ts  클래식 마을·사냥터 맵의 곡(GMS 83 경로). scripts/curate-bgm.ts --era classic 이 만든다
   ui/hud.ts          레벨·경험치 바·「전직 가능!」·스탯·스킬·보스·캐시샵 버튼·⚙️ 메뉴(소리·장비·BGM 고르기·설정·캐릭터 선택)·연습전 표시·장비 획득 알림
   ui/musicWindow.ts  BGM 고르기 창(원작 의자 BGM 고르기 창 PLAYLIST 틀·곡 칸·재생 중 칸). 트는 방식, 찾기, 전체·★·맵 곡, ▶·★, 지금 곡
   ui/settings.ts     설정 화면
@@ -460,7 +490,7 @@ src/
   ui/buttonArt.ts    원작 버튼을 3조각으로 늘릴 때 뗄 열 계산, 원작 보스 버튼(윌)에서 이름·초상을 걷은 빈 틀 만들기(픽셀 계산만)
   ui/mapleButton.ts  원작 범용 버튼(보스 UI·스킬창·기본 버튼)을 글자 없는 띠로 떼어 border-image 로 입히고 글자를 얹기
   ui/npcDialog.ts    원작 NPC 대화창과 전직 대화(직업 선택·전직 축하). 대화가 겹치면 차례로 띄운다
-  ui/characterSelect.ts  캐릭터 선택·생성·삭제 화면
+  ui/characterSelect.ts  캐릭터 선택·생성·삭제 화면. 생성에서 시대(현재 메이플·클래식)를 고르고, 선택 화면에 클래식 표시
   ui/cashShop.ts     캐시샵 화면. 목록·무기 종류는 ui/cashCatalog.ts 가 받아 둔다. 「장비」 버튼은 장비 상점 탭(컬렉션 장비 사기·입어 보기·입기)
   ui/cashShopLayout.ts  캐시샵 칸 영역 크기로 열·행·한 페이지 개수 정하기, 아이템 설명 줄(이름·값·보유·착용 중) 글자
   ui/art.ts          원작 그림을 crossorigin 으로 미리 받고, 못 받으면 깨진 그림 대신 숨긴다
@@ -470,8 +500,12 @@ src/
     updater.ts       때가 되면 Rust 에 업데이트를 묻고, 처음 보는 버전이면 알린다. 받기 시작·실패 받기. 브라우저는 안 한다
     bgmCache.ts      받은 BGM 읽기·있는지 보기·쓰기·지우기·목록(크기·마지막으로 쓴 때)·이름 바꾸기. Tauri 는 app data 의 bgm/, 브라우저는 Cache API
 scripts/
-  curate-routes.ts   마을에서 걸어서 가는 사냥터를 maplestory.io 에서 찾아 src/game/routeData.ts 를 쓴다. 응답은 캐시 폴더에 남기고 요청은 하나씩 보낸다
-  curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다
+  curate-routes.ts   마을에서 걸어서 가는 사냥터를 maplestory.io 에서 찾아 src/game/routeData.ts 를 쓴다. 응답은 캐시 폴더에 남기고 요청은 하나씩 보낸다. --era classic 이면 GMS 83 으로 routeData.classic.ts 를 쓴다
+  curate-classic-towns.ts  클래식 마을 맵·몹이 v83 에 있는지 보고 한글 이름을 채워 src/game/classicTowns.ts 를 쓴다
+  curate-classic-items.ts  앱 장비·외형 아이템 중 v83 에 있는 것을 골라 src/maple/classicItems.ts 를 쓴다
+  classicNames.ts    클래식 맵·몹 한글 이름(손으로 쓴 표 → KMS 389 → v83 영문). 뜻이 바뀌었을 수 있는 ID 를 알린다
+  mapleio.ts         스크립트가 같이 쓰는 maplestory.io 요청(캐시·다시 받기·없는 노드 500 처리)·시대 인자
+  curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다. --era classic 이면 클래식 마을·사냥터 맵 곡만 bgmCatalog.classic.ts 로 쓴다
   release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)

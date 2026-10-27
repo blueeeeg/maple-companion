@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOSSES } from '../game/bosses';
-import { TOWNS } from '../game/towns';
+import { TOWNS, townsFor } from '../game/towns';
 import { musicUrl } from '../maple/api';
 import type { BgmCacheEntry } from '../platform/bgmCache';
 import {
@@ -17,7 +17,7 @@ import {
   planBgmEviction,
   shouldPlayBgm,
 } from './bgm';
-import { bgmTrackKey, knownMapTrack } from './bgmTracks';
+import { bgmTrackKey, classicTrack, knownMapTrack, trackSource } from './bgmTracks';
 
 /** 받은 주소와 재생 여부만 남기는 audio. 오류·멈춤·메타데이터·곡 끝은 테스트가 직접 낸다 */
 class FakeAudio extends EventTarget {
@@ -700,6 +700,47 @@ describe('likelyBgmMaps', () => {
     const henesysMapId = TOWNS.find((t) => t.id === 'henesys')!.mapId;
     const perionMapId = TOWNS.find((t) => t.id === 'perion')!.mapId;
     expect(maps.slice(0, 3)).toEqual([elliniaMapId, henesysMapId, perionMapId]);
+  });
+});
+
+describe('클래식 맵 BGM', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('같은 맵 ID 라도 클래식 맵은 클래식 곡을 GMS 83 에서 받아 따로 남긴다', async () => {
+    const { audio, bgm, cache, finish, downloaded } = setup([FLORAL]);
+    bgm.setEnabled(true);
+    bgm.setMap(HENESYS);
+    await flush();
+    bgm.setMap({ mapId: HENESYS, era: 'classic' });
+    await flush();
+    const classic = knownMapTrack(HENESYS, 'classic')!;
+    expect(classic).toBe(classicTrack(trackSource(classic).path));
+    expect(audio.src).toBe(musicUrl(trackSource(classic).path, 'classic'));
+    await finish();
+    expect(downloaded()).toEqual([classic]);
+    expect(cache.write).toHaveBeenCalledWith(bgmTrackKey(classic), expect.any(Blob));
+    expect(bgmTrackKey(classic)).toMatch(/^GMS-83-/);
+    expect(bgm.nowPlaying().track).toBe(classic);
+  });
+
+  it('앱이 모르는 클래식 맵은 클래식 WZ 에서 곡을 알아낸다', async () => {
+    const { bgm, mapTrack } = setup();
+    bgm.setEnabled(true);
+    bgm.setMap({ mapId: ZAKUM, era: 'classic' });
+    await flush();
+    expect(mapTrack).toHaveBeenCalledWith(ZAKUM, 'classic');
+  });
+
+  it('곧 갈 맵은 클래식 마을에 시대를 붙이고, 보스는 지금 시대 맵 그대로다', () => {
+    const level = 70;
+    const maps = likelyBgmMaps(level, [], 'classic');
+    const towns = townsFor('classic').filter((town) => town.minLevel <= level);
+    const bosses = BOSSES.filter((boss) => boss.minLevel <= level).map((boss) => boss.mapId);
+    expect(maps.filter((map) => typeof map !== 'number')).toEqual(
+      expect.arrayContaining(towns.map((town) => ({ mapId: town.mapId, era: 'classic' }))),
+    );
+    expect(new Set(maps.filter((map) => typeof map === 'number'))).toEqual(new Set(bosses));
   });
 });
 

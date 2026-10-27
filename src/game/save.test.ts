@@ -425,3 +425,38 @@ describe('의자 저장', () => {
     expect(parseRoster(JSON.stringify(saved), null, 0).characters[0]).toMatchObject({ chairOwned: [ZAKUM_CHAIR], chairSelected: ZAKUM_CHAIR });
   });
 });
+
+describe('시대 저장', () => {
+  const raw = (change: Record<string, unknown>) => ({ ...character('a'), ...change }) as unknown as Character;
+
+  it('시대 칸이 없던 저장은 지금 시대로 읽는다', () => {
+    const { era: _, ...old } = character('a');
+    const [loaded] = normalizeRoster({ characters: [old as Character] }).characters;
+    expect(loaded.era).toBe('current');
+  });
+
+  it('클래식은 그대로 읽고 모르는 값은 지금 시대로 읽는다', () => {
+    const loaded = normalizeRoster({ characters: [raw({ era: 'classic' }), raw({ id: 'b', era: 'retro' }), raw({ id: 'c', era: 3 })] });
+    expect(loaded.characters.map((each) => each.era)).toEqual(['classic', 'current', 'current']);
+  });
+
+  it('새 캐릭터는 고른 시대로 만들고 고르지 않으면 지금 시대다', () => {
+    expect(createCharacter('a', '클래식', DEFAULT_APPEARANCE, 'classic').era).toBe('classic');
+    expect(createCharacter('b', '지금', DEFAULT_APPEARANCE).era).toBe('current');
+  });
+
+  it('합칠 때 어느 쪽이든 클래식이면 클래식이다. 덜 자란 쪽이 클래식이어도 같고 다시 합쳐도 같다', () => {
+    const file = roster([character('a', { era: 'classic', activeSeconds: 10 })]);
+    const local = roster([character('a', { era: 'current', activeSeconds: 100 })]);
+    const merged = mergeRosters(file, local);
+    expect(merged.characters[0].era).toBe('classic');
+    expect(mergeRosters(merged, local)).toEqual(merged);
+    expect(mergeRosters(local, file).characters[0].era).toBe('classic');
+  });
+
+  it('파일로 쓰고 다시 읽어도 시대가 남는다', () => {
+    const saved = roster([character('a', { era: 'classic' }), character('b')]);
+    const loaded = parseRoster(JSON.stringify(saved), null, 0);
+    expect(loaded.characters.map((each) => each.era)).toEqual(['classic', 'current']);
+  });
+});

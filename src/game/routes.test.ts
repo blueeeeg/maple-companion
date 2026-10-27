@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { type RouteField, isPassage } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
-import { FIELD_CADENCE, type FieldMove, fieldMoveDue, fieldMoves, pickFieldMove, routePortals } from './routes';
-import { TOWNS } from './towns';
+import { CLASSIC_TOWN_ROUTES } from './routeData.classic';
+import { FIELD_CADENCE, type FieldMove, fieldMoveDue, fieldMoves, pickFieldMove, routePortals, townFields } from './routes';
+import { TOWNS, townsFor } from './towns';
 
 const field = (mapId: number, fromMapId: number, entryX: number, arrivalX: number): RouteField => ({
   mapId,
@@ -138,7 +139,10 @@ describe('사냥터로 옮기는 때', () => {
   });
 });
 
-describe('고른 사냥터 데이터', () => {
+describe.each([
+  ['지금', TOWNS, TOWN_ROUTES],
+  ['클래식', townsFor('classic'), CLASSIC_TOWN_ROUTES],
+] as const)('고른 사냥터 데이터 (%s)', (_, TOWNS, TOWN_ROUTES) => {
   it('마을마다 사냥터가 셋 이하고 앞 맵이 마을이나 같은 경로의 앞쪽 맵이다', () => {
     TOWNS.forEach((town) => {
       const route = TOWN_ROUTES[town.id] ?? [];
@@ -155,5 +159,24 @@ describe('고른 사냥터 데이터', () => {
         route.filter((each) => each.fromMapId === mapId).some((each) => !isPassage(each) || reachesField(each.mapId));
       route.filter(isPassage).forEach((each) => expect(reachesField(each.mapId)).toBe(true));
     });
+  });
+});
+
+describe('시대별 사냥터 찾기', () => {
+  it('같은 마을 id 라도 시대에 맞는 길 목록을 준다', () => {
+    const [current] = TOWNS;
+    const classic = townsFor('classic').find((town) => town.id === current.id)!;
+    expect(townFields(current)).toBe(TOWN_ROUTES[current.id]);
+    expect(townFields(classic)).toBe(CLASSIC_TOWN_ROUTES[classic.id]);
+    expect(townFields({ id: current.id, era: 'classic' })).not.toBe(townFields(current));
+  });
+
+  it('클래식 사냥터 이름은 한글이다', () => {
+    Object.values(CLASSIC_TOWN_ROUTES)
+      .flat()
+      .forEach((field) => {
+        expect(field.name, String(field.mapId)).toMatch(/[가-힣]/);
+        field.monsters.forEach((monster) => expect(monster.name, String(monster.id)).toMatch(/[가-힣]/));
+      });
   });
 });
