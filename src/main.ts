@@ -10,6 +10,7 @@ import {
   characterXp,
   createCharacter,
   creditActivity,
+  jobChangeHintDue,
   nameError,
   selectedCharacter,
   summarizeCharacter,
@@ -43,7 +44,7 @@ import {
   unequipGear,
 } from './game/equipment';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
-import { JOB_BRANCHES, type JobBranchId, advancementTier, describeJob, jobPath, pathTier } from './game/jobs';
+import { JOB_BRANCHES, type JobBranchId, advancementTier, describeJob, jobPath, pathTier, tierName } from './game/jobs';
 import { levelInfo } from './game/progression';
 import { bossRecord, noteAdvancements } from './game/records';
 import { canCast, findSkill, skillDataPrefetchOrder } from './game/skillBook';
@@ -85,6 +86,7 @@ import { type SkillCheck, type SkillWindowState, createSkillWindow, prefetchSkil
 import { type StatWindowState, createStatWindow } from './ui/statWindow';
 
 const TICK_MS = 2000;
+const JOB_CHANGE_HINT = '이제 캐릭터 정보창 「직업」 줄에서 같은 계열 다른 직업으로 바꿀 수 있어요';
 /** 창을 숨겨 둔 동안의 틱 간격. 사냥 정산은 다시 보일 때 하니 알림·트레이 글자만 조금 늦게 바뀐다 */
 const HIDDEN_TICK_MS = 10 * 1000;
 /** 스킬창에서 스킬을 쓴 뒤 다음 스킬을 쓰기까지 쉬는 시간 */
@@ -183,10 +185,9 @@ const hud = createHud(root, {
     if (!character || character.jobBranch || JOB_BRANCHES[id].line !== character.jobLine) return;
     character.jobBranch = id;
     writeRoster(roster);
-    void tick().then(() => {
-      scene.celebrate('전직!');
-      hud.notify(`전직 완료: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
-    });
+    // 틱보다 먼저 알려야 그 틱의 「직업」 줄 안내가 이 알림을 덮지 않고 뒤로 밀린다
+    hud.notify(`전직 완료: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
+    void tick().then(() => scene.celebrate('전직!'));
   },
   onToggleMute() {
     // 설정에서 음량을 0 으로 내려 둔 채 소리를 켜면 들리지 않으니 기본 음량으로 되돌린다
@@ -446,7 +447,7 @@ function statState(character: Character): StatWindowState {
   return {
     name: character.name,
     level: info.level,
-    jobTitle: job.title,
+    jobName: tierName(jobPath(character.jobLine, character.jobBranch), job.tier),
     tier: job.tier,
     xpIntoLevel: info.xpIntoLevel,
     xpForLevel: info.xpForLevel,
@@ -458,7 +459,7 @@ function statState(character: Character): StatWindowState {
     advancedAt: character.advancedAt,
     jobHistory: character.jobHistory,
     canChangeJob: character.jobBranch !== null && job.tier >= 2,
-    jobChangePrice: character.freeJobChange ? 0 : JOB_CHANGE_MESO,
+    freeJobChange: character.freeJobChange,
     collection: collectionProgress(character.equipOwned, jobPath(character.jobLine, character.jobBranch)),
     look: job.look,
     standAction: job.standAction,
@@ -516,7 +517,7 @@ function openInfoWindow(kind: 'stat' | 'skill' | 'boss'): void {
 }
 
 /**
- * 같은 계열의 다른 2차 갈래로 바꾸는 대화. 캐릭터 정보창의 「직업 바꾸기」가 열고, 갈래 칸이 없던 캐릭터는 맵에 들어오면
+ * 같은 계열의 다른 2차 갈래로 바꾸는 대화. 캐릭터 정보창 「직업」 줄의 「바꾸기」가 열고, 갈래 칸이 없던 캐릭터는 맵에 들어오면
  * 한 번 무료로 연다. 대화가 맵 위에 뜨게 정보창은 닫는다
  */
 function openJobChange(): void {
@@ -549,10 +550,8 @@ function changeBranch(character: Character, to: JobBranchId, free: boolean): voi
   }
   if (result !== 'ok') return;
   writeRoster(roster);
-  void tick().then(() => {
-    scene.celebrate('전직!');
-    hud.notify(`직업을 바꿨어요: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
-  });
+  hud.notify(`직업을 바꿨어요: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
+  void tick().then(() => scene.celebrate('전직!'));
 }
 
 function openStat(): void {
@@ -986,6 +985,12 @@ async function tick(): Promise<void> {
       '레벨 선물',
     );
     pendingGifts = [];
+  }
+  // 무료 다시 고르기 대화나 앞 알림이 끝난 뒤의 틱에 알린다
+  if (jobChangeHintDue(character, job.tier) && isShown() && !hud.isBusy()) {
+    character.jobChangeHintShown = true;
+    writeRoster(roster);
+    hud.notify(JOB_CHANGE_HINT);
   }
   const resting = snapshot.idleSeconds >= snapshot.idleLimitSeconds;
   hud.render({

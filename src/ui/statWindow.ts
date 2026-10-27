@@ -1,4 +1,4 @@
-import type { JobChange } from '../game/characters';
+import { JOB_CHANGE_MESO, type JobChange } from '../game/characters';
 import { ADVANCEMENT_LEVELS, tierName } from '../game/jobs';
 import { type AdvancementLog, type BossRecord, formatDay, formatMonthDay, formatTogetherTime } from '../game/records';
 import { MESO_HUD_ICON_URL, characterAnimationUrl, wzImageUrl } from '../maple/api';
@@ -8,7 +8,8 @@ import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 export interface StatWindowState {
   name: string;
   level: number;
-  jobTitle: string;
+  /** 차수 없는 이름(캡틴). 차수는 「전직」 줄에 있고, 「바꾸기」 버튼과 한 줄에 들어가야 한다 */
+  jobName: string;
   /** 0 이면 초보자 */
   tier: number;
   xpIntoLevel: number;
@@ -25,8 +26,8 @@ export interface StatWindowState {
   jobHistory: JobChange[];
   /** 2차 갈래를 고른 뒤라 같은 계열의 다른 갈래로 바꿀 수 있다 */
   canChangeJob: boolean;
-  /** 갈래를 바꾸는 값. 갈래 칸이 없던 캐릭터의 한 번은 0 이다 */
-  jobChangePrice: number;
+  /** 갈래 칸이 없던 캐릭터의 무료 한 번이 남았다 */
+  freeJobChange: boolean;
   /** 장비 컬렉션에서 모은 칸과 이 캐릭터가 모을 수 있는 칸 */
   collection: { owned: number; total: number };
   /** 맵 캐릭터와 같은 모습(컬렉션 장비·캐시 아이템 포함) */
@@ -36,7 +37,7 @@ export interface StatWindowState {
 
 export interface StatWindowHandlers {
   onClose(): void;
-  /** 「직업 바꾸기」. 전직관 대화를 연다 */
+  /** 「직업」 줄의 「바꾸기」. 전직관 대화를 연다 */
   onChangeJob(): void;
   /** 「장비」 줄. 장비 창을 연다 */
   onOpenEquip(): void;
@@ -75,25 +76,22 @@ export function jobChangeText(change: JobChange, tier: number): string {
   return `${formatMonthDay(change.at)} ${tierName(change.from, tier)} → ${tierName(change.to, tier)}`;
 }
 
-function jobChangeTitle(state: StatWindowState): string {
-  if (state.jobChangePrice === 0) return '같은 계열의 다른 길로 바꿔요. 이번 한 번은 무료예요';
-  const price = `${number(state.jobChangePrice)} 메소`;
-  if (state.meso < state.jobChangePrice) return `메소가 모자라요. 직업을 바꾸려면 ${price}가 필요해요`;
-  return `같은 계열의 다른 길로 바꿔요. ${price}`;
+export function jobChangeTitle(free: boolean): string {
+  return `같은 계열 다른 직업으로 · ${free ? '한 번 무료' : `${number(JOB_CHANGE_MESO)} 메소`}`;
 }
 
-function advancementText(tier: number, log: AdvancementLog, reached: number, short = false): string {
+function advancementText(tier: number, log: AdvancementLog, reached: number): string {
   if (tier > reached) return `Lv.${ADVANCEMENT_LEVELS[tier - 1]}에 전직`;
   const at = log[tier as keyof AdvancementLog];
   if (typeof at !== 'number') return '기록 전';
-  return short ? formatMonthDay(at) : formatDay(at);
+  return formatDay(at);
 }
 
-function summaryValues(state: StatWindowState): Record<RowKey, { text: string; title?: string }> {
+export function summaryValues(state: StatWindowState): Record<RowKey, { text: string; title?: string }> {
   const { strongest, total } = state.bosses;
   return {
     level: { text: `Lv.${state.level}` },
-    job: { text: state.jobTitle, title: state.jobTitle },
+    job: { text: state.jobName, title: state.jobName },
     exp: {
       text:
         state.xpForLevel > 0
@@ -110,11 +108,7 @@ function summaryValues(state: StatWindowState): Record<RowKey, { text: string; t
       title: '눌러서 장비 창 열기. 보스 드롭·레벨 선물·장비 상점으로 모은다',
     },
     advancement: {
-      // 「직업 바꾸기」 버튼이 붙으면 칸이 좁아 날짜를 월-일로 줄인다
-      text:
-        state.tier === 0
-          ? '아직 전직 전'
-          : `${state.tier}차 · ${advancementText(state.tier, state.advancedAt, state.tier, state.canChangeJob)}`,
+      text: state.tier === 0 ? '아직 전직 전' : `${state.tier}차 · ${advancementText(state.tier, state.advancedAt, state.tier)}`,
       title: '눌러서 차수별 전직 날짜 보기',
     },
   };
@@ -169,11 +163,12 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
   /** 지금 쪽의 값 칸. 틱마다 칸을 새로 만들지 않고 글자만 바꿔서 누르고 있던 버튼의 포커스가 남는다 */
   let cells = new Map<string, HTMLElement>();
   const mesoAmount = document.createElement('span');
-  const advancementAmount = document.createElement('span');
+  const jobName = document.createElement('span');
   const changeJob = document.createElement('button');
   changeJob.type = 'button';
   changeJob.className = 'stat-change-job';
-  changeJob.textContent = '직업 바꾸기';
+  changeJob.textContent = '바꾸기';
+  changeJob.setAttribute('aria-label', '직업 바꾸기');
   changeJob.addEventListener('click', handlers.onChangeJob);
 
   function addRow(key: string, label: string, action?: { run: () => void; label: string }) {
@@ -213,9 +208,9 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
           // 아이콘을 못 받으면 금액만 남는다
           detail.append(loadedImage(MESO_HUD_ICON_URL), mesoAmount);
         }
-        if (key === 'advancement') {
-          detail.className = 'stat-advancement';
-          detail.append(advancementAmount, changeJob);
+        if (key === 'job') {
+          detail.className = 'stat-job';
+          detail.append(jobName, changeJob);
         }
       });
       return;
@@ -233,13 +228,13 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
   function fillPage(current: StatWindowState) {
     if (page === 'summary') {
       Object.entries(summaryValues(current)).forEach(([key, { text, title }]) => {
-        const cell = key === 'meso' ? mesoAmount : key === 'advancement' ? advancementAmount : cells.get(key);
+        const cell = key === 'meso' ? mesoAmount : key === 'job' ? jobName : cells.get(key);
         if (!cell) return;
         cell.textContent = text;
         cells.get(key)!.title = title ?? '';
       });
       changeJob.hidden = !current.canChangeJob;
-      changeJob.title = jobChangeTitle(current);
+      changeJob.title = jobChangeTitle(current.freeJobChange);
       return;
     }
     ADVANCEMENT_LEVELS.forEach((_, index) => {

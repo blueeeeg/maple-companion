@@ -57,6 +57,8 @@ export interface Hud {
   congratulate(path: JobPath, tier: number): void;
   /** 떠 있거나 기다리는 NPC 대화를 모두 닫는다 */
   closeDialogs(): void;
+  /** NPC 대화가 떠 있거나 알림 줄이 아직 보인다. 이때 알리면 대화에 가리거나 앞 알림을 바로 덮는다 */
+  isBusy(): boolean;
   /** 연습전 동안 보스 게이지 아래에 원작 연습 모드 표시를 띄운다. null 이면 내린다 */
   setPractice(bossName: string | null): void;
   /** 얻은 컬렉션 장비를 아이콘과 함께 화면 위쪽에 잠깐 띄운다. 맨 아래 알림 줄과 따로라 정산 알림과 같이 보인다 */
@@ -255,6 +257,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     openJobChange: (offer, changeHandlers) => openJobChange(dialog, offer, changeHandlers),
     congratulate: (path, tier) => openAdvancementCongratulation(dialog, path, tier),
     closeDialogs: dialog.clear,
+    isBusy: () => dialog.isOpen() || !notice.hidden,
     notifyItems(items, source) {
       if (items.length === 0) return;
       const [first] = items;

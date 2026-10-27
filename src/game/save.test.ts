@@ -303,6 +303,31 @@ describe('2차 갈래 저장', () => {
   });
 });
 
+describe('갈래 바꾸기 안내 저장', () => {
+  const fourthJobSeconds = totalXpForLevel(105);
+
+  it('칸이 없던 저장이나 깨진 값은 아직 안 알린 것으로 읽는다', () => {
+    const old = { id: 'a', name: '바다', activeSeconds: fourthJobSeconds, killXp: 0, jobLine: 'pirate', jobBranch: 'viper' } as Character;
+    expect(normalizeRoster({ characters: [old] }).characters[0].jobChangeHintShown).toBe(false);
+    const broken = { ...old, jobChangeHintShown: 'yes' } as unknown as Character;
+    expect(normalizeRoster({ characters: [broken] }).characters[0].jobChangeHintShown).toBe(false);
+  });
+
+  it('알린 것은 그대로 읽는다', () => {
+    const saved = character('a', { jobChangeHintShown: true });
+    expect(normalizeRoster(JSON.parse(JSON.stringify({ characters: [saved] }))).characters[0].jobChangeHintShown).toBe(true);
+  });
+
+  it('합칠 때 한쪽에서라도 알렸으면 알린 것이다. 덜 자란 쪽에서 알렸어도 같다', () => {
+    const base = { activeSeconds: fourthJobSeconds, jobLine: 'pirate' as const, jobBranch: 'viper' as const };
+    const shown = roster([character('a', { ...base, jobChangeHintShown: true })]);
+    const notYet = roster([character('a', { ...base, activeSeconds: fourthJobSeconds + 9 })]);
+    expect(mergeRosters(shown, notYet).characters[0].jobChangeHintShown).toBe(true);
+    expect(mergeRosters(notYet, shown).characters[0].jobChangeHintShown).toBe(true);
+    expect(mergeRosters(notYet, notYet).characters[0].jobChangeHintShown).toBe(false);
+  });
+});
+
 describe('장비 컬렉션 저장', () => {
   const ZAKUM_HELMET = 1002357;
   const WORK_GLOVES = 1082002;

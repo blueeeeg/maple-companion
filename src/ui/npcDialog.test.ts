@@ -108,6 +108,7 @@ function fakeDialog() {
     },
     cancel() {},
     clear() {},
+    isOpen: () => state.open,
   };
   return { dialog, state };
 }

@@ -37,6 +37,8 @@ export interface Character {
   freeJobChange: boolean;
   /** 2차 갈래를 바꾼 기록. 처음 고른 것은 전직이라 advancedAt 에 남고 여기에는 바꾼 것만 쌓인다 */
   jobHistory: JobChange[];
+  /** 캐릭터 정보창 「직업」 줄에서 갈래를 바꿀 수 있다고 한 번 알렸다 */
+  jobChangeHintShown: boolean;
   killXp: number;
   meso: number;
   monsterBook: Record<string, number>;
@@ -126,6 +128,7 @@ export function createCharacter(id: string, name: string, appearance: Appearance
     jobBranch: null,
     freeJobChange: false,
     jobHistory: [],
+    jobChangeHintShown: false,
     killXp: 0,
     meso: 0,
     monsterBook: {},
@@ -203,6 +206,11 @@ export function jobChangeCheck(character: Character, to: JobBranchId, free: bool
   if (JOB_BRANCHES[to]?.line !== character.jobLine) return 'otherLine';
   if (!free && character.meso < JOB_CHANGE_MESO) return 'meso';
   return 'ok';
+}
+
+/** 2차 갈래를 고른 뒤 「직업」 줄의 바꾸기 버튼을 아직 안 알렸다. 이미 2차를 지난 캐릭터도 한 번 알린다 */
+export function jobChangeHintDue(character: Pick<Character, 'jobBranch' | 'jobChangeHintShown'>, tier: number): boolean {
+  return character.jobBranch !== null && tier >= 2 && !character.jobChangeHintShown;
 }
 
 /**

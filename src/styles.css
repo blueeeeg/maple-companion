@@ -2552,14 +2552,15 @@ body {
   height: 12px;
 }
 
-.stat-rows dd.stat-advancement {
+/* 가장 긴 이름(아크메이지(썬,콜))이 「바꾸기」와 한 줄에 다 들어가게 틈과 버튼 안쪽 여백을 줄였다 */
+.stat-rows dd.stat-job {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 1px;
   padding-right: 1px;
 }
 
-.stat-advancement span {
+.stat-job span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2569,7 +2570,7 @@ body {
   flex: none;
   height: 12px;
   margin-left: auto;
-  padding: 0 3px;
+  padding: 0 2px;
   border: 1px solid #c77a12;
   border-radius: 3px;
   background: linear-gradient(#ffd27a, #f0a02a);

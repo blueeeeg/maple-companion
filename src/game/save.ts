@@ -49,6 +49,7 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       ...filled,
       ...branch,
       jobHistory: normalizeJobHistory(raw.jobHistory),
+      jobChangeHintShown: raw.jobChangeHintShown === true,
       huntSkillId: typeof huntSkillId === 'number' && Number.isInteger(huntSkillId) ? huntSkillId : null,
       // 보스 지정이 생기기 전 저장이거나 지금은 없는 보스면 지정 없음(무작위)이다
       reservedBossId: normalizeReservedBoss(character.reservedBossId),
@@ -183,6 +184,8 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
       chairOwned: [...new Set([...fromFile.chairOwned, ...fromLocal.chairOwned])],
       advancedAt: mergeAdvancements(fromFile.advancedAt, fromLocal.advancedAt),
       jobHistory: mergeJobHistory(fromFile.jobHistory, fromLocal.jobHistory),
+      // 한쪽에서라도 알렸으면 다시 알리지 않는다
+      jobChangeHintShown: fromFile.jobChangeHintShown || fromLocal.jobChangeHintShown,
     };
   });
   const fileIds = new Set(fileCharacters.map((character) => character.id));

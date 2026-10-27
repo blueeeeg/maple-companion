@@ -12,6 +12,7 @@ import {
   creditActivity,
   emptyRoster,
   jobChangeCheck,
+  jobChangeHintDue,
   nameError,
   reachedTier,
   selectedCharacter,
@@ -246,6 +247,19 @@ describe('2차 갈래 바꾸기', () => {
     expect(changeJobBranch(character, 'captain', 5, true)).toBe('ok');
     expect(character).toMatchObject({ meso: 0, jobBranch: 'captain', freeJobChange: false });
     expect(changeJobBranch(character, 'viper', 6, true)).toBe('meso');
+  });
+
+  it('「직업」 줄 안내는 2차 갈래를 고른 뒤 한 번만 한다', () => {
+    expect(jobChangeHintDue(viper({ jobBranch: null }), 1)).toBe(false);
+    expect(jobChangeHintDue(viper(), 4)).toBe(true);
+    expect(jobChangeHintDue(viper({ jobChangeHintShown: true }), 4)).toBe(false);
+    expect(jobChangeHintDue({ ...createCharacter('b', '초보', look) }, 0)).toBe(false);
+  });
+
+  it('이미 2차를 지난 예전 저장도 업데이트 뒤 처음 켤 때 한 번 안내한다', () => {
+    const saved = JSON.stringify({ version: 2, characters: [viper({ jobChangeHintShown: undefined })], selectedId: 'a', muted: false });
+    const [read] = parseRoster(saved, null, 0).characters;
+    expect(jobChangeHintDue(read, reachedTier(read))).toBe(true);
   });
 
   it('갈래를 고르기 전에는 1차에 머문다', () => {

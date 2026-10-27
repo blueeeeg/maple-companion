@@ -39,6 +39,8 @@ export interface NpcDialog {
   /** 그 key 의 대화를 열려 있든 기다리든 버린다 */
   cancel(key: string): void;
   clear(): void;
+  /** 대화가 떠 있다 */
+  isOpen(): boolean;
 }
 
 export interface Conversation {
@@ -347,6 +349,7 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
       queue = [];
       if (current) end();
     },
+    isOpen: () => current !== null,
   };
 }
 
