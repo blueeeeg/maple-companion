@@ -34,6 +34,7 @@ import { bossTurn, settleBossFight } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { selectChair } from './game/chairs';
+import { grantMountGifts, selectMount } from './game/mounts';
 import {
   awardBossDrops,
   buyEquipItem,
@@ -127,7 +128,8 @@ const roster = gameData.roster;
 let pendingGifts: number[] = [];
 // 장비 컬렉션이 생기기 전 캐릭터도 이미 넘은 레벨 선물을 켤 때 한 번 받는다
 roster.characters.forEach((each) => {
-  const gifts = grantLevelGifts(each, levelInfo(characterXp(each)).level, jobPath(each.jobLine, each.jobBranch));
+  const level = levelInfo(characterXp(each)).level;
+  const gifts = [...grantLevelGifts(each, level, jobPath(each.jobLine, each.jobBranch)), ...grantMountGifts(each, level)];
   if (each.id === roster.selectedId) pendingGifts = gifts;
 });
 writeRoster(roster);
@@ -306,6 +308,9 @@ const equipWindow = createEquipWindow(root, {
   onSelectChair(chairId) {
     changeGear((character) => (character.chairSelected = selectChair(character.chairOwned, character.chairSelected, chairId)));
   },
+  onSelectMount(mountId) {
+    changeGear((character) => (character.mountSelected = selectMount(character.mountOwned, character.mountSelected, mountId)));
+  },
   onClose: closeInfoWindow,
 });
 const skillWindow = createSkillWindow(root, { onChoose: chooseHuntSkill, onCast: castSkill, onClose: closeInfoWindow });
@@ -476,6 +481,8 @@ function equipState(character: Character): EquipWindowState {
     pity: character.equipPity,
     chairOwned: character.chairOwned,
     chairSelected: character.chairSelected,
+    mountOwned: character.mountOwned,
+    mountSelected: character.mountSelected,
     look: job.look,
     standAction: job.standAction,
   };
@@ -940,7 +947,7 @@ async function tick(): Promise<void> {
   // 스킬창을 열 때 아이콘을 기다리지 않게 켤 때와 직업·차수가 바뀔 때 뒤에서 받아 둔다
   const path = jobPath(character.jobLine, character.jobBranch);
   // 레벨이 오르거나 2차 갈래를 정하면 그 레벨의 장비 선물을 받는다
-  const gifts = grantLevelGifts(character, info.level, path);
+  const gifts = [...grantLevelGifts(character, info.level, path), ...grantMountGifts(character, info.level)];
   if (gifts.length > 0) {
     pendingGifts = [...pendingGifts, ...gifts];
     writeRoster(roster);
@@ -978,6 +985,7 @@ async function tick(): Promise<void> {
 
   scene.setJob(job);
   scene.setChair(character.chairSelected);
+  scene.setMount(character.mountSelected);
   scene.setName(character.name);
   if (pendingGifts.length > 0 && isShown()) {
     hud.notifyItems(

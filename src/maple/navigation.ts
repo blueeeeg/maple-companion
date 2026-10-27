@@ -367,7 +367,7 @@ export function createNavRunner(graph: NavGraph, start: NavPoint, steps: NavStep
     air = null;
   };
 
-  function advance(seconds: number): NavAction {
+  function advance(seconds: number, walkScale: number): NavAction {
     const step = steps[index];
     // 다 오른 프레임도 사다리 그림이라 그 레이어를 다음 걸음까지 둔다
     climbLayer = step?.kind === 'climb' ? (step.layer ?? null) : null;
@@ -375,7 +375,7 @@ export function createNavRunner(graph: NavGraph, start: NavPoint, steps: NavStep
     if (step.kind === 'walk') {
       const distance = step.x - x;
       if (distance !== 0) facing = distance > 0 ? 1 : -1;
-      const move = Math.min(Math.abs(distance), PHYSICS.walkSpeed * seconds);
+      const move = Math.min(Math.abs(distance), PHYSICS.walkSpeed * walkScale * seconds);
       x += Math.sign(distance) * move;
       y = surfaceY(platform, x);
       if (Math.abs(step.x - x) < 0.01) {
@@ -427,8 +427,9 @@ export function createNavRunner(graph: NavGraph, start: NavPoint, steps: NavStep
   }
 
   return {
-    update(dtMs: number): NavPose {
-      const action = advance(dtMs / 1000);
+    /** walkScale: 발판을 걷는 속도 배율(탈것). 점프·오르내리기는 그대로다 */
+    update(dtMs: number, walkScale = 1): NavPose {
+      const action = advance(dtMs / 1000, walkScale);
       return { x, y, action, facing, done: index >= steps.length, layer: climbLayer ?? platform.layer };
     },
     /** 시간이 다 돼 멈출 때 서 있을 자리 */

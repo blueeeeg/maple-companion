@@ -425,3 +425,40 @@ describe('의자 저장', () => {
     expect(parseRoster(JSON.stringify(saved), null, 0).characters[0]).toMatchObject({ chairOwned: [ZAKUM_CHAIR], chairSelected: ZAKUM_CHAIR });
   });
 });
+
+describe('탈것 저장', () => {
+  const HOG = 1902000;
+  const BALROG = 1932010;
+
+  it('탈것이 생기기 전 저장은 빈 목록에 고른 탈것 없음으로 읽는다', () => {
+    const { characters } = normalizeRoster({ characters: [{ id: 'a', name: '모험가', activeSeconds: 1 } as Character] });
+    expect(characters[0]).toMatchObject({ mountOwned: [], mountSelected: null });
+  });
+
+  it('모르는 탈것·깨진 값은 버리고, 가진 적 없는 탈것을 골라 뒀으면 고르지 않은 것으로 친다', () => {
+    const saved = { ...character('a'), mountOwned: [HOG, 1932881, 'x', HOG, 3010225], mountSelected: BALROG };
+    const [read] = normalizeRoster({ characters: [saved as unknown as Character] }).characters;
+    expect(read.mountOwned).toEqual([HOG]);
+    expect(read.mountSelected).toBeNull();
+    const kept = { ...character('a'), mountOwned: [HOG], mountSelected: HOG };
+    expect(normalizeRoster({ characters: [kept] }).characters[0].mountSelected).toBe(HOG);
+    const broken = { ...character('a'), mountOwned: 'x', mountSelected: '1902000' };
+    expect(normalizeRoster({ characters: [broken as unknown as Character] }).characters[0]).toMatchObject({ mountOwned: [], mountSelected: null });
+  });
+
+  it('같은 캐릭터면 모은 탈것은 합치고 고른 탈것은 더 자란 쪽 것이다', () => {
+    const file = roster([character('a', { activeSeconds: 100, mountOwned: [HOG], mountSelected: HOG })]);
+    const local = roster([character('a', { activeSeconds: 50, mountOwned: [BALROG], mountSelected: BALROG })]);
+    const [merged] = mergeRosters(file, local).characters;
+    expect(merged.mountOwned).toEqual([HOG, BALROG]);
+    expect(merged.mountSelected).toBe(HOG);
+    const [other] = mergeRosters(local, file).characters;
+    expect(other.mountSelected).toBe(HOG);
+    expect(mergeRosters(mergeRosters(file, local), local)).toEqual(mergeRosters(file, local));
+  });
+
+  it('파일로 쓰고 다시 읽어도 같다', () => {
+    const saved = roster([character('a', { mountOwned: [BALROG], mountSelected: BALROG })]);
+    expect(parseRoster(JSON.stringify(saved), null, 0).characters[0]).toMatchObject({ mountOwned: [BALROG], mountSelected: BALROG });
+  });
+});

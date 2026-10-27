@@ -1,5 +1,6 @@
 import { BOSSES, ZAKUM_ID } from './bosses';
 import { type Chair, chairOf, chairsOfBoss, isChairItem } from './chairs';
+import { type Mount, isMountItem, mountOf, mountsOfBoss } from './mounts';
 import { JOB_BRANCHES, type JobBranchId, type JobLineId, type JobPath, lineOf } from './jobs';
 
 /** 장비 컬렉션 아이템을 입는 자리. 캐시 자리에 귀고리·방패가 더 있다 */
@@ -567,8 +568,9 @@ EQUIP_ENTRIES.forEach((entry) => {
   ids.forEach((id) => entryByItem.set(id, entry));
 });
 
-/** 보스 드롭 알림이 같이 쓰도록 의자 이름도 돌려준다 */
-export const equipItemName = (itemId: number) => names.get(itemId) ?? chairOf(itemId)?.name ?? `아이템 ${itemId}`;
+/** 보스 드롭·레벨 선물 알림이 같이 쓰도록 의자·탈것 이름도 돌려준다 */
+export const equipItemName = (itemId: number) =>
+  names.get(itemId) ?? chairOf(itemId)?.name ?? mountOf(itemId)?.name ?? `아이템 ${itemId}`;
 export const equipEntryOf = (itemId: number): EquipEntry | null => entryByItem.get(itemId) ?? null;
 export const isEquipItem = (itemId: number) => entryByItem.has(itemId);
 
@@ -627,7 +629,7 @@ export interface BossDrop {
 
 /**
  * 보스 한 번 처치의 장비·의자 드롭. 아직 없는 아이템마다 등급 확률로 굴리고, 그 등급이 천장만큼 안 나왔으면 하나를 준다.
- * 의자는 레어 칸에 섞여 레어 천장을 같이 센다. 모을 것이 남지 않은 등급은 세지 않는다. 연습전은 부르지 않는다
+ * 의자·탈것은 레어 칸에 섞여 레어 천장을 같이 센다. 모을 것이 남지 않은 등급은 세지 않는다. 연습전은 부르지 않는다
  */
 export function rollBossDrops(
   bossId: number,
@@ -643,7 +645,7 @@ export function rollBossDrops(
       (entry) => entry.source.kind === 'boss' && entry.source.bossId === bossId && entry.source.tier === tier,
     )
       .flatMap((entry) => entryItems(entry, path))
-      .concat(tier === 'rare' ? chairsOfBoss(bossId).map((chair) => chair.id) : [])
+      .concat(tier === 'rare' ? [...chairsOfBoss(bossId), ...mountsOfBoss(bossId)].map((each) => each.id) : [])
       .filter((id) => !owned.includes(id));
     if (pool.length === 0) return;
     const kills = (counts[tier] ?? 0) + 1;
@@ -660,18 +662,19 @@ export function rollBossDrops(
  * 연습전은 보상이 없어 굴리지도 세지도 않는다. 새로 얻은 아이템 ID 를 돌려준다
  */
 export function awardBossDrops(
-  character: { equipOwned: number[]; equipPity: EquipPity; chairOwned: number[] },
+  character: { equipOwned: number[]; equipPity: EquipPity; chairOwned: number[]; mountOwned: number[] },
   bossId: number,
   path: JobPath | null,
   practice: boolean,
   random = Math.random,
 ): number[] {
   if (practice) return [];
-  const owned = [...character.equipOwned, ...character.chairOwned];
+  const owned = [...character.equipOwned, ...character.chairOwned, ...character.mountOwned];
   const { drops, pity } = rollBossDrops(bossId, path, owned, character.equipPity, random);
   character.equipPity = pity;
-  character.equipOwned.push(...drops.filter((id) => !isChairItem(id)));
+  character.equipOwned.push(...drops.filter((id) => !isChairItem(id) && !isMountItem(id)));
   character.chairOwned.push(...drops.filter(isChairItem));
+  character.mountOwned.push(...drops.filter(isMountItem));
   return drops;
 }
 
@@ -700,6 +703,13 @@ export function howToGet(entry: EquipEntry, pity: EquipPity): string {
 
 /** 의자는 레어 천장을 같이 센다 */
 export const chairHowToGet = (chair: Chair, pity: EquipPity) => bossDropNote(chair.bossId, 'rare', pity);
+
+/** 탈것은 레벨 선물이거나 레어 천장을 같이 세는 보스 드롭이다 */
+export function mountHowToGet(mount: Mount, pity: EquipPity): string {
+  if (!mount.source) return '얻는 법 미정 · 시험판';
+  if (mount.source.kind === 'level') return `Lv.${mount.source.level} 달성 선물`;
+  return bossDropNote(mount.source.bossId, 'rare', pity);
+}
 
 /** 레벨에 닿은 선물 중 아직 안 받은 것을 준다. 이미 그 레벨을 넘은 캐릭터도 처음 불렀을 때 받는다 */
 export function grantLevelGifts(

@@ -4456,6 +4456,11 @@ body {
   opacity: 0.28;
 }
 
+.equip-cell.is-locked.is-boxed-icon .equip-cell-icon img {
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+
 .equip-cell-mark {
   position: absolute;
   right: 1px;

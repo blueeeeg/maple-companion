@@ -3,6 +3,7 @@ import { normalizeReservedBoss } from './bossChallenge';
 import { normalizeCashData } from './cashShop';
 import { normalizeChairData } from './chairs';
 import { mergeEquipPity, normalizeEquipData } from './equipment';
+import { normalizeMountData } from './mounts';
 import {
   type Character,
   type JobChange,
@@ -41,6 +42,7 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       // 장비 컬렉션이 생기기 전 저장은 빈 컬렉션이다. 레벨 선물은 켤 때 받는다
       ...normalizeEquipData(character),
       ...normalizeChairData(character),
+      ...normalizeMountData(character),
     };
     const { huntSkillId } = character;
     const raw = character as Partial<Character>;
@@ -182,6 +184,8 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
       equipPity: mergeEquipPity(fromFile.equipPity, fromLocal.equipPity),
       // 의자도 컬렉션처럼 합치고 고른 의자는 더 자란 쪽 것이다
       chairOwned: [...new Set([...fromFile.chairOwned, ...fromLocal.chairOwned])],
+      // 탈것도 의자처럼 합치고 고른 탈것은 더 자란 쪽 것이다
+      mountOwned: [...new Set([...fromFile.mountOwned, ...fromLocal.mountOwned])],
       advancedAt: mergeAdvancements(fromFile.advancedAt, fromLocal.advancedAt),
       jobHistory: mergeJobHistory(fromFile.jobHistory, fromLocal.jobHistory),
       // 한쪽에서라도 알렸으면 다시 알리지 않는다

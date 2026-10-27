@@ -1,5 +1,13 @@
 import { isChairItem } from './chairs';
+import { isMountItem } from './mounts';
 import type { Settings } from './settings';
+
+/** 얻은 아이템 종류와 쓰는 곳. 보스 드롭 알림과 화면 위 획득 알림이 같이 쓴다 */
+export function itemKind(itemId: number): { kind: string; hint: string } {
+  if (isChairItem(itemId)) return { kind: '의자', hint: '장비 창 「의자」에서 앉을 수 있어요' };
+  if (isMountItem(itemId)) return { kind: '탈것', hint: '장비 창 「탈것」에서 탈 수 있어요' };
+  return { kind: '장비', hint: '장비 창에서 입을 수 있어요' };
+}
 
 /**
  * 창을 봐야 하는 일. 직업 고르기와 2차 갈래 고르기는 대화가 답을 기다리고, 2차 이상 전직은 축하 대화가 「확인」을 기다린다.
@@ -42,11 +50,11 @@ export function describeAlert(event: AlertEvent): Alert {
     };
   }
   if (event.kind === 'equip-drop') {
-    const chair = isChairItem(event.itemId);
+    const { kind, hint } = itemKind(event.itemId);
     return {
       key: `equip-drop:${event.characterId}:${event.itemId}`,
-      title: `${event.characterName} ${chair ? '의자' : '장비'} 획득!`,
-      body: `${event.bossName} 처치 · ${event.itemName} 획득. ${chair ? '장비 창 「의자」에서 앉을 수 있어요' : '장비 창에서 입을 수 있어요'}`,
+      title: `${event.characterName} ${kind} 획득!`,
+      body: `${event.bossName} 처치 · ${event.itemName} 획득. ${hint}`,
     };
   }
   return {

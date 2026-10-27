@@ -21,11 +21,13 @@ import {
   hiddenByCash,
   howToGet,
   isEquipItem,
+  mountHowToGet,
   rollBossDrops,
   wearEquipment,
   wieldableTypes,
 } from './equipment';
 import { JOB_BRANCHES, type JobBranchId, describeJob } from './jobs';
+import { mountOf } from './mounts';
 import { totalXpForLevel } from './progression';
 
 const PINK_BEAN = 8820001;
@@ -46,7 +48,16 @@ const CHAOS_PINK_BEAN_SUIT = 1052526;
 const PINK_BEAN_FACE = 1012532;
 const PINK_BEAN_CHAIR = 3010225;
 const BLACK_BEAN_CHAIR = 3010592;
-const PINK_BEAN_RARE = [PINK_BEAN_HAT, PINK_BEAN_SUIT, CHAOS_PINK_BEAN_SUIT, PINK_BEAN_FACE, PINK_BEAN_CHAIR, BLACK_BEAN_CHAIR];
+const PINK_BEAN_MOUNT = 1932323;
+const PINK_BEAN_RARE = [
+  PINK_BEAN_HAT,
+  PINK_BEAN_SUIT,
+  CHAOS_PINK_BEAN_SUIT,
+  PINK_BEAN_FACE,
+  PINK_BEAN_CHAIR,
+  BLACK_BEAN_CHAIR,
+  PINK_BEAN_MOUNT,
+];
 
 const never = () => 0.99;
 const always = () => 0;
@@ -248,9 +259,10 @@ describe('보스 드롭', () => {
     expect(drops.flat().filter((id) => id !== CHAOS_PINK_BEAN_HAT)).toHaveLength(3);
   });
 
-  it('의자는 레어 칸에 섞여 레어 천장을 같이 센다', () => {
+  it('의자·탈것은 레어 칸에 섞여 레어 천장을 같이 센다', () => {
     const result = rollBossDrops(PINK_BEAN, 'hero', [], { [PINK_BEAN]: { rare: 9 } }, never);
-    expect(result.drops).toEqual([BLACK_BEAN_CHAIR]);
+    expect(result.drops).toEqual([PINK_BEAN_MOUNT]);
+    expect(rollBossDrops(PINK_BEAN, 'hero', [PINK_BEAN_MOUNT], { [PINK_BEAN]: { rare: 9 } }, never).drops).toEqual([BLACK_BEAN_CHAIR]);
     expect(result.pity[PINK_BEAN].rare).toBe(0);
     expect(rollBossDrops(PINK_BEAN, 'hero', [], {}, () => 0.1).pity[PINK_BEAN].rare).toBe(0);
   });
@@ -266,10 +278,12 @@ describe('보스 드롭', () => {
     expect(awardBossDrops(fighter, PINK_BEAN, 'hero', true, always)).toEqual([]);
     expect(fighter.equipPity).toEqual({});
     expect(fighter.equipOwned).toEqual([]);
-    expect(awardBossDrops(fighter, PINK_BEAN, 'hero', false, always)).toHaveLength(7);
+    expect(awardBossDrops(fighter, PINK_BEAN, 'hero', false, always)).toHaveLength(8);
     expect(fighter.equipOwned).toContain(PINK_BEAN_SUIT);
     expect(fighter.equipOwned).not.toContain(PINK_BEAN_CHAIR);
+    expect(fighter.equipOwned).not.toContain(PINK_BEAN_MOUNT);
     expect(fighter.chairOwned).toEqual([PINK_BEAN_CHAIR, BLACK_BEAN_CHAIR]);
+    expect(fighter.mountOwned).toEqual([PINK_BEAN_MOUNT]);
     expect(awardBossDrops(fighter, PINK_BEAN, 'hero', false, always)).toEqual([]);
   });
 });
@@ -283,6 +297,10 @@ describe('얻는 법', () => {
     expect(howToGet(entry('workGloves'), {})).toBe('장비 상점 5,000 메소');
     expect(chairHowToGet(chairOf(PINK_BEAN_CHAIR)!, { [PINK_BEAN]: { rare: 7 } })).toBe('핑크빈 처치 · 낮은 확률 · 7/10');
     expect(equipItemName(PINK_BEAN_CHAIR)).toBe('핑크빈 의자');
+    expect(equipItemName(PINK_BEAN_MOUNT)).toBe('함께해! 핑크빈');
+    expect(mountHowToGet(mountOf(PINK_BEAN_MOUNT)!, { [PINK_BEAN]: { rare: 7 } })).toBe('핑크빈 처치 · 낮은 확률 · 7/10');
+    expect(mountHowToGet(mountOf(1902002)!, {})).toBe('Lv.200 달성 선물');
+    expect(mountHowToGet(mountOf(1932636)!, {})).toBe('얻는 법 미정 · 시험판');
   });
 });
 
