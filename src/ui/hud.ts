@@ -27,12 +27,15 @@ export interface HudState {
   xpForLevel: number;
   muted: boolean;
   resting: boolean;
+  /** 직접 조작 모드가 켜져 있다 */
+  manual: boolean;
 }
 
 export interface HudHandlers {
   onChooseJob(id: JobLineId): void;
   onChooseBranch(id: JobBranchId): void;
   onToggleMute(): void;
+  onToggleManual(): void;
   onOpenCharacterSelect(): void;
   onOpenCashShop(): void;
   onOpenSettings(): void;
@@ -63,6 +66,8 @@ export interface Hud {
   setPractice(bossName: string | null): void;
   /** 얻은 컬렉션 장비를 아이콘과 함께 화면 위쪽에 잠깐 띄운다. 맨 아래 알림 줄과 따로라 정산 알림과 같이 보인다 */
   notifyItems(items: { itemId: number; name: string }[], source: string): void;
+  /** 직접 조작 중 HUD 아래 왼쪽에 작게 띄우는 표시. null 이면 내린다 */
+  setManualHint(text: string | null): void;
 }
 
 const NOTICE_MS = 4000;
@@ -130,6 +135,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <button class="hud-menu-button" type="button" aria-label="메뉴" title="메뉴" aria-haspopup="menu" aria-expanded="false">⚙️</button>
     </header>
     <div class="hud-menu" role="menu" hidden>
+      <button class="hud-manual-toggle" type="button" role="menuitem"></button>
       <button class="hud-mute" type="button" role="menuitem"></button>
       <button class="hud-equip" type="button" role="menuitem">🛡 장비</button>
       <button class="hud-music" type="button" role="menuitem">🎵 BGM 고르기</button>
@@ -141,6 +147,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <span class="exp-text"></span>
     </div>
     <div class="notice" aria-live="polite" hidden></div>
+    <div class="hud-manual" role="status" hidden></div>
     <div class="hud-item" role="status" hidden>
       <span class="hud-item-icon"></span>
       <span class="hud-item-text"><strong></strong><small></small></span>
@@ -162,6 +169,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   const advance = pick<HTMLButtonElement>('.hud-advance');
   const rest = pick('.hud-rest');
   const mute = pick<HTMLButtonElement>('.hud-mute');
+  const manualToggle = pick<HTMLButtonElement>('.hud-manual-toggle');
+  const manualHint = pick('.hud-manual');
   const expFill = pick('.exp-fill');
   const expText = pick('.exp-text');
   const notice = pick('.notice');
@@ -194,6 +203,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       setMenuOpen(false);
       action();
     });
+  menuItem('.hud-manual-toggle', handlers.onToggleManual);
   menuItem('.hud-mute', handlers.onToggleMute);
   menuItem('.hud-equip', handlers.onOpenEquip);
   menuItem('.hud-music', handlers.onOpenMusic);
@@ -240,6 +250,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       if (!state.branchChoice) dialog.cancel(BRANCH_CHOICE_KEY);
       rest.hidden = !state.resting;
       mute.textContent = state.muted ? '🔊 소리 켜기' : '🔇 소리 끄기';
+      manualToggle.textContent = state.manual ? '🎮 직접 조작 끄기' : '🎮 직접 조작';
       expFill.style.width = `${(state.ratio * 100).toFixed(2)}%`;
       expText.textContent =
         state.xpForLevel > 0
@@ -267,6 +278,10 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       itemNotice.hidden = false;
       if (itemTimer !== null) window.clearTimeout(itemTimer);
       itemTimer = window.setTimeout(() => (itemNotice.hidden = true), ITEM_NOTICE_MS);
+    },
+    setManualHint(text) {
+      manualHint.hidden = text === null;
+      manualHint.textContent = text ?? '';
     },
     setPractice(bossName) {
       practice.hidden = bossName === null;

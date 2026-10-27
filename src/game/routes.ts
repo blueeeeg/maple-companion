@@ -57,6 +57,11 @@ export function fieldMoves(townMapId: number, fields: RouteField[], currentMapId
   return adjacentHops(townMapId, fields, currentMapId).flatMap((hop) => extend([hop], currentMapId));
 }
 
+/** 직접 조작으로 들어간 포털(exit, 맵 월드 좌표)이 이어 주는 한 걸음. 통로 맵에서도 멈춘다. 그런 포털이 없으면 null */
+export function hopAt(townMapId: number, fields: RouteField[], currentMapId: number, exit: Point): FieldHop | null {
+  return adjacentHops(townMapId, fields, currentMapId).find((hop) => hop.exit.x === exit.x && hop.exit.y === exit.y) ?? null;
+}
+
 /** 맵에 늘 띄워 두는 포털 하나. 좌표는 맵 월드 좌표, label 은 가는 맵 이름 */
 export interface RoutePortal extends Point {
   label: string;

@@ -45,6 +45,7 @@ import {
 } from './game/equipment';
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
 import { JOB_BRANCHES, type JobBranchId, advancementTier, describeJob, jobPath, pathTier, tierName } from './game/jobs';
+import { MANUAL_REWARD_POLICY, manualRewardBudget, settleManualKill } from './game/manualHunt';
 import { levelInfo } from './game/progression';
 import { bossRecord, noteAdvancements } from './game/records';
 import { canCast, findSkill, skillDataPrefetchOrder } from './game/skillBook';
@@ -59,11 +60,12 @@ import {
   pinnedTown,
   townRotateMs,
 } from './game/settings';
-import { fieldMoveDue, fieldMoves, pickFieldMove, routePortals, townFields } from './game/routes';
+import { fieldMoveDue, fieldMoves, hopAt, pickFieldMove, routePortals, townFields } from './game/routes';
 import { type RouteField, isPassage } from './game/routeCuration';
 import { type MonsterSpec, type Town, drawFromTownBag, pickNextTown, rewardTown, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
+import type { Point } from './maple/ground';
 import { warmMaps } from './maple/portal';
 import { canDrawSkill, loadSkill, prefetchSkillData } from './maple/skills';
 import { SKILL_STORE_CAP_BYTES } from './maple/skillStore';
@@ -79,6 +81,7 @@ import { type CashShopState, createCashShop } from './ui/cashShop';
 import { type EquipWindowState, createEquipWindow } from './ui/equipWindow';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
+import { KEY_LEGEND, createManualKeys } from './ui/manualKeys';
 import { instructorName } from './ui/npcDialog';
 import { type MusicWindowState, createMusicWindow, prefetchMusicWindow } from './ui/musicWindow';
 import { createSettingsScreen } from './ui/settings';
@@ -200,6 +203,7 @@ const hud = createHud(root, {
     syncRunning();
     void tick();
   },
+  onToggleManual: () => setManualControl(!settings.manualControl),
   onOpenCharacterSelect: openCharacterSelect,
   onOpenCashShop: openCashShop,
   onOpenSettings: openSettings,
@@ -332,6 +336,8 @@ bgm.onChange(() => {
 
 const scene = await createScene(stage, {
   onKill: handleKill,
+  onFieldKill: handleFieldKill,
+  onManualPortal: enterPortal,
   onSkillUnusable(skillId, name) {
     const character = selectedCharacter(roster);
     if (!character || character.huntSkillId !== skillId) return;
@@ -342,6 +348,55 @@ const scene = await createScene(stage, {
 });
 
 const isMuted = () => roster.muted || settings.bgmVolume === 0;
+
+const manualKeys = createManualKeys(window, {
+  enabled: () => settings.manualControl && screen === 'map' && isShown(),
+  onPress: () => scene.nudge(),
+  onExit: () => setManualControl(false),
+});
+const manualControl = {
+  keys: manualKeys.read,
+  // 리스폰은 몬스터 주기와 같다. 몬스터를 꺼 뒀으면 기본 주기다
+  respawnMs: () => currentPace().encounterSeconds * 1000,
+};
+const syncFocus = () => scene.setManualFocus(document.hasFocus());
+window.addEventListener('focus', syncFocus);
+window.addEventListener('blur', syncFocus);
+// 펫 창을 눌러도 키보드 포커스가 안 오는 때가 있어 직접 조작 중에는 누를 때 포커스를 가져온다
+stage.addEventListener('pointerdown', () => {
+  if (settings.manualControl) desktop.focusWindow();
+});
+
+/** HUD ⚙️ 메뉴와 Esc 가 켜고 끈다. 설정에 남아 다음 실행에도 이어진다 */
+function setManualControl(on: boolean): void {
+  if (on === settings.manualControl) return;
+  applySettings({ ...settings, manualControl: on });
+  manualKeys.clear();
+  if (on) {
+    // 방금 누른 메뉴 버튼에 포커스가 남아 있으면 Space 가 그 버튼을 다시 누른다
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    desktop.focusWindow();
+    hud.notify(KEY_LEGEND);
+  } else {
+    // 끈 순간 바로 마을·사냥터를 옮기지 않고 그 자리에서 다시 센다
+    townChangedAt = Date.now();
+    arrivedAt = Date.now();
+    hud.notify('직접 조작을 껐어요');
+  }
+  void tick();
+}
+
+/** 직접 조작 중 HUD 에 보상 받을 수 있는 남은 사냥 수를 옅게 띄운다 */
+function renderManualHint(character: Character): void {
+  if (!settings.manualControl) {
+    hud.setManualHint(null);
+    return;
+  }
+  const pace = huntPace(settings);
+  if (!pace) hud.setManualHint('직접 조작 · 몬스터를 꺼 둬서 보상 없음');
+  else if (MANUAL_REWARD_POLICY === 'perKill') hud.setManualHint('직접 조작');
+  else hud.setManualHint(`직접 조작 · 보상 남은 사냥 ${manualRewardBudget(character, pace)}`);
+}
 
 /** 바뀐 설정을 저장하고 화면·소리·활동 집계에 건다. 앱을 켤 때도 한 번 부른다 */
 function applySettings(next: Settings): void {
@@ -358,6 +413,7 @@ function applySettings(next: Settings): void {
   if (settings.pinnedTownId !== null && settings.pinnedTownId !== before.pinnedTownId) townChangedAt = 0;
   scene.setDamageNumbers(settings.damageNumbers);
   scene.setLevelUpScale(levelUpScale(settings));
+  scene.setManual(settings.manualControl ? manualControl : null);
   bgm.setVolume(settings.bgmVolume / BGM_VOLUME_MAX);
   bgm.setPlayback(bgmPlayback(settings));
   activity.setIdleLimit(idleLimitSeconds(settings));
@@ -569,6 +625,7 @@ function openBoss(): void {
 /** 보스와 싸울 수 없는 까닭. 창이 떠 있는 동안 맵이 멈춰 있어 싸우던 몬스터는 창을 닫아야 끝난다 */
 function challengeBlocked(): string | null {
   if (bossFight !== null) return '보스와 싸우는 중이에요';
+  if (settings.manualControl) return '직접 조작 중에는 도전할 수 없어요. ⚙️ 메뉴에서 끄고 도전해 주세요';
   if (scene.inEncounter) return '몬스터와 싸우는 중이에요. 창을 닫고 잡은 뒤에 도전할 수 있어요';
   if (townLoading) return '맵을 옮기는 중이에요. 잠시 뒤 다시 도전해 주세요';
   if (!town) return '맵을 불러오는 중이에요';
@@ -688,6 +745,49 @@ function handleKill(monster: MonsterSpec): number {
   writeRoster(roster);
   void tick();
   return meso;
+}
+
+/**
+ * 직접 조작으로 잡은 맵 몬스터. 보상 규칙은 game/manualHunt.ts 한 곳에서 정한다.
+ * 보상이 없어도 몬스터 기록에는 남는다
+ */
+function handleFieldKill(monster: MonsterSpec): number {
+  const character = selectedCharacter(roster);
+  if (!character || !town) return 0;
+  const { level } = levelInfo(characterXp(character));
+  const reward = settleManualKill(character, huntPace(settings), rewardTown(level));
+  character.monsterBook[monster.name] = (character.monsterBook[monster.name] ?? 0) + 1;
+  if (reward) {
+    character.killXp += reward.xp;
+    character.meso += reward.meso;
+  }
+  writeRoster(roster);
+  renderManualHint(character);
+  void tick();
+  return reward?.meso ?? 0;
+}
+
+/** 직접 조작에서 포털 앞 ↑. 통로 맵에서도 멈춰서 그 맵을 직접 걷는다 */
+function enterPortal(exit: Point): void {
+  if (!town || townLoading || !settings.manualControl) return;
+  const current = town;
+  const hop = hopAt(current.mapId, townFields(current), field?.mapId ?? current.mapId, exit);
+  if (!hop) return;
+  townLoading = true;
+  const label = hop.field?.name ?? current.name;
+  scene
+    .travel(hop.toMapId, label, hop.exit, hop.arrival)
+    .then(
+      () => {
+        field = hop.field;
+        arrivedAt = Date.now();
+        huntsHere = 0;
+        if (field) bgm.setMap(field.mapId);
+        else bgm.setTown(current);
+      },
+      () => hud.notify(`${label} 맵을 불러오지 못했어요`),
+    )
+    .finally(() => (townLoading = false));
 }
 
 /**
@@ -882,7 +982,9 @@ function handleLevelUp(character: Character, from: number, to: number): void {
   if (opened.length > 0) {
     hud.notify(`새 마을: ${opened.map((candidate) => candidate.name).join(', ')}`);
     // 열린 마을에 머물기로 했으면 새 마을로도 옮기지 않는다
-    if (isShown() && !scene.inEncounter && pinnedTown(settings, to) === null) moveTo(opened[opened.length - 1]);
+    if (isShown() && !scene.inEncounter && pinnedTown(settings, to) === null && !settings.manualControl) {
+      moveTo(opened[opened.length - 1]);
+    }
   }
 }
 
@@ -1003,7 +1105,9 @@ async function tick(): Promise<void> {
     xpForLevel: info.xpForLevel,
     muted: isMuted(),
     resting,
+    manual: settings.manualControl,
   });
+  renderManualHint(character);
 
   const pinned = pinnedTown(settings, info.level);
   if (!town) {
@@ -1017,6 +1121,9 @@ async function tick(): Promise<void> {
   }
   // 창이 안 보이는 동안은 정산을 미뤘다가 다시 보일 때 한 번에 알려준다
   if (!isShown()) return;
+  // 직접 조작 중에는 마을 돌기·사냥터 이동·자동 사냥·보스 차례를 쉰다. 쌓인 사냥 시계는 직접 잡은 몬스터가 꺼내 쓰고,
+  // 끄면 남은 몫을 「비운 사이」 처럼 이어서 치른다
+  if (settings.manualControl) return;
 
   if (!scene.inEncounter) {
     if (pinned) {
@@ -1121,6 +1228,7 @@ document.addEventListener('visibilitychange', () => {
 document.body.dataset.mode = await desktop.initialMode();
 applyScale(await desktop.initialScale());
 applySettings(settings);
+if (settings.manualControl) hud.notify(KEY_LEGEND);
 if (screen === 'select') openCharacterSelect();
 syncRunning();
 await tick();
