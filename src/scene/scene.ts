@@ -42,7 +42,7 @@ import { type Animation, frameAt, loadAnimation, loadLayerStack, loadMapImage, l
 import { fetchStoredJson, keepArt } from '../maple/artStore';
 import { loadPortalFrames } from '../maple/portal';
 import { type ChairArt, type LoadedChairLayer, chairArtOf, loadChairLayers } from '../maple/chairArt';
-import { type MountArt, type MountMotion, mountArtOf } from '../maple/mountArt';
+import { type MountArt, type MountMotion, loadMountFrames, mountArtOf } from '../maple/mountArt';
 import {
   type LadderRope,
   type NavAction,
@@ -63,7 +63,7 @@ import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } f
 import { lerpColor } from './color';
 import { applyEachLoaded } from './heroLoad';
 import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
-import { RIDE_SPEED_SCALE, motionDelays, riderImageOffset, shouldRide } from './riding';
+import { RIDE_SPEED_SCALE, motionDelays, mountFrameLayout, riderImageOffset, riderLook, shouldRide } from './riding';
 import { seatSpotX, shouldSit, wanderPauseLeft, wanderPauseMs } from './seating';
 import { viewportFor } from './viewport';
 
@@ -507,7 +507,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const chairFront = new Container();
   chairBack.visible = false;
   chairFront.visible = false;
-  actors.addChild(chairBack, hero, chairFront);
+  // 탈것 레이어도 의자처럼 캐릭터 앞뒤로 나눠 그리고 맵 앞 레이어에 같이 가린다
+  const mountBack = new Container();
+  const mountFront = new Container();
+  mountBack.visible = false;
+  mountFront.visible = false;
+  actors.addChild(chairBack, mountBack, hero, mountFront, chairFront);
 
   let ground: GroundPath | null = null;
   let heroAnimations: HeroAnimations | null = null;
@@ -543,7 +548,14 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let seated = false;
   let seatClockMs = 0;
   let mountId: number | null = null;
-  type MountPose = { motion: MountMotion; frames: Texture[]; delays: number[] };
+  type MountPose = {
+    motion: MountMotion;
+    /** 탈것 없이 받은 몸 동작(sit 등) 그림. 탈것 프레임 f 에는 f mod 장수를 쓴다 */
+    rider: Texture[];
+    layers: Texture[][];
+    layouts: ReturnType<typeof mountFrameLayout>[];
+    delays: number[];
+  };
   /** 고른 탈것을 태운 지금 모습의 서기·걷기 그림. 다 받아야 탄다 */
   let mount: { art: MountArt; stand: MountPose; walk: MountPose } | null = null;
   let mountKey = '';
@@ -766,10 +778,38 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     heroClockMs = 0;
   }
 
+  function showMountLayers(visible: boolean): void {
+    mountBack.visible = visible;
+    mountFront.visible = visible;
+  }
+
+  /** 탈것 프레임의 레이어를 캐릭터 앞뒤에 놓는다. 스프라이트는 레이어 수만큼 늘려 두고 남는 것은 숨긴다 */
+  function placeMountLayers(pose: MountPose, frame: number): void {
+    const layout = pose.layouts[frame];
+    const textures = pose.layers[frame];
+    ([
+      [mountBack, layout.back],
+      [mountFront, layout.front],
+    ] as const).forEach(([container, placed]) => {
+      container.position.set(hero.x, hero.y);
+      container.scale.x = -facing;
+      while (container.children.length < placed.length) container.addChild(new Sprite());
+      container.children.forEach((child, slot) => {
+        const each = placed[slot];
+        child.visible = each !== undefined;
+        if (!each) return;
+        (child as Sprite).texture = textures[each.index];
+        child.position.set(each.x, each.y);
+      });
+    });
+    showMountLayers(true);
+  }
+
   function updateHeroSprite(dtMs: number): void {
     if (!heroAnimations) return;
     heroClockMs += dtMs;
     hero.pivot.set(0, 0);
+    showMountLayers(false);
     if (castPose) {
       castPose.clockMs += dtMs;
       const castIndex = frameAt(castPose.animation.delays, castPose.clockMs, false);
@@ -783,11 +823,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     if (riding && mount && heroAction !== 'attack') {
       const pose = heroAction === 'walk' ? mount.walk : mount.stand;
       const index = frameAt(pose.delays, heroClockMs, true);
-      hero.texture = pose.frames[index];
+      hero.texture = pose.rider[index % pose.rider.length];
       hero.scale.x = -facing;
       // 발(hero 위치)은 지면에 두고 그림만 옮겨서 이름표·카메라는 발을 따라간다
       const offset = riderImageOffset(pose.motion, index);
       hero.pivot.set(-offset.x, -offset.y);
+      placeMountLayers(pose, index);
       return;
     }
     const animation = heroAnimations[heroAction];
@@ -1059,7 +1100,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     );
   }
 
-  /** 고른 탈것을 태운 지금 모습의 서기·걷기 프레임을 받는다. 받는 동안은 앞 그림을 그대로 쓴다 */
+  /** 고른 탈것의 서기·걷기 레이어와 지금 모습의 탄 몸 동작(sit 등)을 받는다. 받는 동안은 앞 그림을 그대로 쓴다 */
   function loadMount(): void {
     const art = mountId === null ? null : mountArtOf(mountId);
     if (!art || heroLook.length === 0) {
@@ -1067,17 +1108,22 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       mount = null;
       return;
     }
-    const look = [...heroLook, art.id];
-    const key = look.join(',');
+    const look = riderLook(heroLook, art);
+    const key = `${art.id}|${look.join(',')}`;
     if (key === mountKey && performance.now() < mountRetryAt) return;
     mountKey = key;
     mountRetryAt = Infinity;
     keepArt('mountLook', [characterArtBase(look)]);
-    const loadPose = async (motion: MountMotion): Promise<MountPose> => ({
-      motion,
-      frames: await Promise.all(motion.frames.map((_, frame) => loadTexture(characterFrameUrl(look, motion.action, frame)))),
-      delays: motionDelays(motion),
-    });
+    const loadPose = async (motion: MountMotion): Promise<MountPose> => {
+      const [rider, layers] = await Promise.all([loadHeroAction(look, motion.body), loadMountFrames(motion)]);
+      return {
+        motion,
+        rider: rider.animation.frames,
+        layers,
+        layouts: motion.frames.map((_, frame) => mountFrameLayout(motion, frame)),
+        delays: motionDelays(motion),
+      };
+    };
     Promise.all([loadPose(art.stand), loadPose(art.walk)]).then(
       ([stand, walk]) => {
         if (mountKey === key) mount = { art, stand, walk };
@@ -1503,6 +1549,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       motion.clockMs += dtMs;
       const animation = animations[pose.action];
       hero.pivot.set(0, 0);
+      showMountLayers(false);
       hero.texture = animation.frames[frameAt(animation.delays, motion.clockMs, true)];
       // 사다리·로프 그림은 등을 보이고 있어서 뒤집지 않는다
       hero.scale.x = pose.action === 'jump' ? -facing : 1;
