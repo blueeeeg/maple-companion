@@ -15,18 +15,18 @@ describe('스킬 데이터 저장 예산', () => {
 });
 
 describe('스킬 데이터 줄이기', () => {
-  it('그리는 데 쓰는 이름·사거리·타수·이펙트·동작만 남긴다', () => {
+  it('그리는 데 쓰는 이름·사거리·타수·대상 수·이펙트·동작만 남긴다', () => {
     const frame = { image: 'AAAA', delay: 90, origin: { x: 1, y: 2 } };
     const raw = {
       description: { name: '인피니티', desc: '긴 설명' },
-      properties: { lt: 'Point [ X=-400, Y=-300 ]', attackCount: '3', damage: '3', time: '40' },
+      properties: { lt: 'Point [ X=-400, Y=-300 ]', attackCount: '3', mobCount: '6', damage: '3', time: '40' },
       effect: [{ frames: [frame] }],
       actions: ['alert2'],
       icon: 'BBBB',
     } as unknown as SkillInfo;
     expect(trimSkillInfo(raw)).toEqual({
       description: { name: '인피니티' },
-      properties: { lt: 'Point [ X=-400, Y=-300 ]', attackCount: '3' },
+      properties: { lt: 'Point [ X=-400, Y=-300 ]', attackCount: '3', mobCount: '6' },
       effect: [{ frames: [frame] }],
       hit: [],
       actions: ['alert2'],

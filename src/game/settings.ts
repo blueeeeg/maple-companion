@@ -47,6 +47,8 @@ export interface Settings {
   idleMinutes: (typeof IDLE_MINUTE_OPTIONS)[number];
   /** 창이 숨었거나 다른 앱을 보는 동안 전직이 오면 OS 알림을 띄운다 */
   jobAlerts: boolean;
+  /** 직접 조작 모드. 켜 두면 다음 실행에도 직접 조작으로 시작한다 */
+  manualControl: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
   levelUpEffect: 'original',
   idleMinutes: 2,
   jobAlerts: true,
+  manualControl: false,
 };
 
 function oneOf<T>(options: readonly T[], value: unknown, fallback: T): T {
@@ -114,6 +117,7 @@ export function normalizeSettings(raw: unknown, level = 1): Settings {
     levelUpEffect: oneOf(LEVEL_UP_EFFECT_OPTIONS, saved.levelUpEffect, fallback.levelUpEffect),
     idleMinutes: oneOf(IDLE_MINUTE_OPTIONS, saved.idleMinutes, fallback.idleMinutes),
     jobAlerts: typeof saved.jobAlerts === 'boolean' ? saved.jobAlerts : fallback.jobAlerts,
+    manualControl: typeof saved.manualControl === 'boolean' ? saved.manualControl : fallback.manualControl,
   };
 }
 

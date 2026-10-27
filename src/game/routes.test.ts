@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type RouteField, isPassage } from './routeCuration';
 import { TOWN_ROUTES } from './routeData';
-import { FIELD_CADENCE, type FieldMove, fieldMoveDue, fieldMoves, pickFieldMove, routePortals } from './routes';
+import { FIELD_CADENCE, type FieldMove, fieldMoveDue, fieldMoves, hopAt, pickFieldMove, routePortals } from './routes';
 import { TOWNS } from './towns';
 
 const field = (mapId: number, fromMapId: number, entryX: number, arrivalX: number): RouteField => ({
@@ -114,6 +114,13 @@ describe('늘 보이는 포털', () => {
 
   it('사냥터가 없는 마을은 포털이 없다', () => {
     expect(routePortals({ mapId: 1, name: '마을' }, []).size).toBe(0);
+  });
+
+  it('직접 조작으로 들어간 포털이 어디로 이어지는지 찾는다', () => {
+    expect(hopAt(1, fields, 1, { x: 900, y: -900 })).toMatchObject({ toMapId: 10, arrival: { x: -400, y: 400 } });
+    expect(hopAt(1, fields, 10, { x: -400, y: 400 })).toMatchObject({ toMapId: 1, field: null });
+    expect(hopAt(1, fields, 10, { x: 700, y: -700 })?.toMapId).toBe(20);
+    expect(hopAt(1, fields, 1, { x: 1, y: 1 })).toBeNull();
   });
 });
 

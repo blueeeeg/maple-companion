@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export const isTauri = '__TAURI_INTERNALS__' in window;
 
@@ -17,6 +18,8 @@ export interface DesktopBridge {
   onOpenSettings(handler: () => void): void;
   /** 트레이 아이콘을 이 그림으로 바꾼다. Rust 가 받아 둔 것을 다음 실행부터 바로 쓰고, 못 받으면 지금 아이콘을 그대로 둔다 */
   refreshTrayIcon(url: string): void;
+  /** 직접 조작 키를 받게 창에 키보드 포커스를 준다. 이미 있으면 그대로다 */
+  focusWindow(): void;
 }
 
 const browserBridge: DesktopBridge = {
@@ -32,6 +35,7 @@ const browserBridge: DesktopBridge = {
   setTrayStatus: () => {},
   onOpenSettings: () => {},
   refreshTrayIcon: () => {},
+  focusWindow: () => window.focus(),
 };
 
 const tauriBridge: DesktopBridge = {
@@ -59,6 +63,12 @@ const tauriBridge: DesktopBridge = {
         return response.arrayBuffer();
       })
       .then((buffer) => invoke('set_tray_icon', { png: Array.from(new Uint8Array(buffer)) }))
+      .catch(() => {});
+  },
+  focusWindow() {
+    if (document.hasFocus()) return;
+    getCurrentWindow()
+      .setFocus()
       .catch(() => {});
   },
 };

@@ -31,10 +31,14 @@ export function evictionPlan(index: SkillStoreIndex, budget: number): string[] {
 
 /** 맵에 그리는 데 쓰는 것만 남긴다. 아이콘·설명·레벨별 수치는 버린다 */
 export function trimSkillInfo(info: SkillInfo): SkillInfo {
-  const { lt, attackCount } = info.properties ?? {};
+  const { lt, attackCount, mobCount } = info.properties ?? {};
   return {
     description: { name: info.description?.name ?? '' },
-    properties: { ...(lt !== undefined ? { lt } : {}), ...(attackCount !== undefined ? { attackCount } : {}) },
+    properties: {
+      ...(lt !== undefined ? { lt } : {}),
+      ...(attackCount !== undefined ? { attackCount } : {}),
+      ...(mobCount !== undefined ? { mobCount } : {}),
+    },
     effect: info.effect ?? [],
     hit: info.hit ?? [],
     actions: info.actions ?? [],

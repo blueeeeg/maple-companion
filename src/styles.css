@@ -162,6 +162,25 @@ body {
   display: none;
 }
 
+/* 직접 조작 표시. 맵을 덜 가리게 HUD 바로 아래 왼쪽에 옅게 둔다 */
+.hud-manual {
+  position: absolute;
+  left: 6px;
+  top: 29px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  color: #d8f0ff;
+  font-size: 9.5px;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hud-manual[hidden] {
+  display: none;
+}
+
 .select {
   position: absolute;
   inset: 0;

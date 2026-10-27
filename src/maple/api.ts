@@ -124,11 +124,23 @@ export interface Foothold {
   layerId: number;
 }
 
+/** 맵에 놓인 몬스터 자리(맵 월드 좌표). walkArea 는 원작이 정한 순찰 범위다 */
+export interface MapMob {
+  id: number;
+  x: number;
+  y: number;
+  walkAreaX1?: number;
+  walkAreaX2?: number;
+  hidden?: boolean;
+}
+
 export interface MapInfo {
   name: string;
   backgroundMusic: string;
   footholds: Record<string, Foothold>;
   ladderRopes?: LadderRope[];
+  /** 마을은 대개 비어 있다 */
+  mobs?: MapMob[];
 }
 
 export interface MobInfo {

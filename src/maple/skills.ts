@@ -20,6 +20,8 @@ export interface Skill {
   range: number;
   /** 한 번 쓸 때 뜨는 데미지 줄 수 */
   hits: number;
+  /** 한 번에 때리는 몬스터 수. 스킬 데이터에 없으면 null */
+  mobCount: number | null;
   effect: EffectLayer[];
   hit: EffectLayer[];
   /** 원작에서 이 스킬을 쓸 때의 캐릭터 동작 이름(alert2·darksight 등). 없으면 빈 목록 */
@@ -108,6 +110,7 @@ export function loadSkill(skillId: number, fallbackRange: number): Promise<Skill
       name: info.description?.name ?? '',
       range: frontRange(info.properties?.lt) ?? fallbackRange,
       hits: Math.min(MAX_HIT_LINES, Math.max(1, parseInt(info.properties?.attackCount ?? '1', 10) || 1)),
+      mobCount: parseInt(info.properties?.mobCount ?? '', 10) || null,
       effect: await loadLayers(info.effect),
       hit: await loadLayers(info.hit),
       actions: info.actions ?? [],

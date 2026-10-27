@@ -5,7 +5,9 @@ import type { RoutePortal } from '../game/routes';
 import type { MonsterSpec, Town } from '../game/towns';
 import {
   DATA_KEY,
+  type Foothold,
   type MapInfo,
+  type MapMob,
   type MobInfo,
   type WzValue,
   characterAnimationUrl,
@@ -49,6 +51,7 @@ import {
   type NavGraph,
   type NavPoint,
   type NavStep,
+  type Platform,
   buildNavGraph,
   createNavRunner,
   findPath,
@@ -57,6 +60,17 @@ import {
 } from '../maple/navigation';
 import type { Point } from '../maple/ground';
 import { createBossGauge } from './bossGauge';
+import { type ControlAction, type ControlInput, type Controller, buildControlWorld, createController, platformBelow } from './control';
+import {
+  DEFAULT_MOB_COUNT,
+  type Patrol,
+  createPatrol,
+  createRespawnTable,
+  fieldMobHits,
+  pickTargets,
+  spawnPoints,
+  stepPatrol,
+} from './fieldMobs';
 import { chairLoopDelayMs, frameTopLeft, layerAnchor, layerOrder, seatFacing, seatedBodyOffset, seatedLook } from './chairPlacement';
 import { FULL_FPS, IDLE_FPS, targetFps } from './framePolicy';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
@@ -149,6 +163,15 @@ const BOSS_DAMAGE_CEILING = 110;
 const PORTAL_WALK_LIMIT_MS = 60_000;
 /** 포털을 누르면 가는 맵 이름을 이만큼 띄운다 */
 const PORTAL_LABEL_MS = 3000;
+/** 직접 조작에서 ↑ 로 포털에 들어갈 수 있는 거리(맵 픽셀) */
+const MANUAL_PORTAL_REACH_X = 25;
+const MANUAL_PORTAL_REACH_Y = 30;
+/** 포털에 한 번 들어가면 이만큼은 다시 안 들어간다. 맵을 받는 동안 ↑ 를 누르고 있어도 한 번만 옮긴다 */
+const MANUAL_PORTAL_COOLDOWN_MS = 1500;
+/** 창이 이만큼 포커스를 잃으면 몬스터도 멈추고 리스폰 시간도 안 흐른다 */
+const MANUAL_FREEZE_MS = 30_000;
+/** 화면 밖 이만큼 안의 몬스터가 움직이면 30fps 로 그린다 */
+const MANUAL_VIEW_SLACK = 60;
 
 export interface BossFightEvents {
   /** 보스 맵으로 바뀌어 화면이 밝아지기 직전 */
@@ -164,6 +187,18 @@ export interface SceneCallbacks {
   onKill(monster: MonsterSpec): number;
   /** 스킬창에서 고른 스킬에 맵에 그릴 이펙트가 없어 자동 스킬로 싸우게 됐을 때 */
   onSkillUnusable?(skillId: number, name: string): void;
+  /** 직접 조작으로 맵 몬스터를 잡았을 때. 떨어뜨릴 메소 금액을 돌려준다(보상이 없으면 0) */
+  onFieldKill?(monster: MonsterSpec): number;
+  /** 직접 조작에서 포털 앞에서 ↑ 를 눌렀을 때. exit 는 그 포털(맵 월드 좌표). 옮기려면 travel 을 부른다 */
+  onManualPortal?(exit: Point): void;
+}
+
+/** 직접 조작 모드에서 장면이 묻는 것 */
+export interface ManualControl {
+  /** 지금 눌린 키 */
+  keys(): ControlInput & { attack: boolean };
+  /** 잡힌 몬스터 자리가 다시 차기까지(ms) */
+  respawnMs(): number;
 }
 
 export interface Scene {
@@ -209,6 +244,15 @@ export interface Scene {
   setChair(chairId: number | null): void;
   /** 탈것. 돌아다니거나 맵을 옮겨 걸을 때 탄다. 의자를 골랐으면 맵을 옮길 때만 탄다. null 이면 걷는다 */
   setMount(mountId: number | null): void;
+  /**
+   * 직접 조작 모드. 켜면 맵 이동·보스전이 끝난 뒤 지금 자리에서 시작하고 맵의 실제 몬스터를 세운다.
+   * null 이면 끄고 바닥으로 돌아가 자동으로 돌아다닌다
+   */
+  setManual(control: ManualControl | null): void;
+  /** 창 포커스. 오래 잃으면 몬스터도 멈춘다 */
+  setManualFocus(focused: boolean): void;
+  /** 키를 누른 순간 낮춘 fps 에서 바로 깨운다 */
+  nudge(): void;
 }
 
 export type CastResult = 'ok' | 'noArt' | 'failed' | 'late' | 'notReady';
@@ -234,6 +278,8 @@ interface Encounter {
   dyingMs: number | null;
   /** 보스전이면 있다. 보스는 프레임마다 원작 기준점에 맞춰 그린다 */
   boss?: BossState;
+  /** 직접 조작 모드의 맵 몬스터면 있다 */
+  field?: { slot: number; patrol: Patrol; platform: Platform; stand: Animation };
 }
 
 interface BossState {
@@ -265,6 +311,9 @@ interface Stage {
   nav: NavGraph | null;
   /** 맵 월드 좌표. page 를 못 받은 것은 앞 레이어에서 빼지 못한다 */
   ladders: LadderRope[];
+  /** 맵 월드 좌표. 직접 조작이 이 발판 위를 움직인다 */
+  footholds: Foothold[];
+  mobs: MapMob[];
 }
 
 type Behavior =
@@ -316,6 +365,35 @@ async function loadMobAnimations(spec: MonsterSpec): Promise<MobAnimations> {
   return { move, hit, die };
 }
 
+interface FieldMobArt {
+  name: string;
+  animations: MobAnimations;
+  stand: Animation;
+}
+
+const fieldMobArts = new Map<number, Promise<FieldMobArt>>();
+
+/** 맵 몬스터는 서 있다가 걷기도 해서 stand 도 받는다. 같은 몬스터는 한 번만 받는다 */
+function loadFieldMobArt(mobId: number): Promise<FieldMobArt> {
+  let pending = fieldMobArts.get(mobId);
+  if (!pending) {
+    pending = fetchStoredJson<MobInfo>(mobInfoUrl(mobId)).then(async ({ name, framebooks }) => {
+      const idle = mobAction(framebooks);
+      const load = (action: string) => loadAnimation(mobAnimationUrl(mobId, action), (frame) => mobFrameUrl(mobId, action, frame));
+      const [move, stand, hit, die] = await Promise.all([
+        load(idle),
+        framebooks.stand && idle !== 'stand' ? load('stand') : null,
+        load(framebooks.hit1 ? 'hit1' : idle),
+        load(framebooks.die1 ? 'die1' : idle),
+      ]);
+      return { name, animations: { move, hit, die }, stand: stand ?? move };
+    });
+    pending.catch(() => fieldMobArts.delete(mobId));
+    fieldMobArts.set(mobId, pending);
+  }
+  return pending;
+}
+
 /**
  * 애니메이션 GIF 는 서버가 그리는 데 오래 걸리고 5xx 로 자주 실패한다(같은 때 프레임 PNG 는 1초 안에 온다).
  * 그러면 첫 프레임 한 장으로 대신한다. still 이면 나중에 다시 받는다
@@ -355,7 +433,7 @@ async function loadSitAnimation(look: number[], action: string): Promise<Animati
 }
 
 /** 지금 모습에서 기기에 받아 둘 동작. 정지 그림으로 대신한 서기·걷기도 다시 받고, 스킬·사다리·로프 동작은 네트워크가 막혀도 그려진다 */
-const STORED_HERO_ACTIONS = ['alert', 'jump', 'ladder', 'rope'];
+const STORED_HERO_ACTIONS = ['alert', 'jump', 'ladder', 'rope', 'prone'];
 /** 맵·캐릭터를 다 받은 뒤에 받기 시작해 처음 그리는 데 끼어들지 않는다 */
 const STORE_HERO_ACTIONS_DELAY_MS = 5000;
 let storedHeroLook = '';
@@ -746,12 +824,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
   }
 
-  function dropMeso(amount: number, x: number, y: number): void {
+  /** floor: 떨어져 멈출 높이. 없으면 바닥 */
+  function dropMeso(amount: number, x: number, y: number, floor = ground ? groundY(ground, x) : y): void {
     if (!ground || amount <= 0) return;
     const coin = new Sprite();
     coin.anchor.set(0.5, 1);
     coin.position.set(x, y);
-    const floor = groundY(ground, x);
     let vy = -0.45;
     let lifeMs = 0;
     loadTexture(mesoDropIconUrl(amount))
@@ -873,7 +951,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       target.clockMs = 0;
       target.sprite.eventMode = 'none';
       if (target.boss) dropBossMeso(target.boss.events.onDefeat(), center.x, target.sprite.y - 10);
-      else dropMeso(callbacks.onKill(target.spec), target.sprite.x, target.sprite.y - 10);
+      else if (target.field) {
+        manual?.table.kill(target.field.slot, manual.clockMs);
+        dropMeso(callbacks.onFieldKill?.(target.spec) ?? 0, target.sprite.x, target.sprite.y - 10, target.sprite.y);
+      } else dropMeso(callbacks.onKill(target.spec), target.sprite.x, target.sprite.y - 10);
     }
   }
 
@@ -1015,6 +1096,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function rideNow(climbing: boolean): boolean {
+    // 직접 조작에는 점프·사다리·공격이 섞이는데 탈것에는 서기·걷기 그림뿐이라 내려서 걷는다
+    if (manual) return false;
     return shouldRide({
       mountReady: mount !== null && heroAnimations !== null,
       chairSelected: chairId !== null,
@@ -1036,6 +1119,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     if (parkedAtPortal) {
       setHeroAction('stand');
       updateHeroSprite(dtMs);
+      return;
+    }
+    if (manual) {
+      stepManual(manual, dtMs);
       return;
     }
     const moveToward = (targetX: number): boolean => {
@@ -1171,7 +1258,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       chairReady: chair !== null && heroAnimations !== null,
       // 보스 그림을 받는 동안과 마을로 돌아와 밝아지는 동안은 마을에 앉아 있는다
       fighting: encounter !== null || (bossBusy && portalStage !== home?.stage),
-      traveling: traveling || parkedAtPortal || navMotion !== null,
+      // 직접 조작 중에는 의자에 앉지 않는다
+      traveling: traveling || parkedAtPortal || navMotion !== null || manual !== null || manualReturning,
       casting: castPose !== null || castHoldMs > 0,
       onGround: ground !== null && navMotion === null,
       moving: heroAction !== 'stand' || behavior.kind !== 'wander' || behavior.pauseMs <= 0,
@@ -1402,6 +1490,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       calibration,
       nav,
       ladders: paged,
+      footholds,
+      mobs: info.mobs ?? [],
       groundLayer: worldGround.layer,
       ground: {
         points: worldGround.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
@@ -1522,12 +1612,18 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     resolve(done: boolean): void;
   } | null = null;
 
+  let navAnimationsLoading = '';
   /** 점프·사다리·로프 동작. 못 받으면 서기·걷기 그림으로 오르내린다 */
   async function loadNavAnimations(): Promise<void> {
     const look = heroLook.join(',');
-    if (navAnimations?.look === look || heroLook.length === 0) return;
-    const [jump, ladder, rope] = await Promise.all(['jump', 'ladder', 'rope'].map((action) => loadHeroAction(heroLook, action)));
-    navAnimations = { look, animations: { jump: jump.animation, ladder: ladder.animation, rope: rope.animation } };
+    if (navAnimations?.look === look || navAnimationsLoading === look || heroLook.length === 0) return;
+    navAnimationsLoading = look;
+    try {
+      const [jump, ladder, rope] = await Promise.all(['jump', 'ladder', 'rope'].map((action) => loadHeroAction(heroLook, action)));
+      navAnimations = { look, animations: { jump: jump.animation, ladder: ladder.animation, rope: rope.animation } };
+    } finally {
+      if (navAnimationsLoading === look) navAnimationsLoading = '';
+    }
   }
 
   function stepNavMotion(dtMs: number): void {
@@ -1622,6 +1718,303 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1000 };
   }
 
+  /** 장면이 묻는 키·리스폰 시간. 있으면 직접 조작을 켜 두려는 것이다 */
+  let manualControl: ManualControl | null = null;
+  let manualFocused = true;
+  let blurredMs = 0;
+  /** 직접 조작을 끈 뒤 바닥까지 내려가는 동안 */
+  let manualReturning = false;
+  let proneAnimation: { look: string; animation: Animation | null } | null = null;
+  let manual: {
+    stage: Stage;
+    controller: Controller;
+    /** 맵 몬스터 자리와 그 자리가 선 발판. 발판을 못 찾은 자리는 비워 둔다 */
+    points: MapMob[];
+    platforms: (Platform | null)[];
+    table: ReturnType<typeof createRespawnTable>;
+    mobs: Encounter[];
+    /** 받는 중인 자리 */
+    loading: Set<number>;
+    /** 화면이 돌아간 시간. 리스폰을 이 시계로 센다 */
+    clockMs: number;
+    attackMs: number;
+    cooldownMs: number;
+    portalCooldownMs: number;
+    poseAction: ControlAction;
+    poseClockMs: number;
+  } | null = null;
+
+  const NO_KEYS = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+
+  function loadProne(): void {
+    const look = heroLook.join(',');
+    if (proneAnimation?.look === look || heroLook.length === 0) return;
+    const loading = { look, animation: null as Animation | null };
+    proneAnimation = loading;
+    loadHeroAction(heroLook, 'prone').then(
+      ({ animation }) => (loading.animation = animation),
+      () => {
+        // 엎드린 그림이 없으면 서 있는 그림으로 둔다
+      },
+    );
+  }
+
+  /** 맵 이동·보스전이 끝나면 켜고, 맵이 바뀌면 새 맵에서 다시 시작하고, 끄면 바닥으로 돌려보낸다 */
+  function syncManual(): void {
+    if (!manualControl) {
+      if (manual) endManual();
+      return;
+    }
+    if (manual && manual.stage !== portalStage) {
+      clearManualMobs(manual);
+      manual = null;
+    }
+    if (manual || traveling || bossBusy || navMotion || parkedAtPortal || manualReturning || !ground || !portalStage) return;
+    beginManual(portalStage);
+  }
+
+  function beginManual(stage: Stage): void {
+    // 돌던 자동 사냥 몬스터는 거둔다. 잡기 전이라 보상·사냥 시계는 그대로다
+    if (encounter && !encounter.boss) {
+      actors.removeChild(encounter.sprite);
+      encounter.sprite.destroy();
+      encounter = null;
+    }
+    const world = buildControlWorld(stage.footholds, stage.ladders);
+    const { dx, dy } = stage.calibration;
+    const points = spawnPoints(stage.mobs);
+    manual = {
+      stage,
+      controller: createController(world, { x: hero.x - dx, y: hero.y - dy }, facing),
+      points,
+      platforms: points.map((point) => platformBelow(world, point, 20)),
+      table: createRespawnTable(points.length),
+      mobs: [],
+      loading: new Set(),
+      clockMs: 0,
+      attackMs: 0,
+      cooldownMs: 0,
+      portalCooldownMs: 0,
+      poseAction: 'stand',
+      poseClockMs: 0,
+    };
+    behavior = { kind: 'wander', targetX: hero.x, pauseMs: 0 };
+    void loadNavAnimations().catch(() => {});
+    loadProne();
+    points.forEach((_, slot) => spawnFieldMob(manual!, slot));
+  }
+
+  function clearManualMobs(state: NonNullable<typeof manual>): void {
+    state.mobs.forEach((mob) => {
+      actors.removeChild(mob.sprite);
+      mob.sprite.destroy();
+    });
+    state.mobs = [];
+  }
+
+  /** 서 있던 발판에서 자동으로 이어 간다. 바닥이 아니면 길을 따라 바닥까지 내려간다 */
+  function endManual(): void {
+    const state = manual!;
+    manual = null;
+    clearManualMobs(state);
+    resetFront();
+    const at = state.controller.settle();
+    const { stage } = state;
+    const pose = state.controller.pose;
+    hero.x = pose.x + stage.calibration.dx;
+    hero.y = pose.y + stage.calibration.dy;
+    setHeroAction('stand');
+    behavior = { kind: 'wander', targetX: hero.x, pauseMs: 1000 };
+    if (at && stage.nav && at.platform !== stage.nav.main && stage === portalStage) {
+      manualReturning = true;
+      void returnToGround(stage, at).finally(() => (manualReturning = false));
+      return;
+    }
+    hero.x = clampToGround(hero.x);
+    if (ground) hero.y = groundY(ground, hero.x);
+  }
+
+  function spawnFieldMob(state: NonNullable<typeof manual>, slot: number): void {
+    const point = state.points[slot];
+    const platform = state.platforms[slot];
+    if (!platform || state.loading.has(slot)) return;
+    state.loading.add(slot);
+    loadFieldMobArt(point.id)
+      .then((art) => {
+        if (manual !== state || !state.table.alive(slot) || state.mobs.some((mob) => mob.field?.slot === slot)) return;
+        const sprite = new Sprite(art.stand.frames[0]);
+        sprite.anchor.set(0.5, 1);
+        sprite.alpha = 0;
+        sprite.eventMode = 'none';
+        actors.addChildAt(sprite, 0);
+        state.mobs.push({
+          spec: { id: point.id, name: art.name },
+          sprite,
+          animations: art.animations,
+          hp: fieldMobHits(),
+          clockMs: Math.random() * 1000,
+          ageMs: 0,
+          hitMs: 0,
+          dyingMs: null,
+          field: { slot, patrol: createPatrol(point, platform), platform, stand: art.stand },
+        });
+      })
+      .catch(() => {
+        // 못 받은 몬스터 자리는 다음 리스폰 때 다시 받는다
+        state.table.kill(slot, state.clockMs);
+      })
+      .finally(() => state.loading.delete(slot));
+  }
+
+  /** 포털 앞에 서 있으면 그 포털(맵 월드 좌표) */
+  function portalAt(stage: Stage, x: number, y: number): Point | null {
+    const portals = routePortals.get(stage.mapId) ?? [];
+    const found = portals.find((portal) => {
+      const under = stage.nav && platformUnder(stage.nav, portal);
+      const footY = under ? surfaceY(stage.nav!.platforms[under.platform], portal.x) : portal.y;
+      return Math.abs(portal.x - x) <= MANUAL_PORTAL_REACH_X && Math.abs(footY - y) <= MANUAL_PORTAL_REACH_Y;
+    });
+    return found ? { x: found.x, y: found.y } : null;
+  }
+
+  function stepManual(state: NonNullable<typeof manual>, dtMs: number): void {
+    const keys = manualControl?.keys() ?? NO_KEYS;
+    state.attackMs = Math.max(0, state.attackMs - dtMs);
+    state.cooldownMs = Math.max(0, state.cooldownMs - dtMs);
+    state.portalCooldownMs = Math.max(0, state.portalCooldownMs - dtMs);
+    const { stage } = state;
+    const before = state.controller.pose;
+    const portal = before.platform !== null ? portalAt(stage, before.x, before.y) : null;
+    if (keys.up && portal && state.portalCooldownMs <= 0 && callbacks.onManualPortal) {
+      state.portalCooldownMs = MANUAL_PORTAL_COOLDOWN_MS;
+      callbacks.onManualPortal(portal);
+    }
+    // 원작처럼 땅에서 공격하는 동안은 걷지도 뛰지도 않는다. 공중에서는 날던 대로 날아간다
+    const locked = state.attackMs > 0 && before.platform !== null;
+    const pose = state.controller.update(dtMs, locked ? NO_KEYS : { ...keys, up: keys.up && !portal });
+    if (keys.attack && state.cooldownMs <= 0 && pose.action !== 'ladder' && pose.action !== 'rope') manualAttack(state);
+    hero.x = pose.x + stage.calibration.dx;
+    hero.y = pose.y + stage.calibration.dy;
+    facing = pose.facing;
+    showFront(stage, pose.layer);
+
+    if (state.attackMs > 0 && heroAnimations) {
+      updateHeroSprite(dtMs);
+      return;
+    }
+    const look = heroLook.join(',');
+    const climbing = pose.action === 'ladder' || pose.action === 'rope';
+    const animation =
+      pose.action === 'prone'
+        ? (proneAnimation?.look === look ? proneAnimation.animation : null)
+        : pose.action === 'jump' || climbing
+          ? (navAnimations?.look === look ? navAnimations.animations[pose.action as keyof NavPoseAnimations] : null)
+          : null;
+    if (!animation) {
+      void loadNavAnimations().catch(() => {});
+      loadProne();
+      setHeroAction(pose.action === 'walk' || (climbing && pose.moving) ? 'walk' : 'stand');
+      updateHeroSprite(dtMs);
+      return;
+    }
+    if (state.poseAction !== pose.action) state.poseClockMs = 0;
+    state.poseAction = pose.action;
+    // 탄 채 직접 조작을 켠 첫 프레임에 탈것 그림 위치가 남지 않게 한다
+    hero.pivot.set(0, 0);
+    showMountLayers(false);
+    // 사다리·로프는 오르내릴 때만 손발이 움직인다
+    if (!climbing || pose.moving) state.poseClockMs += dtMs;
+    hero.texture = animation.frames[frameAt(animation.delays, state.poseClockMs, true)];
+    hero.scale.x = climbing ? 1 : -facing;
+  }
+
+  /** A 키. 공격 동작 길이가 다시 쓰기까지 쉬는 시간이다. 동작 가운데쯤 앞쪽 몬스터에 대미지가 들어간다 */
+  function manualAttack(state: NonNullable<typeof manual>): void {
+    const duration = heroAnimations ? totalMs(heroAnimations.attack) : NO_ART_ATTACK_MS;
+    state.attackMs = duration;
+    state.cooldownMs = duration;
+    state.poseAction = 'stand';
+    if (heroAnimations) {
+      heroAction = 'stand';
+      setHeroAction('attack');
+    }
+    if (skill) playLayers(skill.effect, hero.x, hero.y, facing);
+    let waitMs = duration * HIT_POINT_RATIO;
+    addEffect(new Container(), worldEffects, (dtMs) => {
+      waitMs -= dtMs;
+      if (waitMs > 0) return true;
+      if (manual === state) hitFieldMobs(state);
+      return false;
+    });
+  }
+
+  function hitFieldMobs(state: NonNullable<typeof manual>): void {
+    const pose = state.controller.pose;
+    const alive = state.mobs.filter((mob) => mob.dyingMs === null);
+    const at = alive.map((mob) => ({ x: mob.field!.patrol.x, y: surfaceY(mob.field!.platform, mob.field!.patrol.x) }));
+    const count = skill?.mobCount ?? DEFAULT_MOB_COUNT;
+    pickTargets(pose, at, skill?.range ?? fallbackRange, count).forEach((index) => strike(alive[index], false));
+  }
+
+  function updateManualMobs(state: NonNullable<typeof manual>, dtMs: number): void {
+    const frozen = !manualFocused && blurredMs > MANUAL_FREEZE_MS;
+    if (!frozen) {
+      state.clockMs += dtMs;
+      state.table.revive(state.clockMs, manualControl?.respawnMs() ?? Infinity).forEach((slot) => spawnFieldMob(state, slot));
+    }
+    const { dx, dy } = state.stage.calibration;
+    state.mobs = state.mobs.filter((mob) => {
+      const { sprite, animations, field } = mob;
+      const { patrol, platform } = field!;
+      mob.clockMs += dtMs;
+      mob.hitMs = Math.max(0, mob.hitMs - dtMs);
+      if (mob.dyingMs !== null) {
+        mob.dyingMs += dtMs;
+        const index = frameAt(animations.die.delays, mob.dyingMs, false);
+        if (index >= 0) sprite.texture = animations.die.frames[index];
+        else sprite.alpha = Math.max(0, sprite.alpha - dtMs / 300);
+        if (sprite.alpha > 0) return true;
+        actors.removeChild(sprite);
+        sprite.destroy();
+        return false;
+      }
+      if (mob.hitMs > 0) {
+        sprite.texture = animations.hit.frames[0];
+        patrol.direction = hero.x > sprite.x ? 1 : -1;
+      } else {
+        if (!frozen) stepPatrol(patrol, dtMs, MOB_SPEED);
+        const animation = patrol.moving && !frozen ? animations.move : field!.stand;
+        sprite.texture = animation.frames[frameAt(animation.delays, mob.clockMs, true)];
+      }
+      sprite.alpha = Math.min(1, sprite.alpha + dtMs / 300);
+      sprite.x = patrol.x + dx;
+      sprite.y = surfaceY(platform, patrol.x) + dy;
+      // 메이플 스프라이트는 왼쪽을 보고 그려져 있다
+      sprite.scale.x = patrol.direction > 0 ? -1 : 1;
+      return true;
+    });
+  }
+
+  /** 직접 조작 중 움직이는 것이 있어 30fps 로 그려야 한다. 화면 밖 몬스터는 세지 않는다 */
+  function manualBusy(): boolean {
+    if (!manual) return false;
+    const pose = manual.controller.pose;
+    if (manual.attackMs > 0 || pose.moving || pose.action === 'jump' || castPose) return true;
+    if (!manualFocused && blurredMs > MANUAL_FREEZE_MS) return false;
+    const left = -world.position.x / worldScale - MANUAL_VIEW_SLACK;
+    const top = -world.position.y / worldScale - MANUAL_VIEW_SLACK;
+    const right = left + width / worldScale + MANUAL_VIEW_SLACK * 2;
+    const bottom = top + height / worldScale + MANUAL_VIEW_SLACK * 2;
+    return manual.mobs.some(
+      (mob) =>
+        mob.sprite.x >= left &&
+        mob.sprite.x <= right &&
+        mob.sprite.y >= top &&
+        mob.sprite.y <= bottom &&
+        (mob.field!.patrol.moving || mob.hitMs > 0 || mob.dyingMs !== null || mob.sprite.alpha < 1),
+    );
+  }
+
   /** 보스를 잡고 메소를 다 주운 뒤 마을로 돌아간다 */
   async function leaveBoss(): Promise<void> {
     await fadeTo(1);
@@ -1682,6 +2075,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function stillForMs(): number {
+    if (manual) return manualBusy() ? 0 : Infinity;
     if (navMotion || castPose || heroAction !== 'stand') return 0;
     if (parkedAtPortal || seated) return Infinity;
     if (behavior.kind !== 'wander') return 0;
@@ -1694,7 +2088,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     const fps = targetFps({
       running,
       stillForMs: stillForMs(),
-      fighting: encounter !== null,
+      fighting: encounter !== null || manualBusy(),
       fading: fade.alpha !== fadeTarget,
       cameraSettled,
       transientEffects: effects.length - loops.length,
@@ -1736,9 +2130,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function step(dtMs: number): void {
     castHoldMs = Math.max(0, castHoldMs - dtMs);
+    blurredMs = manualFocused ? 0 : blurredMs + dtMs;
+    syncManual();
     updateHero(dtMs);
     updateSeat(dtMs);
     updateEncounter(dtMs);
+    if (manual) updateManualMobs(manual, dtMs);
     updateCamera(Math.min(1, dtMs / 250));
     bossGauge.update(dtMs);
     if (fade.alpha !== fadeTarget) {
@@ -1765,7 +2162,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   return {
     get inEncounter() {
-      return encounter !== null || encounterLoading || bossBusy;
+      return encounter !== null || encounterLoading || bossBusy || manualReturning;
     },
     async setTown(town) {
       const stage = await prepareStage(town.mapId, town.name);
@@ -1823,11 +2220,11 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       });
     },
     startEncounter(spec, hits) {
-      if (encounter || encounterLoading || bossBusy || !ground) return;
+      if (encounter || encounterLoading || bossBusy || !ground || manualControl) return;
       encounterLoading = true;
       loadMobAnimations(spec)
         .then((animations) => {
-          if (!ground) return;
+          if (!ground || manualControl) return;
           const sprite = new Sprite(animations.move.frames[0]);
           sprite.anchor.set(0.5, 1);
           const side = Math.random() < 0.5 ? -1 : 1;
@@ -1998,11 +2395,13 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     async travel(mapId, label, exit, arrival) {
       if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 맵을 옮길 수 없음');
       const from = home;
+      // 직접 조작이면 캐릭터가 이미 포털 앞에 있어서 걸어가지 않고, 나와서도 바닥으로 내려가지 않는다
+      const handDriven = manual !== null;
       const stage = await prepareStage(mapId, label);
-      void loadNavAnimations();
+      void loadNavAnimations().catch(() => {});
       traveling = true;
       try {
-        parkAtPortal(from.stage, await goToPortal(from.stage, exit));
+        parkAtPortal(from.stage, handDriven ? from.stage.nav && platformUnder(from.stage.nav, exit) : await goToPortal(from.stage, exit));
         await fadeTo(1);
         home = { stage, town: from.town };
         enterStage(stage, from.town);
@@ -2013,6 +2412,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         await fadeTo(0);
         showBanner(stage.name);
         unpark();
+        if (handDriven) return;
         // 사냥은 바닥에서만 해서, 윗층 포털로 나왔으면 바닥까지 내려온 뒤에 끝난다
         if (arrived) await returnToGround(stage, arrived);
         // 바닥 포털로 나왔으면 포털 위가 아니라 비켜 선 자리에 앉는다
@@ -2038,6 +2438,14 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       mountId = next;
       loadMount();
     },
+    setManual(control) {
+      manualControl = control;
+      wake();
+    },
+    setManualFocus(focused) {
+      manualFocused = focused;
+    },
+    nudge: () => wake(),
     setRoutePortals(portals) {
       routePortals = portals;
       if (portalStage) placePortals(portalStage);

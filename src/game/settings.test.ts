@@ -309,3 +309,17 @@ describe('설정 해석', () => {
     expect(idleLimitSeconds(withSettings({ idleMinutes: 10 }))).toBe(600);
   });
 });
+
+describe('직접 조작 설정', () => {
+  it('처음과 예전 판 저장은 꺼져 있다', () => {
+    expect(DEFAULT_SETTINGS.manualControl).toBe(false);
+    expect(normalizeSettings({ version: 1, encounterMinutes: 5 }).manualControl).toBe(false);
+    expect(normalizeSettings({ manualControl: 'yes' }).manualControl).toBe(false);
+  });
+
+  it('켜 두면 저장했다 읽어도 켜져 있고, 다른 설정을 고쳐도 남는다', () => {
+    const settings = withSettings({ manualControl: true });
+    expect(parseSettings(JSON.stringify(settings)).manualControl).toBe(true);
+    expect(normalizeSettings({ ...settings, idleMinutes: 10 })).toEqual({ ...settings, idleMinutes: 10 });
+  });
+});
