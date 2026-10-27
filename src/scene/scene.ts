@@ -62,6 +62,7 @@ import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } f
 import { lerpColor } from './color';
 import { applyEachLoaded } from './heroLoad';
 import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
+import { seatSpotX, shouldSit, wanderPauseLeft, wanderPauseMs } from './seating';
 import { viewportFor } from './viewport';
 
 const VIEW_SCALE = 0.65;
@@ -202,10 +203,8 @@ export interface Scene {
    * notReady. 겉모습뿐이다
    */
   castSkill(skillId: number): Promise<CastResult>;
-  /** 쉴 때 앉을 의자. null 이면 의자 없이 선다 */
+  /** 앉을 의자. 있으면 돌아다니지 않고 싸움·맵 이동·스킬 동작 때만 일어선다. null 이면 의자 없이 돌아다닌다 */
   setChair(chairId: number | null): void;
-  /** 자리 비움. 의자가 있으면 돌아다니지 않고 계속 앉아 있는다 */
-  setResting(resting: boolean): void;
 }
 
 export type CastResult = 'ok' | 'noArt' | 'failed' | 'late' | 'notReady';
@@ -539,7 +538,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let chairRetryAt = Infinity;
   let seated = false;
   let seatClockMs = 0;
-  let resting = false;
+  /** 포털까지 걸어가기 시작해서 옮긴 맵의 바닥에 내려올 때까지 */
+  let traveling = false;
+  /** 동작 그림 없이 쓴 스킬로 서 있을 남은 시간 */
+  let castHoldMs = 0;
   let behavior: Behavior = { kind: 'wander', targetX: 0, pauseMs: 1000 };
   let encounter: Encounter | null = null;
   let encounterLoading = false;
@@ -970,11 +972,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     };
 
     if (behavior.kind === 'wander') {
+      const seatHeld = chair !== null && !traveling;
       if (behavior.pauseMs > 0) {
-        if (!(resting && chair)) behavior.pauseMs -= dtMs;
+        behavior.pauseMs = wanderPauseLeft(behavior.pauseMs, dtMs, seatHeld);
         if (heroAction !== 'attack') setHeroAction('stand');
       } else if (moveToward(behavior.targetX)) {
-        behavior = { kind: 'wander', targetX: randomGroundX(), pauseMs: 1500 + Math.random() * 3000 };
+        behavior = { kind: 'wander', targetX: randomGroundX(), pauseMs: wanderPauseMs(seatHeld, Math.random()) };
       }
     } else if (encounter) {
       const side = hero.x < encounter.sprite.x ? -1 : 1;
@@ -1028,6 +1031,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function placeChair(art: ChairArt, layers: LoadedChairLayer[], sit: Animation): void {
+    const firstChair = chair === null;
     clearChair();
     const { back, front } = layerOrder(layers.map((loaded) => ({ z: loaded.data.z, loaded })));
     const place = (container: Container) => (each: { loaded: LoadedChairLayer }) => {
@@ -1036,28 +1040,31 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       return { loaded: each.loaded, delays: each.loaded.frames.map((frame) => frame.delay), sprite };
     };
     chair = { art, layers: [...back.map(place(chairBack)), ...front.map(place(chairFront))], sit, loopDelayMs: chairLoopDelayMs(art) };
+    // 의자를 처음 받으면 돌아다니던 중이어도 바닥 끝·포털에서 비켜 선 가까운 자리에 앉는다
+    if (firstChair && !traveling && !bossBusy && portalStage?.ground === ground && behavior.kind === 'wander') {
+      behavior = { kind: 'wander', targetX: seatSpot(portalStage, hero.x), pauseMs: 0 };
+    }
   }
 
-  /** 마을·사냥터 바닥에서 돌아다니다 멈춰 선 동안. 싸움·맵 이동·사다리·스킬 동작 중에는 앉지 않는다 */
-  function restingNow(): boolean {
-    return (
-      chair !== null &&
-      heroAnimations !== null &&
-      ground !== null &&
-      !navMotion &&
-      !parkedAtPortal &&
-      !castPose &&
-      !encounter &&
-      !bossBusy &&
-      behavior.kind === 'wander' &&
-      behavior.pauseMs > 0 &&
-      heroAction === 'stand'
-    );
+  /** 맵에 들어와 앉을 자리. 의자가 없으면 x 그대로다 */
+  function seatSpot(stage: Stage, x: number, extraPortalXs: number[] = []): number {
+    if (!chair) return x;
+    const portals = (routePortals.get(stage.mapId) ?? []).map((portal) => portal.x + stage.calibration.dx);
+    return seatSpotX(x, stage.ground, [...extraPortalXs, ...portals]);
   }
 
   /** 서기·걷기 그림을 고른 뒤에 앉은 그림으로 덮는다. 일어설 때는 같은 프레임에 서기 그림이 이미 들어 있다 */
   function updateSeat(dtMs: number): void {
-    if (!restingNow()) {
+    const sitting = shouldSit({
+      chairReady: chair !== null && heroAnimations !== null,
+      // 보스 그림을 받는 동안과 마을로 돌아와 밝아지는 동안은 마을에 앉아 있는다
+      fighting: encounter !== null || (bossBusy && portalStage !== home?.stage),
+      traveling: traveling || parkedAtPortal || navMotion !== null,
+      casting: castPose !== null || castHoldMs > 0,
+      onGround: ground !== null && navMotion === null,
+      moving: heroAction !== 'stand' || behavior.kind !== 'wander' || behavior.pauseMs <= 0,
+    });
+    if (!sitting) {
       if (seated) standUp();
       return;
     }
@@ -1505,7 +1512,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
     if (home) {
       enterStage(home.stage, home.town);
-      hero.x = randomGroundX();
+      hero.x = seatSpot(home.stage, randomGroundX());
       hero.y = groundY(home.stage.ground, hero.x);
     }
     behavior = { kind: 'wander', targetX: randomGroundX(), pauseMs: 1000 };
@@ -1555,9 +1562,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function stillForMs(): number {
     if (navMotion || castPose || heroAction !== 'stand') return 0;
-    if (parkedAtPortal) return Infinity;
+    if (parkedAtPortal || seated) return Infinity;
     if (behavior.kind !== 'wander') return 0;
-    return behavior.pauseMs > 0 && resting && chair ? Infinity : Math.max(0, behavior.pauseMs);
+    return Math.max(0, behavior.pauseMs);
   }
 
   /** 서 있을 때는 rAF 를 멈추고 타이머로 IDLE_FPS 만큼만 그린다. rAF 를 걸어 두기만 해도 WebView 가 매 화면 갱신마다 깨어난다 */
@@ -1603,6 +1610,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function step(dtMs: number): void {
+    castHoldMs = Math.max(0, castHoldMs - dtMs);
     updateHero(dtMs);
     updateSeat(dtMs);
     updateEncounter(dtMs);
@@ -1639,7 +1647,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (ground) await fadeTo(1);
       home = { stage, town };
       enterStage(stage, town);
-      hero.x = randomGroundX();
+      hero.x = seatSpot(stage, randomGroundX());
       hero.y = groundY(stage.ground, hero.x);
       behavior = { kind: 'wander', targetX: randomGroundX(), pauseMs: 1000 };
       updateCamera(1);
@@ -1866,6 +1874,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       const from = home;
       const stage = await prepareStage(mapId, label);
       void loadNavAnimations();
+      traveling = true;
       try {
         parkAtPortal(from.stage, await goToPortal(from.stage, exit));
         await fadeTo(1);
@@ -1880,17 +1889,23 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         unpark();
         // 사냥은 바닥에서만 해서, 윗층 포털로 나왔으면 바닥까지 내려온 뒤에 끝난다
         if (arrived) await returnToGround(stage, arrived);
+        // 바닥 포털로 나왔으면 포털 위가 아니라 비켜 선 자리에 앉는다
+        if (chair && ground === stage.ground) {
+          behavior = { kind: 'wander', targetX: seatSpot(stage, hero.x, arrived ? [] : [hero.x]), pauseMs: 0 };
+        }
       } finally {
         unpark();
+        traveling = false;
       }
     },
     setChair(next) {
       if (next === chairId) return;
       chairId = next;
       loadChair();
-    },
-    setResting(next) {
-      resting = next;
+      // 의자를 내리면 쉬던 자리에서 바로 걸어 나간다
+      if (next === null && !traveling && !bossBusy && behavior.kind === 'wander' && behavior.pauseMs > 0) {
+        behavior = { kind: 'wander', targetX: randomGroundX(), pauseMs: 0 };
+      }
     },
     setRoutePortals(portals) {
       routePortals = portals;
@@ -1901,6 +1916,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       wake();
       const motion = readyMotions.get(motionKey(knownActions.get(skillId) ?? [])) ?? readyMotions.get(motionKey([])) ?? null;
       if (motion && heroAnimations) castPose = { animation: motion, clockMs: 0 };
+      else castHoldMs = CAST_HOLD_MS;
       // 쓰는 동안 걸어가 버리면 이펙트만 제자리에 남는다
       const holdMs = motion ? totalMs(motion) : CAST_HOLD_MS;
       if (behavior.kind === 'wander') behavior = { kind: 'wander', targetX: hero.x, pauseMs: Math.max(behavior.pauseMs, holdMs) };

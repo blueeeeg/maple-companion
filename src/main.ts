@@ -1004,7 +1004,6 @@ async function tick(): Promise<void> {
     muted: isMuted(),
     resting,
   });
-  scene.setResting(resting);
 
   const pinned = pinnedTown(settings, info.level);
   if (!town) {
