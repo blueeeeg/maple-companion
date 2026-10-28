@@ -1,7 +1,9 @@
-import { BOSSES, ZAKUM_ID } from './bosses';
+import type { Era } from '../maple/api';
+import { BOSSES, ZAKUM_ID, bossesOf } from './bosses';
 import { type Chair, chairOf, chairsOfBoss, isChairItem } from './chairs';
+import { classicEquipEntries } from './equipment.classic';
 import { type Mount, isMountItem, mountOf, mountsOfBoss } from './mounts';
-import { JOB_BRANCHES, type JobBranchId, type JobLineId, type JobPath, lineOf } from './jobs';
+import { JOB_BRANCHES, type JobBranchId, type JobLineId, type JobPath, jobBranches, lineOf } from './jobs';
 
 /** 장비 컬렉션 아이템을 입는 자리. 캐시 자리에 귀고리·방패가 더 있다 */
 export type EquipSlot =
@@ -30,7 +32,7 @@ export type EquipSource =
   | { kind: 'level'; level: number }
   | { kind: 'shop'; price: number };
 
-type EntryItems =
+export type EntryItems =
   | { kind: 'fixed'; ids: number[] }
   | { kind: 'line'; byLine: Record<JobLineId, number> }
   | { kind: 'weapon'; byType: Record<number, number> };
@@ -100,7 +102,7 @@ export function canWear(path: JobPath | null, itemId: number): boolean {
   return wieldableTypes(branch).includes(weaponType(itemId));
 }
 
-type Named = [id: number, name: string];
+export type Named = [id: number, name: string];
 
 const names = new Map<number, string>();
 const fixed = (...items: Named[]): EntryItems => {
@@ -559,52 +561,70 @@ export const EQUIP_ENTRIES: EquipEntry[] = [
   { id: 'woodenMallet', name: '나무 망치', slot: 'weapon', source: shop(25_000), items: fixed([1422000, '나무 망치']) },
 ];
 
-const entryByItem = new Map<number, EquipEntry>();
-EQUIP_ENTRIES.forEach((entry) => {
-  const ids =
-    entry.items.kind === 'fixed'
-      ? entry.items.ids
-      : Object.values(entry.items.kind === 'line' ? entry.items.byLine : entry.items.byType);
-  ids.forEach((id) => entryByItem.set(id, entry));
-});
+/** 클래식(GMS 83) 캐릭터가 모으는 표. equipment.classic.ts */
+export const CLASSIC_EQUIP_ENTRIES: EquipEntry[] = classicEquipEntries({ fixed, byLine, series, boss, level, shop });
+
+/** 그 시대 캐릭터가 모으는 표 */
+export const equipEntries = (era: Era = 'current'): EquipEntry[] => (era === 'classic' ? CLASSIC_EQUIP_ENTRIES : EQUIP_ENTRIES);
+
+function indexEntries(entries: EquipEntry[]): Map<number, EquipEntry> {
+  const byItem = new Map<number, EquipEntry>();
+  entries.forEach((entry) => {
+    const ids =
+      entry.items.kind === 'fixed'
+        ? entry.items.ids
+        : Object.values(entry.items.kind === 'line' ? entry.items.byLine : entry.items.byType);
+    ids.forEach((id) => byItem.set(id, entry));
+  });
+  return byItem;
+}
+const entryByItem: Record<Era, Map<number, EquipEntry>> = {
+  current: indexEntries(EQUIP_ENTRIES),
+  classic: indexEntries(CLASSIC_EQUIP_ENTRIES),
+};
 
 /** 보스 드롭·레벨 선물 알림이 같이 쓰도록 의자·탈것 이름도 돌려준다 */
 export const equipItemName = (itemId: number) =>
   names.get(itemId) ?? chairOf(itemId)?.name ?? mountOf(itemId)?.name ?? `아이템 ${itemId}`;
-export const equipEntryOf = (itemId: number): EquipEntry | null => entryByItem.get(itemId) ?? null;
-export const isEquipItem = (itemId: number) => entryByItem.has(itemId);
+export const equipEntryOf = (itemId: number, era: Era = 'current'): EquipEntry | null => entryByItem[era].get(itemId) ?? null;
+/** 어느 시대든 컬렉션 아이템인지. 캐시 아이템과 가르는 데 쓴다 */
+export const isEquipItem = (itemId: number) => entryByItem.current.has(itemId) || entryByItem.classic.has(itemId);
 
 /**
- * 시리즈 무기 중 그 갈래 것. 갈래가 3차부터 이미 들고 있는 기본 무기와 같으면 받을 맛이 없어서
+ * 시리즈 무기 중 그 갈래 것. 갈래가 이미 들고 있는 차수 무기와 같으면 받을 맛이 없어서
  * 마법사는 스태프·완드 중 다른 쪽으로 바꾸고, 바꿀 것이 없으면 null
  */
-function resolveWeapon(byType: Record<number, number>, branch: JobBranchId): number | null {
-  const own = JOB_BRANCHES[branch].weapons[1];
-  const item = byType[weaponType(own)];
-  if (item !== undefined && item !== own) return item;
-  if (JOB_BRANCHES[branch].line !== 'magician') return null;
-  return byType[weaponType(own) === STAFF ? WAND : STAFF] ?? null;
+function resolveWeapon(byType: Record<number, number>, branch: JobBranchId, era: Era): number | null {
+  const { weapons, line } = jobBranches(era)[branch];
+  const ownType = weaponType(weapons[weapons.length - 1]);
+  const item = byType[ownType];
+  if (item !== undefined && !weapons.includes(item)) return item;
+  if (line !== 'magician') return null;
+  const other = byType[ownType === STAFF ? WAND : STAFF];
+  return other !== undefined && !weapons.includes(other) ? other : null;
 }
 
 /** 이 캐릭터가 이 칸에서 모을 수 있는 아이템. 갈래·계열이 아직 없거나 못 드는 무기·방패면 빈 배열이다 */
-export function entryItems(entry: EquipEntry, path: JobPath | null): number[] {
+export function entryItems(entry: EquipEntry, path: JobPath | null, era: Era = 'current'): number[] {
   const { items } = entry;
   if (items.kind === 'line') return path ? [items.byLine[lineOf(path)]] : [];
   if (items.kind === 'weapon') {
     const branch = branchOf(path);
-    const item = branch ? resolveWeapon(items.byType, branch) : null;
+    const item = branch ? resolveWeapon(items.byType, branch, era) : null;
     return item === null ? [] : [item];
   }
   return items.ids.filter((id) => canWear(path, id));
 }
 
 /** 상점 칸에 늘어놓을 아이템. 못 드는 무기도 보이고 고르면 까닭을 적는다 */
-export const EQUIP_SHOP_ITEMS: { id: number; price: number }[] = EQUIP_ENTRIES.flatMap(({ source, items }) =>
-  source.kind === 'shop' && items.kind === 'fixed' ? items.ids.map((id) => ({ id, price: source.price })) : [],
-);
+export const equipShopItems = (era: Era = 'current'): { id: number; price: number }[] =>
+  equipEntries(era).flatMap(({ source, items }) =>
+    source.kind === 'shop' && items.kind === 'fixed' ? items.ids.map((id) => ({ id, price: source.price })) : [],
+  );
+export const EQUIP_SHOP_ITEMS = equipShopItems();
 
-export function equipShopPrice(itemId: number): number | null {
-  const source = equipEntryOf(itemId)?.source;
+export function equipShopPrice(itemId: number, era: Era = 'current'): number | null {
+  const source = equipEntryOf(itemId, era)?.source;
   return source?.kind === 'shop' ? source.price : null;
 }
 
@@ -614,8 +634,8 @@ export interface EquipOwner {
 }
 
 /** 메소를 내고 컬렉션에 넣는다. 상점 물건이 아니거나 못 드는 무기거나 이미 있거나 메소가 모자라면 false */
-export function buyEquipItem(owner: EquipOwner, itemId: number, path: JobPath | null): boolean {
-  const price = equipShopPrice(itemId);
+export function buyEquipItem(owner: EquipOwner, itemId: number, path: JobPath | null, era: Era = 'current'): boolean {
+  const price = equipShopPrice(itemId, era);
   if (price === null || !canWear(path, itemId) || owner.equipOwned.includes(itemId) || owner.meso < price) return false;
   owner.meso -= price;
   owner.equipOwned.push(itemId);
@@ -637,14 +657,14 @@ export function rollBossDrops(
   owned: number[],
   pity: EquipPity,
   random = Math.random,
+  era: Era = 'current',
 ): BossDrop {
   const drops: number[] = [];
   const counts = { ...pity[bossId] };
   (['rare', 'veryRare'] as const).forEach((tier) => {
-    const pool = EQUIP_ENTRIES.filter(
-      (entry) => entry.source.kind === 'boss' && entry.source.bossId === bossId && entry.source.tier === tier,
-    )
-      .flatMap((entry) => entryItems(entry, path))
+    const pool = equipEntries(era)
+      .filter((entry) => entry.source.kind === 'boss' && entry.source.bossId === bossId && entry.source.tier === tier)
+      .flatMap((entry) => entryItems(entry, path, era))
       .concat(tier === 'rare' ? [...chairsOfBoss(bossId), ...mountsOfBoss(bossId)].map((each) => each.id) : [])
       .filter((id) => !owned.includes(id));
     if (pool.length === 0) return;
@@ -667,10 +687,11 @@ export function awardBossDrops(
   path: JobPath | null,
   practice: boolean,
   random = Math.random,
+  era: Era = 'current',
 ): number[] {
   if (practice) return [];
   const owned = [...character.equipOwned, ...character.chairOwned, ...character.mountOwned];
-  const { drops, pity } = rollBossDrops(bossId, path, owned, character.equipPity, random);
+  const { drops, pity } = rollBossDrops(bossId, path, owned, character.equipPity, random, era);
   character.equipPity = pity;
   character.equipOwned.push(...drops.filter((id) => !isChairItem(id) && !isMountItem(id)));
   character.chairOwned.push(...drops.filter(isChairItem));
@@ -687,29 +708,29 @@ export function pityProgress(
   return { kills: pity[bossId]?.[tier] ?? 0, limit: DROP_PITY[tier] };
 }
 
-function bossDropNote(bossId: number, tier: DropTier, pity: EquipPity): string {
-  const bossName = BOSSES.find((each) => each.id === bossId)?.name ?? '보스';
+function bossDropNote(bossId: number, tier: DropTier, pity: EquipPity, era: Era): string {
+  const bossName = [...bossesOf(era), ...BOSSES].find((each) => each.id === bossId)?.name ?? '보스';
   const { kills, limit } = pityProgress(bossId, tier, pity);
   return `${bossName} 처치 · ${tier === 'rare' ? '낮은' : '아주 낮은'} 확률 · ${kills}/${limit}`;
 }
 
 /** 아직 없는 칸에 적는 얻는 법. 「핑크빈 처치 · 낮은 확률 · 7/10」·「Lv.150 달성」·「장비 상점 5,000 메소」 */
-export function howToGet(entry: EquipEntry, pity: EquipPity): string {
+export function howToGet(entry: EquipEntry, pity: EquipPity, era: Era = 'current'): string {
   const { source } = entry;
   if (source.kind === 'level') return `Lv.${source.level} 달성 선물`;
   if (source.kind === 'shop') return `장비 상점 ${source.price.toLocaleString()} 메소`;
-  return bossDropNote(source.bossId, source.tier, pity);
+  return bossDropNote(source.bossId, source.tier, pity, era);
 }
 
 /** 의자는 레어 천장을 같이 센다 */
-export const chairHowToGet = (chair: Chair, pity: EquipPity) => bossDropNote(chair.bossId, 'rare', pity);
+export const chairHowToGet = (chair: Chair, pity: EquipPity, era: Era = 'current') => bossDropNote(chair.bossId, 'rare', pity, era);
 
 /** 탈것 보스 드롭은 레어 천장을 같이 센다 */
-export function mountHowToGet(mount: Mount, pity: EquipPity): string {
+export function mountHowToGet(mount: Mount, pity: EquipPity, era: Era = 'current'): string {
   const { source } = mount;
   if (source.kind === 'level') return `Lv.${source.level} 달성 선물`;
   if (source.kind === 'shop') return `장비 상점 ${source.price.toLocaleString()} 메소`;
-  return bossDropNote(source.bossId, 'rare', pity);
+  return bossDropNote(source.bossId, 'rare', pity, era);
 }
 
 /** 레벨에 닿은 선물 중 아직 안 받은 것을 준다. 이미 그 레벨을 넘은 캐릭터도 처음 불렀을 때 받는다 */
@@ -717,9 +738,11 @@ export function grantLevelGifts(
   character: { equipOwned: number[]; equipGifts: number[] },
   level: number,
   path: JobPath | null,
+  era: Era = 'current',
 ): number[] {
-  const granted = EQUIP_ENTRIES.filter((entry) => entry.source.kind === 'level' && entry.source.level <= level)
-    .flatMap((entry) => entryItems(entry, path))
+  const granted = equipEntries(era)
+    .filter((entry) => entry.source.kind === 'level' && entry.source.level <= level)
+    .flatMap((entry) => entryItems(entry, path, era))
     .filter((id) => !character.equipGifts.includes(id));
   granted.forEach((id) => {
     character.equipGifts.push(id);
@@ -729,8 +752,10 @@ export function grantLevelGifts(
 }
 
 /** 모은 칸 수와 이 캐릭터가 모을 수 있는 칸 수. 갈래가 못 드는 무기·방패 칸은 셈에서 뺀다 */
-export function collectionProgress(owned: number[], path: JobPath | null): { owned: number; total: number } {
-  const open = EQUIP_ENTRIES.map((entry) => entryItems(entry, path)).filter((items) => items.length > 0);
+export function collectionProgress(owned: number[], path: JobPath | null, era: Era = 'current'): { owned: number; total: number } {
+  const open = equipEntries(era)
+    .map((entry) => entryItems(entry, path, era))
+    .filter((items) => items.length > 0);
   return { owned: open.filter((items) => items.some((id) => owned.includes(id))).length, total: open.length };
 }
 
@@ -796,23 +821,32 @@ export function hiddenByCash(slot: EquipSlot, cash: Partial<Record<string, numbe
 
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
-/** 저장된 컬렉션 값을 정리한다. 없는 값(예전 저장)은 비우고, 모르는 아이템이나 가진 적 없는 착용은 버린다 */
-export function normalizeEquipData(saved: {
-  equipOwned?: unknown;
-  equipWorn?: unknown;
-  equipPity?: unknown;
-  equipGifts?: unknown;
-}): { equipOwned: number[]; equipWorn: EquipWorn; equipPity: EquipPity; equipGifts: number[] } {
+/**
+ * 저장된 컬렉션 값을 정리한다. 없는 값(예전 저장)은 비우고, 모르는 아이템이나 가진 적 없는 착용은 버린다.
+ * 클래식 캐릭터는 1단계 때 지금 시대 표로 모은 아이템을 가진 채로 두되, 클래식 표에 없는 것은 입지 않는다
+ */
+export function normalizeEquipData(
+  saved: {
+    equipOwned?: unknown;
+    equipWorn?: unknown;
+    equipPity?: unknown;
+    equipGifts?: unknown;
+  },
+  era: Era = 'current',
+): { equipOwned: number[]; equipWorn: EquipWorn; equipPity: EquipPity; equipGifts: number[] } {
+  const isKnown = (id: number) => (era === 'classic' ? isEquipItem(id) : entryByItem.current.has(id));
   const known = (list: unknown) =>
-    Array.isArray(list) ? [...new Set(list.filter((id): id is number => typeof id === 'number' && isEquipItem(id)))] : [];
+    Array.isArray(list) ? [...new Set(list.filter((id): id is number => typeof id === 'number' && isKnown(id)))] : [];
   const equipOwned = known(saved.equipOwned);
   const equipWorn = Object.entries((saved.equipWorn ?? {}) as Record<string, unknown>).reduce<EquipWorn>(
     (worn, [slot, itemId]) =>
-      typeof itemId === 'number' && equipOwned.includes(itemId) && equipSlotOf(itemId) === slot ? equipGear(worn, itemId) : worn,
+      typeof itemId === 'number' && equipOwned.includes(itemId) && equipSlotOf(itemId) === slot && equipEntryOf(itemId, era)
+        ? equipGear(worn, itemId)
+        : worn,
     {},
   );
   const bossIds = new Set(
-    EQUIP_ENTRIES.flatMap((entry) => (entry.source.kind === 'boss' ? [String(entry.source.bossId)] : [])),
+    equipEntries(era).flatMap((entry) => (entry.source.kind === 'boss' ? [String(entry.source.bossId)] : [])),
   );
   const equipPity = Object.entries((saved.equipPity ?? {}) as Record<string, unknown>).reduce<EquipPity>((pity, [bossId, counts]) => {
     if (!bossIds.has(bossId) || typeof counts !== 'object' || counts === null) return pity;

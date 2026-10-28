@@ -10,19 +10,19 @@ import {
   cashWeaponFits,
   composeLook,
   equipCash,
-  fitsGender,
+  cashItemsForSale,
   hasWeapon,
   neighborPages,
   stackTryOn,
   unequipCash,
 } from '../game/cashShop';
 import {
-  EQUIP_SHOP_ITEMS,
   type EquipSlot,
   type EquipWorn,
   canWear,
   equipGear,
   equipItemName,
+  equipShopItems,
   equipShopPrice,
   equipSlotOf,
   isEquipItem,
@@ -299,7 +299,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   const tryingOn = (itemId: number) => Object.values(trying).includes(itemId) || Object.values(tryingGear).includes(itemId);
   const priceOf = (itemId: number) => {
     if (isMountItem(itemId)) return mountShopPrice(itemId) ?? 0;
-    return (isEquipItem(itemId) ? equipShopPrice(itemId) : cashPrice(itemId)) ?? 0;
+    return (isEquipItem(itemId) ? equipShopPrice(itemId, state?.era) : cashPrice(itemId)) ?? 0;
   };
   /** 탈것은 입는 것이 아니라 타는 것이라 「착용 중」 대신 「타는 중」이다 */
   const detailOf = (itemId: number, status: Parameters<typeof cashDetail>[1]) => {
@@ -327,7 +327,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     if (tab === 'gear' || tab === 'mount') {
       items =
         tab === 'gear'
-          ? EQUIP_SHOP_ITEMS.map(({ id }) => ({ id, name: equipItemName(id), requiredGender: 2 }))
+          ? equipShopItems(current.era).map(({ id }) => ({ id, name: equipItemName(id), requiredGender: 2 }))
           : MOUNT_SHOP_ITEMS.map(({ id }) => ({ id, name: mountOf(id)!.name, requiredGender: 2 }));
       items.forEach((item) => names.set(item.id, item.name));
       loading = 'ready';
@@ -356,7 +356,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       (list) => {
         remember(list);
         if (token !== loadToken) return;
-        items = list.filter((item) => fitsGender(item.requiredGender, current.gender));
+        items = cashItemsForSale(list, current.gender, current.era);
         loading = 'ready';
         render();
         warmCashItems();

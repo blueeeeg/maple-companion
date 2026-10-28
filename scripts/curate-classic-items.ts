@@ -12,10 +12,12 @@ await useCache(cacheDir);
 
 // 장비 목록 모듈은 확장자 없는 import 가 있어 node 로 바로 못 불러온다. 장비 ID(1000000번대)만 글자로 읽는다
 const sources = await Promise.all(
-  ['jobs.ts', 'equipment.ts', 'appearance.ts'].map((file) => readFile(new URL(`../src/game/${file}`, import.meta.url), 'utf8')),
+  ['appearance.ts', 'jobs.ts', 'jobs.classic.ts', 'equipment.ts', 'equipment.classic.ts'].map((file) =>
+    readFile(new URL(`../src/game/${file}`, import.meta.url), 'utf8'),
+  ),
 );
 const equipIds = new Set(sources.flatMap((source) => [...source.matchAll(/\b(1\d{6})\b/g)].map((match) => Number(match[1]))));
-const appearance = sources[2];
+const appearance = sources[0];
 const listed = (name: string) => [...(new RegExp(`${name}[^=]*=\\s*([\\s\\S]*?);`).exec(appearance)?.[1] ?? '').matchAll(/\b(\d{5})\b/g)];
 const faceHair = [...listed('FACES'), ...listed('HAIRS')].map((match) => Number(match[1]));
 const skins = [...(/SKINS = \[([^\]]*)\]/.exec(appearance)?.[1] ?? '').matchAll(/\d+/g)].flatMap((match) => [

@@ -5,6 +5,7 @@ import {
   type NpcDialog,
   type NpcPage,
   branchRoute,
+  dialogFrame,
   dialogHeight,
   dialogRows,
   hasFinalConsonant,
@@ -71,6 +72,14 @@ describe('대화창 크기', () => {
   it('긴 글이어도 창 높이를 넘지 않는다', () => {
     expect(dialogHeight(dialogRows(1000, 80))).toBeLessThanOrEqual(230);
   });
+
+  it('클래식은 빅뱅 전 대화창 띠(c 20 · s 58)로 같은 폭에 짓고 창 높이를 넘지 않는다', () => {
+    const classic = dialogFrame('classic');
+    expect(classic.slices.reduce((sum, [, width]) => sum + width, 0)).toBe(DIALOG_WIDTH);
+    expect(dialogHeight(dialogRows(15, 60, classic), classic)).toBe(28 + 20 * 3 + 58);
+    expect(dialogHeight(dialogRows(1000, 150, classic), classic)).toBeLessThanOrEqual(230);
+    expect(dialogFrame()).not.toBe(classic);
+  });
 });
 
 describe('대화 차례', () => {
@@ -109,6 +118,7 @@ function fakeDialog() {
     cancel() {},
     clear() {},
     isOpen: () => state.open,
+    setEra() {},
   };
   return { dialog, state };
 }

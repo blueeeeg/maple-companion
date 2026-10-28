@@ -1,4 +1,6 @@
-import { JOB_BRANCHES, JOB_LINES, type JobBranchId, type JobLineId, type JobPath, lineOf } from './jobs';
+import type { Era } from '../maple/api';
+import { type JobBranchId, type JobLineId, type JobPath, branchSkill, jobBranches, jobLines, lineOf } from './jobs';
+import { CLASSIC_BRANCH_BOOKS, CLASSIC_FIRST } from './skillBook.classic';
 
 /**
  * attack 은 사냥에 쓰는 공격 스킬, active 는 스킬창에서 한 번씩 쓰는 버프·이동 같은 스킬, passive 는 쓰는 스킬이 아니다.
@@ -19,6 +21,10 @@ export interface SkillEntry {
 
 /** 0 은 초보자, 1~6 은 전직 차수 */
 export const SKILL_TIERS = [0, 1, 2, 3, 4, 5, 6] as const;
+/** 클래식은 4차까지다 */
+export const CLASSIC_SKILL_TIERS = [0, 1, 2, 3, 4] as const;
+
+export const skillTiers = (era: Era = 'current'): readonly number[] => (era === 'classic' ? CLASSIC_SKILL_TIERS : SKILL_TIERS);
 
 const entry =
   (type: SkillType, noArt: boolean) =>
@@ -730,23 +736,28 @@ const BRANCH_BOOKS: Record<JobBranchId, SkillEntry[][]> = {
 
 const isBranch = (path: JobPath): path is JobBranchId => path in BRANCH_BOOKS;
 
-/** 차수(0~6) 탭에 늘어놓는 스킬. 직업을 아직 안 골랐으면 초보자 탭만, 2차 갈래를 안 골랐으면 1차 탭까지만 있다 */
-export function tierSkills(path: JobPath | null, tier: number): SkillEntry[] {
+const firstBook = (era: Era) => (era === 'classic' ? CLASSIC_FIRST : FIRST);
+const branchBooks = (era: Era) => (era === 'classic' ? CLASSIC_BRANCH_BOOKS : BRANCH_BOOKS);
+
+/** 차수 탭에 늘어놓는 스킬. 직업을 아직 안 골랐으면 초보자 탭만, 2차 갈래를 안 골랐으면 1차 탭까지만 있다 */
+export function tierSkills(path: JobPath | null, tier: number, era: Era = 'current'): SkillEntry[] {
   if (tier === 0) return BEGINNER;
-  if (!path || tier < 0 || tier > 6) return [];
-  if (tier === 1) return FIRST[lineOf(path)];
-  return isBranch(path) ? BRANCH_BOOKS[path][tier - 2] : [];
+  if (!path || tier < 0 || !skillTiers(era).includes(tier)) return [];
+  if (tier === 1) return firstBook(era)[lineOf(path)];
+  return isBranch(path) ? (branchBooks(era)[path][tier - 2] ?? []) : [];
 }
 
 /** 지금 차수까지 배운 스킬. 초보자 스킬부터 차수 순서다 */
-export function learnedSkills(path: JobPath | null, tier: number): SkillEntry[] {
+export function learnedSkills(path: JobPath | null, tier: number, era: Era = 'current'): SkillEntry[] {
   const reached = path ? tier : 0;
-  return SKILL_TIERS.filter((each) => each <= reached).flatMap((each) => tierSkills(path, each));
+  return skillTiers(era)
+    .filter((each) => each <= reached)
+    .flatMap((each) => tierSkills(path, each, era));
 }
 
 /** 사냥에 고를 수 있는 공격 스킬 */
-export function huntSkillChoices(path: JobPath | null, tier: number): SkillEntry[] {
-  return learnedSkills(path, tier).filter(isHuntable);
+export function huntSkillChoices(path: JobPath | null, tier: number, era: Era = 'current'): SkillEntry[] {
+  return learnedSkills(path, tier, era).filter(isHuntable);
 }
 
 export const isHuntable = (entry: SkillEntry): boolean => entry.type === 'attack' && !entry.noArt;
@@ -754,28 +765,32 @@ export const isHuntable = (entry: SkillEntry): boolean => entry.type === 'attack
 export const isCastable = (entry: SkillEntry): boolean => entry.type === 'active' && !entry.noArt;
 
 /** 스킬창에서 쓸 수 있는 스킬인지. 지금 차수까지 배운 액티브 스킬만 쓴다 */
-export function canCast(path: JobPath | null, tier: number, id: number): boolean {
-  return learnedSkills(path, tier).some((entry) => entry.id === id && isCastable(entry));
+export function canCast(path: JobPath | null, tier: number, id: number, era: Era = 'current'): boolean {
+  return learnedSkills(path, tier, era).some((entry) => entry.id === id && isCastable(entry));
 }
 
-/** 「자동」일 때 쓰는 스킬. 직업 장비처럼 차수마다 정해 둔 스킬이고 5·6차는 4차 스킬이다 */
-export function autoHuntSkill(path: JobPath | null, tier: number): number | null {
+/** 「자동」일 때 쓰는 스킬. 직업 장비처럼 차수마다 정해 둔 스킬이고 4차 뒤(5·6차)는 4차 스킬이다 */
+export function autoHuntSkill(path: JobPath | null, tier: number, era: Era = 'current'): number | null {
   if (!path || tier === 0) return null;
-  if (tier === 1 || !isBranch(path)) return JOB_LINES[lineOf(path)].skill;
-  return JOB_BRANCHES[path].skills[Math.min(tier, 4) - 2];
+  if (tier === 1 || !isBranch(path)) return jobLines(era)[lineOf(path)].skill;
+  return branchSkill(jobBranches(era)[path], tier);
 }
 
 /**
- * 사냥에 실제로 쓸 스킬. 고른 스킬이 없거나 아직 못 배운(다른 캐릭터·갈래에서 옮겨 왔거나 목록에서 빠진) 스킬이면 자동이다.
+ * 사냥에 실제로 쓸 스킬. 고른 스킬이 없거나 아직 못 배운(다른 캐릭터·갈래·시대에서 옮겨 왔거나 목록에서 빠진) 스킬이면 자동이다.
  * 고른 스킬은 겉모습만 바꾼다. 보상·사냥 횟수는 스킬과 상관없다
  */
-export function huntSkill(path: JobPath | null, tier: number, chosenId: number | null): number | null {
-  if (chosenId !== null && huntSkillChoices(path, tier).some((entry) => entry.id === chosenId)) return chosenId;
-  return autoHuntSkill(path, tier);
+export function huntSkill(path: JobPath | null, tier: number, chosenId: number | null, era: Era = 'current'): number | null {
+  if (chosenId !== null && huntSkillChoices(path, tier, era).some((entry) => entry.id === chosenId)) return chosenId;
+  return autoHuntSkill(path, tier, era);
 }
 
-export function findSkill(path: JobPath | null, id: number): SkillEntry | null {
-  return SKILL_TIERS.flatMap((tier) => tierSkills(path, tier)).find((entry) => entry.id === id) ?? null;
+export function findSkill(path: JobPath | null, id: number, era: Era = 'current'): SkillEntry | null {
+  return (
+    skillTiers(era)
+      .flatMap((tier) => tierSkills(path, tier, era))
+      .find((entry) => entry.id === id) ?? null
+  );
 }
 
 /** Skill.wz 경로. 초보자 스킬 1000 은 `000.img/skill/0001000` 처럼 일곱 자리로 채운다 */
@@ -784,18 +799,22 @@ export function skillWzPath(id: number): { img: string; node: string } {
   return { img: node.slice(0, -4), node };
 }
 
-/** 아이콘 그림의 WZ 경로(`_Canvas` 아래). 다른 스킬 그림을 가리키는 것은 미리 읽어 둔 링크(icon)를 쓴다 */
-export function skillIconPath(entry: SkillEntry): string {
-  if (entry.icon) return entry.icon;
+/**
+ * 아이콘 그림의 WZ 경로. 지금 판은 `_Canvas` 아래이고 다른 스킬 그림을 가리키는 것은 미리 읽어 둔 링크(icon)를 쓴다.
+ * v83 은 `_Canvas`·`_outlink` 가 없어 그림이 원래 자리에 있다
+ */
+export function skillIconPath(entry: SkillEntry, era: Era = 'current'): string {
   const { img, node } = skillWzPath(entry.id);
+  if (era === 'classic') return `Skill/${img}.img/skill/${node}/icon`;
+  if (entry.icon) return entry.icon;
   return `Skill/_Canvas/${img}.img/skill/${node}/icon`;
 }
 
 /** 스킬창을 열기 전에 받아 둘 아이콘. 이 직업 길의 모든 탭이고 지금 차수 탭부터다 */
-export function iconPrefetchOrder(path: JobPath | null, tier: number): SkillEntry[] {
+export function iconPrefetchOrder(path: JobPath | null, tier: number, era: Era = 'current'): SkillEntry[] {
   const reached = path ? tier : 0;
-  const tabs = [...SKILL_TIERS].sort((a, b) => Math.abs(a - reached) - Math.abs(b - reached) || b - a);
-  return tabs.flatMap((each) => tierSkills(path, each));
+  const tabs = [...skillTiers(era)].sort((a, b) => Math.abs(a - reached) - Math.abs(b - reached) || b - a);
+  return tabs.flatMap((each) => tierSkills(path, each, era));
 }
 
 /** 스킬 이펙트가 맵에 그릴 만한지. 이펙트 레이어 프레임 수를 받는다. 한 장짜리는 빈 그림이다 */
@@ -807,10 +826,16 @@ export function hasUsableEffect(layerFrameCounts: number[]): boolean {
  * 스킬창에서 쓰거나 맵에서 사냥에 쓸 스킬 데이터를 미리 받을 순서. 지금 차수 탭의 쓸 수 있는 스킬과 사냥 스킬이고,
  * 작은 것부터다. capKb 보다 큰 것은 뺀다(눌렀을 때 받는다)
  */
-export function skillDataPrefetchOrder(path: JobPath | null, tier: number, huntSkillId: number | null, capKb: number): number[] {
+export function skillDataPrefetchOrder(
+  path: JobPath | null,
+  tier: number,
+  huntSkillId: number | null,
+  capKb: number,
+  era: Era = 'current',
+): number[] {
   const reached = path ? tier : 0;
-  const wanted = tierSkills(path, reached).filter((entry) => isCastable(entry) || isHuntable(entry));
-  const hunting = huntSkillId === null ? null : findSkill(path, huntSkillId);
+  const wanted = tierSkills(path, reached, era).filter((entry) => isCastable(entry) || isHuntable(entry));
+  const hunting = huntSkillId === null ? null : findSkill(path, huntSkillId, era);
   if (hunting && !wanted.includes(hunting)) wanted.push(hunting);
   return wanted
     .filter((entry) => entry.kb !== undefined && entry.kb <= capKb)

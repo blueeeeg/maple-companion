@@ -1,6 +1,6 @@
 // 원작 BGM 목록(Sound.wz 의 Bgm 폴더)과 앱이 아는 맵의 BGM 을 maplestory.io 에서 읽어 src/audio/bgmCatalog.ts 로 쓴다. 개발용 도구다.
 // node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더] [--era classic]
-// 클래식(GMS 83)은 클래식 마을·사냥터 맵의 BGM 만 src/audio/bgmCatalog.classic.ts 로 쓴다. 곡 목록(BGM 고르기)은 지금 판 것을 쓴다
+// 클래식(GMS 83)은 클래식 마을·사냥터·보스 맵의 BGM 만 src/audio/bgmCatalog.classic.ts 로 쓴다. 곡 목록(BGM 고르기)은 지금 판 것을 쓴다
 // 곡 이름과 경로만 받는다. 소리는 받지 않는다
 import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -38,10 +38,9 @@ for (const folder of folders) {
 }
 const byLowerPath = new Map(catalog.flatMap(([folder, tracks]) => tracks.map((track) => [`${folder}/${track}`.toLowerCase(), `${folder}/${track}`])));
 
-// 보스 목록 모듈은 확장자 없는 import 가 있어 node 로 바로 못 불러온다. 맵 ID 만 글자로 읽는다
-// 보스는 클래식 캐릭터도 지금 판 맵에서 싸워서 클래식 목록에는 넣지 않는다
-const bossSource = await readFile(new URL('../src/game/bosses.ts', import.meta.url), 'utf8');
-const bossMaps = era === 'classic' ? [] : [...bossSource.matchAll(/mapId: (\d+)/g)].map((match) => Number(match[1]));
+// 보스 목록 모듈은 확장자 없는 import 가 있어 node 로 바로 못 불러온다. 맵 ID 만 글자로 읽는다. 클래식 보스는 bosses.classic.ts 다
+const bossSource = await readFile(new URL(era === 'classic' ? '../src/game/bosses.classic.ts' : '../src/game/bosses.ts', import.meta.url), 'utf8');
+const bossMaps = [...bossSource.matchAll(/mapId: (\d+)/g)].map((match) => Number(match[1]));
 const routes = era === 'classic' ? CLASSIC_TOWN_ROUTES : TOWN_ROUTES;
 const mapIds = [
   ...new Set([
@@ -66,7 +65,7 @@ const lines =
     ? [
         '// scripts/curate-bgm.ts --era classic 이 만든 파일이다. 손으로 고치지 말고 스크립트를 다시 돌린다',
         '',
-        '/** 클래식 마을·사냥터 맵의 BGM(GMS 83 Sound.wz 경로). 여기 없는 맵은 bgm.ts 가 v83 WZ 에서 읽는다 */',
+        '/** 클래식 마을·사냥터·보스 맵의 BGM(GMS 83 Sound.wz 경로). 여기 없는 맵은 bgm.ts 가 v83 WZ 에서 읽는다 */',
         'export const CLASSIC_MAP_BGM: Record<number, string> = {',
         ...mapBgm.map(([mapId, path]) => `  ${mapId}: ${quote(path)},`),
         '};',

@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { type Roster, characterXp, emptyRoster, selectedCharacter } from '../game/characters';
-import { levelInfo } from '../game/progression';
+import { type Roster, characterLevel, emptyRoster, selectedCharacter } from '../game/characters';
 import { loadRoster, mergeRosters, normalizeRoster, writeRoster as writeLocalRoster } from '../game/save';
 import {
   DEFAULT_SETTINGS,
@@ -34,7 +33,7 @@ export interface GameData {
 /** 예전 설정(마을 「자동」 끔)을 옮길 때 쓰는 지금 캐릭터 레벨 */
 function selectedLevel(roster: Roster | null): number {
   const character = roster && selectedCharacter(roster);
-  return character ? levelInfo(characterXp(character)).level : 1;
+  return character ? characterLevel(character).level : 1;
 }
 
 let saveSession = 0;

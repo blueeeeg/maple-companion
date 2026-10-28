@@ -8,7 +8,7 @@ import {
   activityDelta,
   changeJobBranch,
   characterJob,
-  characterXp,
+  characterLevel,
   createCharacter,
   creditActivity,
   jobChangeHintDue,
@@ -17,7 +17,6 @@ import {
   summarizeCharacter,
 } from './game/characters';
 import {
-  BOSSES,
   type BossSpec,
   DEFAULT_PACE,
   type HuntPace,
@@ -25,6 +24,7 @@ import {
   bossHits,
   bossMeso,
   bossXp,
+  bossesOf,
   drawFromBag,
   pickBoss,
   reservedBoss,
@@ -48,7 +48,6 @@ import {
 import { encountersDue, pickMonster, retimeHunts, skipHunts } from './game/encounters';
 import { JOB_BRANCHES, type JobBranchId, advancementTier, describeJob, jobPath, pathTier, tierName } from './game/jobs';
 import { MANUAL_REWARD_POLICY, manualRewardBudget, settleManualKill } from './game/manualHunt';
-import { levelInfo } from './game/progression';
 import { bossRecord, noteAdvancements } from './game/records';
 import { canCast, findSkill, skillDataPrefetchOrder } from './game/skillBook';
 import { newCharacterId } from './game/save';
@@ -66,7 +65,7 @@ import { fieldMoveDue, fieldMoves, hopAt, pickFieldMove, routePortals, townField
 import { type RouteField, isPassage } from './game/routeCuration';
 import { type MonsterSpec, type Town, drawFromTownBag, pickNextTown, rewardTown, townEra, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
-import { TRAY_ICON_URL } from './maple/api';
+import { type Era, TRAY_ICON_URL } from './maple/api';
 import type { Point } from './maple/ground';
 import { warmMaps } from './maple/portal';
 import { canDrawSkill, loadSkill, prefetchSkillData } from './maple/skills';
@@ -132,8 +131,8 @@ const roster = gameData.roster;
 let pendingGifts: number[] = [];
 // 장비 컬렉션이 생기기 전 캐릭터도 이미 넘은 레벨 선물을 켤 때 한 번 받는다
 roster.characters.forEach((each) => {
-  const level = levelInfo(characterXp(each)).level;
-  const gifts = [...grantLevelGifts(each, level, jobPath(each.jobLine, each.jobBranch)), ...grantMountGifts(each, level)];
+  const level = characterLevel(each).level;
+  const gifts = [...grantLevelGifts(each, level, jobPath(each.jobLine, each.jobBranch), each.era), ...grantMountGifts(each, level)];
   if (each.id === roster.selectedId) pendingGifts = gifts;
 });
 writeRoster(roster);
@@ -185,8 +184,8 @@ const hud = createHud(root, {
     void tick().then(() => {
       scene.celebrate('전직!');
       // 직업을 늦게 골라 이미 2차 전직 레벨이면 갈래도 바로 묻는다
-      const { branchChoice } = characterJob(character, levelInfo(characterXp(character)).level);
-      if (branchChoice) hud.openBranchChoice(branchChoice);
+      const { branchChoice } = characterJob(character, characterLevel(character).level);
+      if (branchChoice) hud.openBranchChoice(branchChoice, character.era);
     });
   },
   onChooseBranch(id) {
@@ -195,7 +194,7 @@ const hud = createHud(root, {
     character.jobBranch = id;
     writeRoster(roster);
     // 틱보다 먼저 알려야 그 틱의 「직업」 줄 안내가 이 알림을 덮지 않고 뒤로 밀린다
-    hud.notify(`전직 완료: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
+    hud.notify(`전직 완료: ${characterJob(character, characterLevel(character).level).title}`);
     void tick().then(() => scene.celebrate('전직!'));
   },
   onToggleMute() {
@@ -272,7 +271,7 @@ const cashShop = createCashShop(root, {
   },
   onBuyGear(itemId) {
     changeWardrobe((character) => {
-      if (buyEquipItem(character, itemId, jobPath(character.jobLine, character.jobBranch))) {
+      if (buyEquipItem(character, itemId, jobPath(character.jobLine, character.jobBranch), character.era)) {
         character.equipWorn = equipGear(character.equipWorn, itemId);
       }
     });
@@ -442,7 +441,7 @@ function openSettings(): void {
   if (!character || screen !== 'map') return;
   screen = 'settings';
   syncRunning();
-  const { level } = levelInfo(characterXp(character));
+  const { level } = characterLevel(character);
   settingsScreen.show({
     settings,
     muted: roster.muted,
@@ -493,8 +492,8 @@ function openCharacterSelect(): void {
 }
 
 function cashShopState(character: Character): CashShopState {
-  const { level } = levelInfo(characterXp(character));
-  const job = describeJob(level, jobPath(character.jobLine, character.jobBranch), character.appearance);
+  const { level } = characterLevel(character);
+  const job = describeJob(level, jobPath(character.jobLine, character.jobBranch), character.appearance, character.era);
   return {
     gender: character.appearance.gender,
     era: character.era,
@@ -518,25 +517,25 @@ function openCashShop(): void {
 }
 
 function statState(character: Character): StatWindowState {
-  const info = levelInfo(characterXp(character));
+  const info = characterLevel(character);
   const job = characterJob(character, info.level);
   return {
     name: character.name,
     level: info.level,
-    jobName: tierName(jobPath(character.jobLine, character.jobBranch), job.tier),
+    jobName: tierName(jobPath(character.jobLine, character.jobBranch), job.tier, character.era),
     tier: job.tier,
     xpIntoLevel: info.xpIntoLevel,
     xpForLevel: info.xpForLevel,
     ratio: info.ratio,
     activeSeconds: character.activeSeconds,
     hunts: character.encountersResolved,
-    bosses: bossRecord(character.monsterBook),
+    bosses: bossRecord(character.monsterBook, character.era),
     meso: character.meso,
     advancedAt: character.advancedAt,
     jobHistory: character.jobHistory,
     canChangeJob: character.jobBranch !== null && job.tier >= 2,
     freeJobChange: character.freeJobChange,
-    collection: collectionProgress(character.equipOwned, jobPath(character.jobLine, character.jobBranch)),
+    collection: collectionProgress(character.equipOwned, jobPath(character.jobLine, character.jobBranch), character.era),
     look: job.look,
     era: character.era,
     standAction: job.standAction,
@@ -544,7 +543,7 @@ function statState(character: Character): StatWindowState {
 }
 
 function equipState(character: Character): EquipWindowState {
-  const job = characterJob(character, levelInfo(characterXp(character)).level);
+  const job = characterJob(character, characterLevel(character).level);
   return {
     path: jobPath(character.jobLine, character.jobBranch),
     owned: character.equipOwned,
@@ -581,8 +580,13 @@ function openEquip(): void {
 }
 
 function skillState(character: Character): SkillWindowState {
-  const job = characterJob(character, levelInfo(characterXp(character)).level);
-  return { path: jobPath(character.jobLine, character.jobBranch), tier: job.tier, huntSkillId: character.huntSkillId };
+  const job = characterJob(character, characterLevel(character).level);
+  return {
+    path: jobPath(character.jobLine, character.jobBranch),
+    tier: job.tier,
+    huntSkillId: character.huntSkillId,
+    era: character.era,
+  };
 }
 
 /** 캐시샵처럼 맵·BGM 을 멈추고 창 안에 캐릭터 정보창·스킬창·보스 도전 창을 띄운다. HUD 의 스탯·스킬·보스 버튼이 연다 */
@@ -605,16 +609,16 @@ function openJobChange(): void {
   if (!character?.jobBranch) return;
   if (screen !== 'map') closeInfoWindow();
   const free = character.freeJobChange;
-  const { tier } = characterJob(character, levelInfo(characterXp(character)).level);
+  const { tier } = characterJob(character, characterLevel(character).level);
   hud.openJobChange(
-    { current: character.jobBranch, tier, free, price: JOB_CHANGE_MESO, meso: character.meso },
+    { current: character.jobBranch, tier, free, price: JOB_CHANGE_MESO, meso: character.meso, era: character.era },
     {
       onChange: (to) => changeBranch(character, to, free),
       onKeep() {
         if (!character.freeJobChange) return;
         character.freeJobChange = false;
         writeRoster(roster);
-        hud.notify(`지금 길(${characterJob(character, levelInfo(characterXp(character)).level).title})을 그대로 걸어요`);
+        hud.notify(`지금 길(${characterJob(character, characterLevel(character).level).title})을 그대로 걸어요`);
       },
     },
   );
@@ -630,7 +634,7 @@ function changeBranch(character: Character, to: JobBranchId, free: boolean): voi
   }
   if (result !== 'ok') return;
   writeRoster(roster);
-  hud.notify(`직업을 바꿨어요: ${characterJob(character, levelInfo(characterXp(character)).level).title}`);
+  hud.notify(`직업을 바꿨어요: ${characterJob(character, characterLevel(character).level).title}`);
   void tick().then(() => scene.celebrate('전직!'));
 }
 
@@ -658,11 +662,12 @@ function challengeBlocked(): string | null {
 
 function bossState(character: Character): BossWindowState {
   return {
-    level: levelInfo(characterXp(character)).level,
+    level: characterLevel(character).level,
     monsterBook: character.monsterBook,
     reservedBossId: character.reservedBossId,
     turn: bossTurn(character, huntPace(settings)),
     blocked: challengeBlocked(),
+    era: character.era,
   };
 }
 
@@ -670,8 +675,8 @@ function bossState(character: Character): BossWindowState {
 function reserveBoss(bossId: number | null): void {
   const character = selectedCharacter(roster);
   if (!character) return;
-  const boss = BOSSES.find((each) => each.id === bossId);
-  if (boss && boss.minLevel > levelInfo(characterXp(character)).level) return;
+  const boss = bossesOf(character.era).find((each) => each.id === bossId);
+  if (boss && boss.minLevel > characterLevel(character).level) return;
   character.reservedBossId = boss ? boss.id : null;
   writeRoster(roster);
   bossWindow.update(bossState(character));
@@ -683,15 +688,15 @@ function reserveBoss(bossId: number | null): void {
  */
 function challengeBoss(bossId: number, practice: boolean): string | null {
   const character = selectedCharacter(roster);
-  const boss = BOSSES.find((each) => each.id === bossId);
+  const boss = character ? bossesOf(character.era).find((each) => each.id === bossId) : undefined;
   if (!character || !boss) return '보스를 찾지 못했어요';
-  if (boss.minLevel > levelInfo(characterXp(character)).level) return `Lv.${boss.minLevel}부터 도전할 수 있어요`;
+  if (boss.minLevel > characterLevel(character).level) return `Lv.${boss.minLevel}부터 도전할 수 있어요`;
   const blocked = challengeBlocked();
   if (blocked) return blocked;
   const ready = bossTurn(character, huntPace(settings)).kind === 'ready';
   // 창을 연 사이 차례가 바뀌었으면 연습전을 진짜 싸움으로 바꾸지 않고 창에서 다시 고르게 한다
   if (!practice && !ready) return '보스 차례가 아니에요. 연습전으로 도전할 수 있어요';
-  fightBoss(boss, { kind: practice ? 'practice' : 'challenge' });
+  fightBoss(boss, { kind: practice ? 'practice' : 'challenge' }, character.era);
   closeInfoWindow();
   if (practice) hud.notify(`연습전 · ${boss.name} · 경험치·메소·처치 기록이 없어요`);
   return null;
@@ -715,9 +720,9 @@ async function chooseHuntSkill(skillId: number | null): Promise<SkillCheck> {
   const character = selectedCharacter(roster);
   if (!character) return 'failed';
   if (skillId !== null) {
-    const job = characterJob(character, levelInfo(characterXp(character)).level);
+    const job = characterJob(character, characterLevel(character).level);
     try {
-      if (!canDrawSkill(await loadSkill(skillId, job.fallbackRange))) return 'noArt';
+      if (!canDrawSkill(await loadSkill(skillId, job.fallbackRange, character.era))) return 'noArt';
     } catch {
       return 'failed';
     }
@@ -738,13 +743,13 @@ async function chooseHuntSkill(skillId: number | null): Promise<SkillCheck> {
 async function castSkill(skillId: number): Promise<SkillCheck> {
   const character = selectedCharacter(roster);
   if (!character) return 'failed';
-  const { tier } = characterJob(character, levelInfo(characterXp(character)).level);
+  const { tier } = characterJob(character, characterLevel(character).level);
   const path = jobPath(character.jobLine, character.jobBranch);
-  if (!canCast(path, tier, skillId)) return 'failed';
+  if (!canCast(path, tier, skillId, character.era)) return 'failed';
   if (performance.now() - lastCastAt < CAST_COOLDOWN_MS) return 'cooldown';
   lastCastAt = performance.now();
   closeInfoWindow();
-  const name = findSkill(path, skillId)?.name ?? '스킬';
+  const name = findSkill(path, skillId, character.era)?.name ?? '스킬';
   void scene.castSkill(skillId).then((result) => {
     if (result === 'noArt') hud.notify(`${name} · 그릴 이펙트가 없어 동작만 했어요`);
     else if (result === 'failed') hud.notify(`${name} 이펙트를 받지 못했어요. 다시 누르면 다시 받아요`);
@@ -760,7 +765,7 @@ const currentPace = (): HuntPace => huntPace(settings) ?? DEFAULT_PACE;
 function handleKill(monster: MonsterSpec): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
-  const { level } = levelInfo(characterXp(character));
+  const { level } = characterLevel(character);
   const { xp, meso } = settleHunt(character, currentPace(), rewardTown(level), false);
   character.killXp += xp;
   character.meso += meso;
@@ -778,7 +783,7 @@ function handleKill(monster: MonsterSpec): number {
 function handleFieldKill(monster: MonsterSpec): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
-  const { level } = levelInfo(characterXp(character));
+  const { level } = characterLevel(character);
   const reward = settleManualKill(character, huntPace(settings), rewardTown(level, character.era));
   // v83 몹 정보 이름은 영문이라 마을·사냥터 몹 목록에 있는 한글 이름으로 기록한다
   const known = [...town.monsters, ...townFields(town).flatMap((each) => each.monsters)].find((each) => each.id === monster.id);
@@ -827,7 +832,7 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
   const pace = currentPace();
-  const { level: bossLevel } = levelInfo(characterXp(character));
+  const { level: bossLevel } = characterLevel(character);
   const reward = rewardTown(bossLevel);
   if (fight.kind === 'practice') {
     settleBossFight(character, pace, reward, boss, true);
@@ -843,7 +848,7 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
     character.meso += meso;
     character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
   } else ({ xp, meso } = settleBossFight(character, pace, reward, boss, false));
-  const drops = awardBossDrops(character, boss.id, jobPath(character.jobLine, character.jobBranch), false);
+  const drops = awardBossDrops(character, boss.id, jobPath(character.jobLine, character.jobBranch), false, Math.random, character.era);
   writeRoster(roster);
   hud.notify(`보스 ${boss.name} 처치 · EXP +${Math.round(xp).toLocaleString()} · 메소 +${meso.toLocaleString()}`);
   announceDrops(
@@ -854,7 +859,8 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
   return meso;
 }
 
-function fightBoss(boss: BossSpec, fight: BossFight): void {
+/** era: 보스 맵·몹·BGM 을 받을 시대(캐릭터의 시대) */
+function fightBoss(boss: BossSpec, fight: BossFight, era: Era): void {
   const practice = fight.kind === 'practice';
   bossFight = fight.kind;
   if (practice) hud.setPractice(boss.name);
@@ -866,7 +872,7 @@ function fightBoss(boss: BossSpec, fight: BossFight): void {
     .startBossFight(boss, bossHits(), {
       // 숨겨진 동안 치른 보스는 장면 없이 정산되니 보스 곡으로 바꾸지 않는다
       onArrive: () => {
-        if (isShown()) bgm.setMap(boss.mapId);
+        if (isShown()) bgm.setMap(era === 'current' ? boss.mapId : { mapId: boss.mapId, era });
       },
       onDefeat: () => handleBossKill(boss, fight),
       onReturn: () => {
@@ -874,7 +880,7 @@ function fightBoss(boss: BossSpec, fight: BossFight): void {
         if (field && town) bgm.setMap(bgmMapOf(field.mapId, town));
         else if (town) bgm.setTown(town);
       },
-    })
+    }, era)
     .then(done, () => {
       done();
       // 도전 창에서 고른 보스를 못 불렀으면 보스 차례는 그대로 두고 다음 차례에 다시 나온다
@@ -987,21 +993,22 @@ function handleLevelUp(character: Character, from: number, to: number): void {
   const who = { characterId: character.id, characterName: character.name };
 
   // 직업을 아직 안 골랐으면 1차 전직 레벨이 된 그때 한 번만 직업을 묻는다. 닫아도 HUD 의 「전직 가능!」 버튼이 남는다
-  if (!character.jobLine && advancementTier(from) === 0 && advancementTier(to) > 0) {
+  const { era } = character;
+  if (!character.jobLine && advancementTier(from, era) === 0 && advancementTier(to, era) > 0) {
     hud.openJobChoice();
     alertUser({ kind: 'job-choice', ...who, level: to });
   }
   const path = jobPath(character.jobLine, character.jobBranch);
   // 2차 갈래를 아직 안 골랐으면 2차 전직 레벨이 된 그때 계열 전직관이 갈래를 묻는다. 고를 때까지 1차에 머문다
-  if (character.jobLine && !character.jobBranch && advancementTier(from) < 2 && advancementTier(to) >= 2) {
-    hud.openBranchChoice(character.jobLine);
+  if (character.jobLine && !character.jobBranch && advancementTier(from, era) < 2 && advancementTier(to, era) >= 2) {
+    hud.openBranchChoice(character.jobLine, era);
     alertUser({ kind: 'branch-choice', ...who, level: to, instructor: instructorName(character.jobLine) });
   }
-  if (path && pathTier(to, path) > pathTier(from, path)) {
-    const job = describeJob(to, path, character.appearance);
+  if (path && pathTier(to, path, era) > pathTier(from, path, era)) {
+    const job = describeJob(to, path, character.appearance, era);
     scene.celebrate(`${job.tier}차 전직!`);
     hud.notify(`전직 완료: ${job.title}`);
-    hud.congratulate(path, job.tier);
+    hud.congratulate(path, job.tier, era);
     alertUser({ kind: 'advancement', ...who, tier: job.tier, jobTitle: job.title });
   }
 
@@ -1019,7 +1026,16 @@ function settleMissedHunts(character: Character, count: number, level: number, p
   if (!town || count <= 0) return;
   // 밀린 차례 중 보스 차례는 보스로 정산한다. 레벨에 맞는 보스가 없으면 보통 몬스터로 친다
   // 메소 보상은 표시 마을이 아닌 레벨 기준 최고 마을로 계산한다
-  const result = resolveHunts(character, pace, level, rewardTown(level, character.era), count, Math.random, character.reservedBossId);
+  const result = resolveHunts(
+    character,
+    pace,
+    level,
+    rewardTown(level, character.era),
+    count,
+    Math.random,
+    character.reservedBossId,
+    character.era,
+  );
   if (result.reservationUsed) character.reservedBossId = null;
   character.killXp += result.xp;
   character.meso += result.meso;
@@ -1029,9 +1045,9 @@ function settleMissedHunts(character: Character, count: number, level: number, p
   // 비운 사이 잡은 보스도 진짜 처치라 장비를 굴린다
   const path = jobPath(character.jobLine, character.jobBranch);
   const drops = Object.entries(result.bosses).flatMap(([name, kills]) => {
-    const boss = BOSSES.find((each) => each.name === name);
+    const boss = bossesOf(character.era).find((each) => each.name === name);
     if (!boss) return [];
-    return Array.from({ length: kills }, () => awardBossDrops(character, boss.id, path, false))
+    return Array.from({ length: kills }, () => awardBossDrops(character, boss.id, path, false, Math.random, character.era))
       .flat()
       .map((itemId) => ({ itemId, bossName: name }));
   });
@@ -1058,7 +1074,7 @@ async function tick(): Promise<void> {
 
   const character = selectedCharacter(roster);
   if (!character) return;
-  const info = levelInfo(characterXp(character));
+  const info = characterLevel(character);
   // 마을이 열리거나 캐릭터를 바꾸면 목록이 바뀐다. 같은 목록이면 bgm 이 무시한다
   // 지금 마을의 사냥터는 몇 분 안에 들어가서 먼저 받는다
   const here = town;
@@ -1073,17 +1089,18 @@ async function tick(): Promise<void> {
   // 스킬창을 열 때 아이콘을 기다리지 않게 켤 때와 직업·차수가 바뀔 때 뒤에서 받아 둔다
   const path = jobPath(character.jobLine, character.jobBranch);
   // 레벨이 오르거나 2차 갈래를 정하면 그 레벨의 장비 선물을 받는다
-  const gifts = [...grantLevelGifts(character, info.level, path), ...grantMountGifts(character, info.level)];
+  const gifts = [...grantLevelGifts(character, info.level, path, character.era), ...grantMountGifts(character, info.level)];
   if (gifts.length > 0) {
     pendingGifts = [...pendingGifts, ...gifts];
     writeRoster(roster);
   }
-  const skillBookKey = `${path}|${job.tier}`;
+  const skillBookKey = `${character.era}|${path}|${job.tier}`;
   if (skillBookKey !== prefetchedSkillBook) {
     prefetchedSkillBook = skillBookKey;
+    const { era } = character;
     // 아이콘을 다 받은 뒤에 스킬창에서 쓰거나 사냥에 쓸(자동 포함) 스킬 데이터를 작은 것부터 하나씩 받아 기기에 남긴다
-    void prefetchSkillWindow(path, job.tier).then(() =>
-      prefetchSkillData(skillDataPrefetchOrder(path, job.tier, job.skillId, SKILL_STORE_CAP_BYTES / 1024)),
+    void prefetchSkillWindow(path, job.tier, era).then(() =>
+      prefetchSkillData(skillDataPrefetchOrder(path, job.tier, job.skillId, SKILL_STORE_CAP_BYTES / 1024, era), era),
     );
   }
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
@@ -1138,6 +1155,7 @@ async function tick(): Promise<void> {
     muted: isMuted(),
     resting,
     manual: settings.manualControl,
+    era: character.era,
   });
   renderManualHint(character);
 
@@ -1180,7 +1198,12 @@ async function tick(): Promise<void> {
   if (forcedBoss && !scene.inEncounter && !townLoading) {
     const wanted = forcedBoss;
     forcedBoss = null;
-    fightBoss(BOSSES.find((boss) => String(boss.id) === wanted) ?? pickBoss(info.level) ?? BOSSES[0], { kind: 'dev' });
+    const bosses = bossesOf(character.era);
+    fightBoss(
+      bosses.find((boss) => String(boss.id) === wanted) ?? pickBoss(info.level, Math.random, character.era) ?? bosses[0],
+      { kind: 'dev' },
+      character.era,
+    );
     return;
   }
 
@@ -1193,11 +1216,11 @@ async function tick(): Promise<void> {
     const next = character.encountersResolved + 1;
     let boss: BossSpec | null = null;
     if (bossDue(character, pace) && next !== bossSkippedAt) {
-      const reserved = reservedBoss(info.level, character.reservedBossId);
+      const reserved = reservedBoss(info.level, character.reservedBossId, character.era);
       if (reserved) {
         boss = reserved;
       } else {
-        const drawn = drawFromBag(character.bossBag, character.lastBossId, info.level);
+        const drawn = drawFromBag(character.bossBag, character.lastBossId, info.level, Math.random, character.era);
         if (drawn) {
           character.bossBag = drawn.bag;
           character.lastBossId = drawn.lastBossId;
@@ -1206,7 +1229,7 @@ async function tick(): Promise<void> {
         }
       }
     }
-    if (boss) fightBoss(boss, { kind: 'turn', encounterNumber: next });
+    if (boss) fightBoss(boss, { kind: 'turn', encounterNumber: next }, character.era);
     else {
       // 사냥터에서는 그 맵의 실제 몬스터가 나온다. 보상은 마을 기준 그대로다
       const monster = pickMonster(field && !isPassage(field) ? { ...town, monsters: field.monsters } : town);
@@ -1228,9 +1251,9 @@ notifier.onOpen(() => {
   if (availableUpdate) hud.notify(updateNotice(availableUpdate).body);
   const character = selectedCharacter(roster);
   if (!character || screen !== 'map') return;
-  const job = characterJob(character, levelInfo(characterXp(character)).level);
+  const job = characterJob(character, characterLevel(character).level);
   if (job.canChooseJob) hud.openJobChoice();
-  else if (job.branchChoice) hud.openBranchChoice(job.branchChoice);
+  else if (job.branchChoice) hud.openBranchChoice(job.branchChoice, character.era);
 });
 startUpdateChecks({
   onFound(version, firstTime) {
@@ -1265,6 +1288,6 @@ if (screen === 'select') openCharacterSelect();
 syncRunning();
 await tick();
 scheduleTick();
-// 보스 도전 창의 아이콘 열네 개를 창을 열기 전에 뒤에서 받아 둔다
-prefetchBossWindow();
+// 보스 도전 창의 아이콘을 창을 열기 전에 뒤에서 받아 둔다. 클래식 캐릭터면 그 시대 보스 것이다
+prefetchBossWindow(selectedCharacter(roster)?.era);
 prefetchMusicWindow();

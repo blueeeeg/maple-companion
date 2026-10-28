@@ -16,8 +16,9 @@ import {
   migrateLegacySave,
   reachedTier,
 } from './characters';
-import { JOB_BRANCHES, type JobBranchId } from './jobs';
-import { mergeAdvancements, normalizeAdvancements } from './records';
+import { JOB_BRANCHES, type JobBranchId, jobPath } from './jobs';
+import { keepReachedAdvancements, mergeAdvancements, normalizeAdvancements } from './records';
+import { findSkill } from './skillBook';
 
 const STORAGE_KEY = 'maple-companion:characters';
 // 캐릭터가 한 명뿐이던 때의 키. 옮긴 뒤에도 지우지 않아서 되돌릴 여지를 남긴다
@@ -40,7 +41,7 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       appearance,
       ...normalizeCashData(character),
       // 장비 컬렉션이 생기기 전 저장은 빈 컬렉션이다. 레벨 선물은 켤 때 받는다
-      ...normalizeEquipData(character),
+      ...normalizeEquipData(character, character.era === 'classic' ? 'classic' : 'current'),
       ...normalizeChairData(character),
       ...normalizeMountData(character),
       // 시대가 생기기 전 캐릭터는 모두 지금 시대다
@@ -49,14 +50,16 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
     const { huntSkillId } = character;
     const raw = character as Partial<Character>;
     const branch = normalizeBranch(filled, raw);
+    const tier = reachedTier({ ...filled, ...branch });
+    const advancedAt = normalizeAdvancements(character.advancedAt, tier);
     return {
       ...filled,
       ...branch,
       jobHistory: normalizeJobHistory(raw.jobHistory),
       jobChangeHintShown: raw.jobChangeHintShown === true,
-      huntSkillId: typeof huntSkillId === 'number' && Number.isInteger(huntSkillId) ? huntSkillId : null,
+      huntSkillId: normalizeHuntSkill(huntSkillId, { ...filled, ...branch }),
       // 보스 지정이 생기기 전 저장이거나 지금은 없는 보스면 지정 없음(무작위)이다
-      reservedBossId: normalizeReservedBoss(character.reservedBossId),
+      reservedBossId: normalizeReservedBoss(character.reservedBossId, filled.era),
       // 셔플 백이 없거나 깨진 저장이면 빈 배열로 시작한다
       bossBag: Array.isArray(raw.bossBag)
         ? (raw.bossBag as unknown[]).filter((x): x is number => typeof x === 'number' && Number.isInteger(x))
@@ -66,11 +69,23 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
         ? (raw.townBag as unknown[]).filter((x): x is string => typeof x === 'string')
         : [],
       lastTownId: typeof raw.lastTownId === 'string' ? raw.lastTownId : null,
-      // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다
-      advancedAt: normalizeAdvancements(character.advancedAt, reachedTier({ ...filled, ...branch })),
+      // 전직 기록이 생기기 전 저장이면 이미 한 전직은 날짜를 모른다. 지금 시각으로 적으면 가짜 기록이 된다.
+      // 1단계 클래식 캐릭터는 지금 시대 전직 레벨(60·100…)로 적힌 기록이 있어서 클래식 차수(70·120, 4차까지)를 넘는 것은 지운다.
+      // 그 차수가 되면 그날로 다시 적힌다
+      advancedAt: filled.era === 'classic' ? keepReachedAdvancements(advancedAt, tier) : advancedAt,
     };
   });
   return { ...emptyRoster(), ...parsed, characters };
+}
+
+/**
+ * 고른 사냥 스킬. 갈래 ID 는 시대마다 같아서 1단계 클래식 캐릭터의 갈래는 같은 이름의 클래식 갈래로 그대로 이어지지만,
+ * 그때 고른 지금 시대 스킬이 클래식 스킬북에 없으면 자동으로 돌린다
+ */
+function normalizeHuntSkill(saved: unknown, character: Character): number | null {
+  if (typeof saved !== 'number' || !Number.isInteger(saved)) return null;
+  if (character.era !== 'classic') return saved;
+  return findSkill(jobPath(character.jobLine, character.jobBranch), saved, 'classic') ? saved : null;
 }
 
 const BRANCH_IDS = new Set<unknown>(Object.keys(JOB_BRANCHES));

@@ -32,6 +32,7 @@ import {
 } from '../maple/basicEff';
 import {
   type BossAnimations,
+  type BossPart,
   type PlacedAnimation,
   loadBossGauge,
   loadBossMob,
@@ -207,9 +208,10 @@ export interface Scene {
   startEncounter(monster: MonsterSpec, hits: number): void;
   /**
    * 보스 맵으로 옮겨 보스와 싸우고, 잡으면 원래 마을로 돌아온다. 마을에 돌아와야 끝난다.
-   * 보스나 보스 맵을 못 받아 오면 마을에 그대로 남고 실패한다. hits: 보스를 잡는 데 드는 스킬 사용 횟수
+   * 보스나 보스 맵을 못 받아 오면 마을에 그대로 남고 실패한다. hits: 보스를 잡는 데 드는 스킬 사용 횟수.
+   * era: 보스 맵·몹·게이지를 받을 시대(캐릭터의 시대)
    */
-  startBossFight(boss: BossSpec, hits: number, events: BossFightEvents): Promise<void>;
+  startBossFight(boss: BossSpec, hits: number, events: BossFightEvents, era?: Era): Promise<void>;
   celebrate(text: string): void;
   /** 설정 「데미지 숫자 표시」 */
   setDamageNumbers(visible: boolean): void;
@@ -290,8 +292,10 @@ interface BossState {
   homeX: number;
   moveDirection: -1 | 1;
   standDistance: number;
-  /** stand 첫 프레임 기준. 왼쪽을 볼 때 기준점에서 몸통 왼쪽 끝·오른쪽 끝·머리까지의 거리 */
+  /** stand 첫 프레임 기준. 왼쪽을 볼 때 기준점에서 몸통 왼쪽 끝·오른쪽 끝·머리까지의 거리. 부위가 있으면 부위까지 감싼다 */
   body: { left: number; right: number; top: number; height: number };
+  /** 몸통 뒤에 원점을 맞춰 겹친 부위(클래식 자쿰 팔). 부위가 있는 보스는 돌아서지 않는다(원작 noFlip) */
+  parts: { sprite: Sprite; animations: BossPart }[];
   finish(): void;
 }
 
@@ -607,7 +611,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   /** 다 받은 동작 그림. 스킬을 쓰는 순간 기다리지 않고 꺼내 쓴다 */
   const readyMotions = new Map<string, Animation | null>();
   /** 한 번 받아 본 스킬의 원작 동작 이름 */
-  const knownActions = new Map<number, string[]>();
+  /** `{시대}|{스킬 ID}` → 그 스킬의 원작 동작 */
+  const knownActions = new Map<string, string[]>();
   let facing: -1 | 1 = -1;
   let chairId: number | null = null;
   /** 고른 의자의 그림과 앉은 동작. 다 받아야 앉는다 */
@@ -987,6 +992,23 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
   }
 
+  /** 첫 프레임들의 기준점에서 왼쪽·오른쪽 끝과 머리까지. 부위가 있으면 몸통과 부위를 모두 감싼다 */
+  function bossBodyBox(stands: PlacedAnimation[]): BossState['body'] {
+    const boxes = stands.map(({ frames, origins }) => ({
+      left: -origins[0].x,
+      right: frames[0].width - origins[0].x,
+      top: origins[0].y,
+      bottom: frames[0].height - origins[0].y,
+    }));
+    const top = Math.max(...boxes.map((box) => box.top));
+    return {
+      left: Math.min(...boxes.map((box) => box.left)),
+      right: Math.max(...boxes.map((box) => box.right)),
+      top,
+      height: top + Math.max(...boxes.map((box) => box.bottom)),
+    };
+  }
+
   function showBossFrame(sprite: Sprite, animation: PlacedAnimation, index: number): void {
     sprite.texture = animation.frames[index];
     sprite.pivot.set(animation.origins[index].x, animation.origins[index].y);
@@ -1002,6 +1024,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
     if (current.dyingMs !== null) {
       current.dyingMs += dtMs;
+      // 부위는 쓰러지는 그림 없이 몸통이 쓰러지기 시작할 때부터 흐려진다
+      boss.parts.forEach((part) => (part.sprite.alpha = Math.max(0, part.sprite.alpha - dtMs / BOSS_DEATH_FADE_MS)));
       const index = frameAt(animations.die.delays, current.dyingMs, false);
       if (index >= 0) {
         showBossFrame(sprite, animations.die, index);
@@ -1011,6 +1035,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (sprite.alpha > 0) return;
       actors.removeChild(sprite);
       sprite.destroy();
+      removeBossParts(boss);
       encounter = null;
       behavior = { kind: 'wander', targetX: hero.x, pauseMs: BOSS_OUTRO_MS };
       let waitMs = BOSS_OUTRO_MS;
@@ -1024,7 +1049,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
 
     sprite.alpha = Math.min(1, sprite.alpha + dtMs / 300);
-    const faceHero = () => (sprite.scale.x = hero.x > sprite.x ? -1 : 1);
+    const faceHero = () => {
+      if (boss.parts.length === 0) sprite.scale.x = hero.x > sprite.x ? -1 : 1;
+    };
     if (boss.action === 'attack' && animations.attack) {
       const index = frameAt(animations.attack.delays, boss.actionMs, false);
       if (index >= 0) showBossFrame(sprite, animations.attack, index);
@@ -1052,6 +1079,20 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       }
     }
     sprite.y = groundY(ground, sprite.x);
+    boss.parts.forEach(({ sprite: part, animations: art }) => {
+      if (current.hitMs > 0) showBossFrame(part, art.hit, 0);
+      else showBossFrame(part, art.stand, frameAt(art.stand.delays, current.ageMs, true));
+      part.alpha = sprite.alpha;
+      part.position.set(sprite.x, sprite.y);
+    });
+  }
+
+  function removeBossParts(boss: BossState): void {
+    boss.parts.forEach(({ sprite }) => {
+      actors.removeChild(sprite);
+      sprite.destroy();
+    });
+    boss.parts = [];
   }
 
   /**
@@ -2030,6 +2071,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     if (encounter?.boss) {
       actors.removeChild(encounter.sprite);
       encounter.sprite.destroy();
+      removeBossParts(encounter.boss);
       encounter = null;
     }
     if (home) {
@@ -2202,10 +2244,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       const skillPromise =
         job.skillId === null
           ? Promise.resolve(null)
-          : loadSkill(job.skillId, job.fallbackRange).then((chosen) => {
+          : loadSkill(job.skillId, job.fallbackRange, era).then((chosen) => {
               if (canDrawSkill(chosen) || autoSkillId === null || autoSkillId === chosen.id) return chosen;
               callbacks.onSkillUnusable?.(chosen.id, chosen.name);
-              return loadSkill(autoSkillId, job.fallbackRange);
+              return loadSkill(autoSkillId, job.fallbackRange, era);
             });
       // 직업을 바꿔 스킬이 달라졌으면 앞 직업 스킬의 사거리·이펙트로 싸우지 않게 새 스킬을 받을 때까지 비워 둔다
       if (skill && skill.id !== job.skillId && skill.id !== autoSkillId) skill = null;
@@ -2257,19 +2299,18 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
           encounterLoading = false;
         });
     },
-    async startBossFight(boss, hits, events) {
+    async startBossFight(boss, hits, events, era = 'current') {
       if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 보스와 싸울 수 없음');
       bossBusy = true;
       try {
-        // 보스는 클래식 캐릭터도 지금 시대 맵·몹으로 싸운다
-        const stagePromise = prepareStage(boss.mapId, boss.name, 'current');
-        const mob = await loadBossMob(boss.id).catch((error: unknown) => {
+        const stagePromise = prepareStage(boss.mapId, boss.name, era);
+        const mob = await loadBossMob(boss.id, era, boss.parts).catch((error: unknown) => {
           stagePromise.then((stage) => stage.image.texture.destroy(true)).catch(() => {});
           throw error;
         });
         const stage = await stagePromise;
         // 게이지 그림을 못 받아도 단색 게이지로 싸운다
-        const gaugePromise = loadBossGauge(boss.id, mob.gauge);
+        const gaugePromise = loadBossGauge(boss.id, mob.gauge, era);
         const gaugeTextures = await Promise.race([
           gaugePromise,
           new Promise<null>((resolve) => setTimeout(() => resolve(null), BOSS_GAUGE_WAIT_MS)),
@@ -2279,10 +2320,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         enterStage(stage, boss);
         const { animations } = mob;
         const first = animations.stand.frames[0];
-        const origin = animations.stand.origins[0];
-        const body = { left: -origin.x, right: first.width - origin.x, top: origin.y, height: first.height };
+        const body = bossBodyBox([animations.stand, ...mob.parts.map((part) => part.stand)]);
         const bossStandDistance = framedDistance(
-          Math.max(standDistance(), origin.x + HERO_HALF_WIDTH),
+          Math.max(standDistance(), -body.left + HERO_HALF_WIDTH),
           viewWidth,
           FRAME_MARGIN,
         );
@@ -2323,9 +2363,21 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
             moveDirection: -1,
             standDistance: bossStandDistance,
             body,
+            parts: [],
             finish: () => finish(),
           },
         };
+        // 부위는 몸통 뒤에 둔다. 원작 자쿰도 팔이 몸통 뒤에서 나온다
+        created.boss!.parts = mob.parts.map((part) => {
+          const partSprite = new Sprite(part.stand.frames[0]);
+          showBossFrame(partSprite, part.stand, 0);
+          partSprite.position.set(bossX, sprite.y);
+          partSprite.eventMode = 'static';
+          partSprite.cursor = 'pointer';
+          partSprite.on('pointertap', () => strike(created, true));
+          actors.addChildAt(partSprite, 0);
+          return { sprite: partSprite, animations: part };
+        });
         sprite.on('pointertap', () => strike(created, true));
         encounter = created;
         behavior = { kind: 'approach' };
@@ -2464,17 +2516,19 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     castSkill(skillId) {
       if (!ground) return Promise.resolve<CastResult>('notReady');
       wake();
-      const motion = readyMotions.get(motionKey(knownActions.get(skillId) ?? [])) ?? readyMotions.get(motionKey([])) ?? null;
+      const era = heroEra;
+      const motion =
+        readyMotions.get(motionKey(knownActions.get(`${era}|${skillId}`) ?? [])) ?? readyMotions.get(motionKey([])) ?? null;
       if (motion && heroAnimations) castPose = { animation: motion, clockMs: 0 };
       else castHoldMs = CAST_HOLD_MS;
       // 쓰는 동안 걸어가 버리면 이펙트만 제자리에 남는다
       const holdMs = motion ? totalMs(motion) : CAST_HOLD_MS;
       if (behavior.kind === 'wander') behavior = { kind: 'wander', targetX: hero.x, pauseMs: Math.max(behavior.pauseMs, holdMs) };
       const startedAt = performance.now();
-      return loadSkill(skillId, fallbackRange).then(
+      return loadSkill(skillId, fallbackRange, era).then(
         (cast): CastResult => {
           // 이 스킬만의 원작 동작은 다음에 쓸 때 바로 꺼내게 받아 둔다
-          knownActions.set(skillId, cast.actions);
+          knownActions.set(`${era}|${skillId}`, cast.actions);
           void castMotion(cast.actions);
           if (!canDrawSkill(cast)) return 'noArt';
           if (!ground) return 'notReady';

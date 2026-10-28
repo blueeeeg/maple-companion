@@ -1,4 +1,4 @@
-import { BOSSES } from '../game/bosses';
+import { bossesOf } from '../game/bosses';
 import type { Settings } from '../game/settings';
 import { type Town, townEra, unlockedTowns } from '../game/towns';
 import { type Era, mapBgmNodeUrl, musicUrl } from '../maple/api';
@@ -48,7 +48,7 @@ const mapKey = (map: BgmMap) => {
 /**
  * 이 레벨에서 곧 들어갈 만한 맵.
  * townBag 가 있으면 그 순서대로 앞 마을, 없으면 가장 최근에 열린 마을 순.
- * 이어서 잡을 수 있는 보스(센 것부터), 나머지 열린 마을 순서다. 보스는 시대와 상관없이 지금 시대 맵에서 싸운다
+ * 이어서 잡을 수 있는 보스(센 것부터), 나머지 열린 마을 순서다. 클래식 보스는 클래식 보스 맵(GMS 83)이다
  */
 export function likelyBgmMaps(level: number, townBag: readonly string[] = [], era: Era = 'current'): BgmMap[] {
   const allTowns = unlockedTowns(level, era);
@@ -59,9 +59,11 @@ export function likelyBgmMaps(level: number, townBag: readonly string[] = [], er
     : allTowns.slice().reverse().slice(0, BGM_TOWN_PREFETCH);
   const priorityIds = new Set(priority.map((t) => t.id));
   const rest = allTowns.filter((t) => !priorityIds.has(t.id));
-  const bosses = BOSSES.filter((boss) => boss.minLevel <= level).sort((a, b) => b.minLevel - a.minLevel);
-  const townMap = (town: Town): BgmMap => (era === 'current' ? town.mapId : { mapId: town.mapId, era });
-  const ordered = [...priority.map(townMap), ...bosses.map((boss) => boss.mapId), ...rest.map(townMap)];
+  const bosses = bossesOf(era)
+    .filter((boss) => boss.minLevel <= level)
+    .sort((a, b) => b.minLevel - a.minLevel);
+  const eraMap = (mapId: number): BgmMap => (era === 'current' ? mapId : { mapId, era });
+  const ordered = [...priority.map((town) => eraMap(town.mapId)), ...bosses.map((boss) => eraMap(boss.mapId)), ...rest.map((town) => eraMap(town.mapId))];
   const seen = new Set<string>();
   return ordered.filter((map) => {
     const key = mapKey(map);

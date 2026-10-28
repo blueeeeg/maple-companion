@@ -1,6 +1,6 @@
 import type { Texture } from 'pixi.js';
 import { hasUsableEffect } from '../game/skillBook';
-import { type SkillFrameData, type SkillInfo, fetchWithin, skillUrl } from './api';
+import { type Era, type SkillFrameData, type SkillInfo, fetchWithin, skillUrl } from './api';
 import { readStoredSkill, storeSkill, trimSkillInfo } from './skillStore';
 import { textureFromBase64 } from './textures';
 
@@ -29,7 +29,9 @@ export interface Skill {
 }
 
 const MAX_HIT_LINES = 8;
-const skills = new Map<number, Promise<Skill>>();
+/** 같은 ID 라도 시대마다 다른 스킬일 수 있어 `{시대}|{ID}` 로 나눈다 */
+const skills = new Map<string, Promise<Skill>>();
+const loadKey = (skillId: number, era: Era) => `${era}|${skillId}`;
 
 /** 맵에서 캐릭터가 쓰는 모습을 그릴 수 있는지 */
 export const canDrawSkill = (skill: Skill): boolean => hasUsableEffect(skill.effect.map((layer) => layer.length));
@@ -52,32 +54,34 @@ const loadLayers = (layers: { frames: SkillFrameData[] }[] | undefined): Promise
     ),
   );
 
-const infoLoads = new Map<number, Promise<SkillInfo>>();
+const infoLoads = new Map<string, Promise<SkillInfo>>();
 
 /**
  * 스킬 데이터. 기기에 남긴 것이 있으면 그것을, 없으면 받아서 그리는 데 쓰는 것만 남겨 기기에 둔다.
  * 같은 스킬을 동시에 두 번 받지 않는다. 받은 데이터는 그림으로 풀고 나면 놓아서 큰 JSON 이 메모리에 남지 않는다
  */
-function skillInfo(skillId: number): Promise<SkillInfo> {
-  let pending = infoLoads.get(skillId);
+function skillInfo(skillId: number, era: Era): Promise<SkillInfo> {
+  const key = loadKey(skillId, era);
+  let pending = infoLoads.get(key);
   if (!pending) {
-    pending = readStoredSkill(skillId)
+    pending = readStoredSkill(skillId, era)
       .then(
         (stored) => stored,
         () => undefined,
       )
       .then(async (stored) => {
         if (stored) return stored;
-        const text = await fetchWithin(skillUrl(skillId), (response) => {
-          if (!response.ok) throw new Error(`${response.status} ${skillUrl(skillId)}`);
+        const url = skillUrl(skillId, era);
+        const text = await fetchWithin(url, (response) => {
+          if (!response.ok) throw new Error(`${response.status} ${url}`);
           return response.text();
         });
         const info = trimSkillInfo(JSON.parse(text) as SkillInfo);
-        void storeSkill(skillId, info, JSON.stringify(info).length).catch(() => {});
+        void storeSkill(skillId, info, JSON.stringify(info).length, era).catch(() => {});
         return info;
       })
-      .finally(() => infoLoads.delete(skillId));
-    infoLoads.set(skillId, pending);
+      .finally(() => infoLoads.delete(key));
+    infoLoads.set(key, pending);
   }
   return pending;
 }
@@ -86,13 +90,13 @@ function skillInfo(skillId: number): Promise<SkillInfo> {
  * 스킬 데이터를 하나씩 받아 기기에 남겨 둔다. 그림으로 풀지는 않는다. 맵·BGM 을 받는 것과 다투지 않게 한 번에 하나다.
  * 이미 남긴 것은 건너뛴다
  */
-export async function prefetchSkillData(skillIds: number[]): Promise<void> {
+export async function prefetchSkillData(skillIds: number[], era: Era = 'current'): Promise<void> {
   await skillIds.reduce(
     (previous, skillId) =>
       previous.then(() =>
-        skills.has(skillId)
+        skills.has(loadKey(skillId, era))
           ? undefined
-          : skillInfo(skillId).then(
+          : skillInfo(skillId, era).then(
               () => undefined,
               () => undefined,
             ),
@@ -102,10 +106,11 @@ export async function prefetchSkillData(skillIds: number[]): Promise<void> {
 }
 
 /** 스킬 하나에 수백 KB~수 MB 라서 같은 스킬은 한 번만 받고, 받은 것은 기기에 남긴다(skillStore.ts) */
-export function loadSkill(skillId: number, fallbackRange: number): Promise<Skill> {
-  let pending = skills.get(skillId);
+export function loadSkill(skillId: number, fallbackRange: number, era: Era = 'current'): Promise<Skill> {
+  const key = loadKey(skillId, era);
+  let pending = skills.get(key);
   if (!pending) {
-    pending = skillInfo(skillId).then(async (info) => ({
+    pending = skillInfo(skillId, era).then(async (info) => ({
       id: skillId,
       name: info.description?.name ?? '',
       range: frontRange(info.properties?.lt) ?? fallbackRange,
@@ -115,8 +120,8 @@ export function loadSkill(skillId: number, fallbackRange: number): Promise<Skill
       hit: await loadLayers(info.hit),
       actions: info.actions ?? [],
     }));
-    pending.catch(() => skills.delete(skillId));
-    skills.set(skillId, pending);
+    pending.catch(() => skills.delete(key));
+    skills.set(key, pending);
   }
   return pending;
 }

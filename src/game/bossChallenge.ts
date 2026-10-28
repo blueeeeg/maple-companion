@@ -1,10 +1,11 @@
-import { BOSSES, type BossSpec, type HuntPace, type HuntProgress, bossDue, settleHunt } from './bosses';
+import type { Era } from '../maple/api';
+import { type BossSpec, type HuntPace, type HuntProgress, bossDue, bossesOf, settleHunt } from './bosses';
 import type { Character } from './characters';
 import type { Town } from './towns';
 
-/** 저장에서 읽은 보스 지정. 지금 BOSSES 에 없는 보스면 지정 없음이다 */
-export function normalizeReservedBoss(value: unknown): number | null {
-  return typeof value === 'number' && BOSSES.some((boss) => boss.id === value) ? value : null;
+/** 저장에서 읽은 보스 지정. 그 시대 보스 목록에 없는 보스면 지정 없음이다 */
+export function normalizeReservedBoss(value: unknown, era: Era = 'current'): number | null {
+  return typeof value === 'number' && bossesOf(era).some((boss) => boss.id === value) ? value : null;
 }
 
 /**

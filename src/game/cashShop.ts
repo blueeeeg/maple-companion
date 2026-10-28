@@ -1,3 +1,5 @@
+import type { Era } from '../maple/api';
+import { CLASSIC_CASH_ITEM_IDS } from '../maple/classicCashItems';
 import type { Gender } from './appearance';
 
 /** 캐시 아이템을 입는 자리. 원작처럼 같은 자리의 직업 장비 겉모습을 덮는다 */
@@ -192,6 +194,13 @@ export function toCashItems(raw: RawItem[], slot: CashSlot): CashItem[] {
 
 export function fitsGender(requiredGender: number, gender: Gender): boolean {
   return requiredGender >= 2 || requiredGender === (gender === 'male' ? 0 : 1);
+}
+
+/** 캐시샵 부위 탭에 늘어놓을 아이템. 클래식 캐릭터에게는 GMS 83 에도 있는 캐시 아이템만 판다(classicCashItems.ts) */
+export function cashItemsForSale(list: CashItem[], gender: Gender, era: Era = 'current'): CashItem[] {
+  return list.filter(
+    (item) => fitsGender(item.requiredGender, gender) && (era === 'current' || CLASSIC_CASH_ITEM_IDS.has(item.id)),
+  );
 }
 
 /**

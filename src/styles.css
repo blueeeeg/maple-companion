@@ -141,6 +141,28 @@ body {
   text-shadow: 0 0 2px #000, 0 0 2px #000;
 }
 
+/* 클래식 캐릭터는 빅뱅 전 상태 바의 EXP 게이지(노랑·연두)와 광택을 깐다. 원작처럼 게이지 그림은 바 전체 폭으로 늘리고
+   채운 만큼만 보이게 잘린다. 빈 칸은 원작 gauge/gray 색이다 */
+.exp[data-era='classic'].has-classic-art {
+  background: #cccccc;
+}
+
+.exp[data-era='classic'].has-classic-art .exp-fill {
+  background: var(--classic-exp) left top / var(--view-width) 100% no-repeat;
+}
+
+.exp[data-era='classic'].has-classic-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--classic-exp-gloss) left top / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+.exp[data-era='classic'].has-classic-art .exp-text {
+  z-index: 1;
+}
+
 .notice {
   position: absolute;
   left: 6px;
@@ -1921,6 +1943,57 @@ body {
 .npc-button.is-next.has-art,
 .npc-button.is-ok.has-art {
   width: 40px;
+}
+
+/* 클래식 캐릭터는 빅뱅 전 대화창(v83 UIWindow.img/UtilDlgEx, 폭 529)이다. 띠 높이는 t 28 · c 20 · s 58 이고 아래 25px 가 버튼 띠다.
+   베이지 NPC 칸(x 15~140) 가운데에 초상화를, 흰 글 칸(x 152~318) 안쪽에 글을 둔다. 자르는 자리는 npcDialog.ts CLASSIC_FRAME */
+.npc-dialog[data-era='classic'] .npc-piece.is-c {
+  bottom: 58px;
+}
+
+.npc-dialog[data-era='classic'] .npc-piece.is-s {
+  height: 58px;
+}
+
+.npc-dialog[data-era='classic'] .npc-portrait {
+  left: 78px;
+  bottom: 65px;
+}
+
+.npc-dialog[data-era='classic'] .npc-name {
+  left: 17px;
+  bottom: 45px;
+  width: 121px;
+}
+
+.npc-dialog[data-era='classic'] .npc-text {
+  left: 157px;
+  right: 25px;
+  top: 27px;
+  bottom: 57px;
+}
+
+.npc-dialog[data-era='classic'] .npc-buttons {
+  left: 12px;
+  right: 12px;
+  bottom: 9px;
+  height: 18px;
+}
+
+.npc-dialog[data-era='classic'] .npc-button {
+  height: 18px;
+  line-height: 18px;
+}
+
+.npc-dialog[data-era='classic'] .npc-button.is-close.has-art {
+  width: 85px;
+}
+
+.npc-dialog[data-era='classic'] .npc-button.is-yes.has-art,
+.npc-dialog[data-era='classic'] .npc-button.is-no.has-art,
+.npc-dialog[data-era='classic'] .npc-button.is-next.has-art,
+.npc-dialog[data-era='classic'] .npc-button.is-ok.has-art {
+  width: 46px;
 }
 
 /* ── HUD 메뉴 (ui/hud.ts) ─────────────────────────────

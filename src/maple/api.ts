@@ -1,4 +1,5 @@
 // 메이플 리소스는 앱에 넣지 않고 팬 API(maplestory.io)에서 실행 중에 받아 온다
+import { CLASSIC_CASH_ITEM_IDS } from './classicCashItems';
 import { CLASSIC_ITEM_IDS } from './classicItems';
 import type { LadderRope } from './navigation';
 
@@ -55,7 +56,7 @@ export const mobFrameUrl = (mobId: number, action: string, frame: number, era: E
 /** 애니메이션 GIF. 프레임 수와 원작 딜레이를 읽는 데만 쓴다 */
 export const mobAnimationUrl = (mobId: number, action: string, era: Era = 'current') =>
   `${apiBase(era)}/mob/${mobId}/render/${action}`;
-export const skillUrl = (skillId: number) => `${BASE}/job/skill/${skillId}`;
+export const skillUrl = (skillId: number, era: Era = 'current') => `${apiBase(era)}/job/skill/${skillId}`;
 
 /**
  * WZ 캔버스 하나를 PNG 로 받는다. UI 캔버스 대부분은 `_outlink` 로 `_Canvas` 아래 실제 그림을 가리키고,
@@ -84,11 +85,13 @@ export function mesoDropIconUrl(amount: number): string {
 }
 
 /**
- * 아이템마다 받을 판을 따로 적을 수 있다. 클래식은 v83 에 있는 아이템만 v83 으로 그리고 나머지(캐시 아이템·새 장비)는
- * 지금 판으로 그린다. v83 에 없는 아이템을 v83 으로 적으면 오류 없이 빠진 채 그려진다
+ * 아이템마다 받을 판을 따로 적을 수 있다. 클래식은 v83 에 있는 아이템(앱 장비·클래식 캐시샵 아이템)만 v83 으로 그리고
+ * 나머지(1단계 때 산 지금 판 캐시 아이템·새 장비)는 지금 판으로 그린다. v83 에 없는 아이템을 v83 으로 적으면 오류 없이 빠진 채 그려진다
  */
 export function characterItemSource(itemId: number, era: Era = 'current'): DataSource {
-  return era === 'classic' && CLASSIC_ITEM_IDS.has(itemId) ? DATA_SOURCES.classic : DATA_SOURCES.current;
+  return era === 'classic' && (CLASSIC_ITEM_IDS.has(itemId) || CLASSIC_CASH_ITEM_IDS.has(itemId))
+    ? DATA_SOURCES.classic
+    : DATA_SOURCES.current;
 }
 
 function characterItems(itemIds: number[], era: Era): string {
@@ -191,6 +194,8 @@ export interface SkillInfo {
   description: { name: string };
   /** lt: 공격 범위 박스의 왼쪽 위. 캐릭터가 왼쪽을 볼 때 기준이라 X 가 음수면 앞쪽 사거리다 */
   properties: Record<string, string>;
+  /** v83 은 properties 대신 레벨마다 값이 있다. 마지막(마스터) 레벨 값을 쓴다 */
+  levelProperties?: Record<string, string>[];
   effect?: { frames: SkillFrameData[] }[];
   hit?: { frames: SkillFrameData[] }[];
   actions?: string[];
@@ -217,8 +222,8 @@ export const cashShopUiUrl = (node: string) => wzImageUrl(`UI/_Canvas/CashShop.i
  * 몹 프레임 하나의 기준점(발밑). 렌더 이미지는 원본 캔버스 그대로라 이 값을 그대로 쓰면 원작 위치에 맞는다.
  * 큰 보스는 기준점이 그림 가운데가 아니고 동작마다 그림 크기가 달라서, 가운데 아래를 기준으로 그리면 동작이 바뀔 때 튄다
  */
-export const mobFrameOriginUrl = (mobId: number, action: string, frame: number) =>
-  wzNodeUrl(`Mob/${mobId}.img/${action}/${frame}/origin`);
+export const mobFrameOriginUrl = (mobId: number, action: string, frame: number, era: Era = 'current') =>
+  `${wzBase(era)}/Mob/${mobId}.img/${action}/${frame}/origin`;
 
 /**
  * 보스 HP 게이지(UI/UIWindow2.img/MobGage). 아이콘 틀·게이지 틀 양 끝은 `_Canvas` 로 `_outlink` 되어 있고,
@@ -226,6 +231,11 @@ export const mobFrameOriginUrl = (mobId: number, action: string, frame: number) 
  */
 export const mobGageUrl = (node: string, outlinked: boolean) =>
   wzImageUrl(`UI/${outlinked ? '_Canvas/' : ''}UIWindow2.img/MobGage/${node}`);
+/**
+ * 클래식(v83) 보스 HP 게이지(UI/UIWindow.img/MobGage). `_Canvas`·`_outlink` 가 없어 틀·색 띠(Gage/1~7)·보스 아이콘(Mob/{몹 ID})이
+ * 모두 원래 자리에 있다. 아이콘 틀(backgrnd)은 35×37 로 지금 판보다 2px 좁다
+ */
+export const classicMobGageUrl = (node: string) => wzImageUrl(`UI/UIWindow.img/MobGage/${node}`, 'classic');
 /**
  * 보스 아이콘(MobGage/Mob/{몹 ID})의 `_outlink` 노드. 값이 그림 경로다. 대부분 `_Canvas` 의 같은 이름이지만
  * 크림슨 발록은 주니어 발록 아이콘을, 파풀라투스·진 힐라는 `UIBoss.img/BossList/{n}/Icon` 을 가리킨다

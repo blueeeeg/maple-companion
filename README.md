@@ -72,10 +72,33 @@ Windows 에서는 아래 설명의 「메뉴바」를 작업표시줄 오른쪽 
 - 캐릭터를 만들 때 시대를 고른다. 「현재 메이플」(KMS 389)과 「클래식 (빅뱅 이전)」(GMS 83, 빅뱅 v93 직전 데이터)이다. 기본은 현재 메이플이고 만든 뒤에는 못 바꾼다. 캐릭터 선택 화면에서 클래식 캐릭터는 발밑에 「클래식」 표시가 붙는다
   - 클래식 캐릭터는 마을·사냥터 맵, 몬스터, 맵 BGM, 포털 그림을 GMS 83 에서 받는다. 같은 맵 ID 라도 지형이 달라서(옛 헤네시스는 다른 마을이다) 사냥터 포털 좌표·지면 보정값을 시대마다 따로 둔다
   - 클래식 마을은 17곳이다(`src/game/classicTowns.ts`). 헤네시스 Lv.1 · 리스항구 5 · 엘리니아 10 · 페리온 15 · 커닝시티 20 · 슬리피우드 25 · 아리안트 28 · 오르비스 30 · 루디브리엄 35 · 아랫마을 38 · 지구방위본부 40 · 아쿠아리움 42 · 무릉 48 · 백초마을 50 · 엘나스 55 · 리프레 75 · 시간의 신전 85. 마을이 열리는 레벨은 그 마을 둘레 v83 몹 레벨에 맞췄다. 사냥터는 지금 시대와 같은 규칙으로 고른 것이다(`src/game/routeData.classic.ts`). 지구방위본부와 시간의 신전은 마을에서만 사냥한다. 지구방위본부는 바닥에서 걸어 갈 수 있는 사냥터 포털이 없고, 시간의 신전은 사냥터로 가는 길목(세 개의 문)의 지면 보정을 못 맞춰서 뺐다. 지면 보정을 정확히 못 맞추는 맵(위험한골짜기·주니어네키의 늪·방황의늪3·세 개의 문)과 사냥터가 아닌 맵(헤네시스 마을 안 집·아쿠아리움 동물원)은 `scripts/curate-routes.ts` `EXCLUDED_MAPS` 에 까닭과 함께 적어 고르지 않는다
-  - 캐릭터 그림도 v83 으로 그린다. 아이템마다 받을 판을 따로 적을 수 있어서, 앱이 입히는 아이템 중 v83 에 있는 것(몸·얼굴·헤어·직업 장비 대부분, `src/maple/classicItems.ts`)만 v83 으로 그리고 캐시 아이템·새 장비는 지금 판 그림으로 섞어 그린다
+  - 캐릭터 그림도 v83 으로 그린다. 아이템마다 받을 판을 따로 적을 수 있어서, v83 에 있는 아이템(몸·얼굴·헤어·클래식 직업 장비·장비 컬렉션 `src/maple/classicItems.ts`, 클래식 캐시샵 아이템 `src/maple/classicCashItems.ts`)만 v83 으로 그리고 나머지(1단계 때 산 새 캐시 아이템·지금 시대 장비)는 지금 판 그림으로 섞어 그린다
   - 마을이 열리는 규칙·셔플 백·「머물기」는 시대와 같다. 「머물기」 마을은 설정 하나라 두 시대에 다 있는 마을(헤네시스 등)은 이어지고, 그 시대에 없는 마을이면 돈다. 보상(경험치·메소)은 시대와 상관없이 지금 시대 마을 기준 그대로다
   - 탈것·직접 조작도 클래식 캐릭터가 쓸 수 있다(아래 「탈것」·「직접 조작」). 탈것 그림만 KMS 389 다
-  - 1단계라 UI·스킬·장비·캐시샵·보스는 지금 데이터 그대로다. 보스는 클래식 캐릭터도 지금 시대 보스 맵에서 지금 시대 보스와 싸운다
+  - 직업은 빅뱅 전 모험가다(`src/game/jobs.classic.ts`). 시그너스·아란은 없다. 전직은 Lv.10·30·70·120 이고 4차까지, 최고 레벨은 200 이다. 경험치 곡선은 지금 시대와 같고 Lv.200 을 넘는 경험치는 쌓이기만 한다
+    - 2차 갈래는 지금 시대와 같은 12갈래이고 갈래 ID 도 같다. 이름은 지금 표와 같되 그 시대에 달랐던 3차 스피어맨만 「드래곤나이트」다(지금 KMS 의 같은 직업 번호는 버서커). 2차 갈래 고르기·같은 계열 다른 갈래로 바꾸기·전직 축하 대화가 클래식 이름으로 똑같이 돈다
+    - 갈래마다 차수 무기가 다르다. 2차는 지금 시대와 같은 무기, 3차는 Lv.64 메이플 무기(메이플 글로리 소드 등), 4차는 혼테일 시절 Lv.110 드래곤 무기(드래곤 카라벨라 등)다. 방어구는 지금 시대 1~4차 옷 중 v83 에 있는 것이고, v83 에 없는 궁수 2차·도적 2·3차 옷과 여자 청치마만 v83 옷으로 바꿨다. 직업 장비는 모두 v83 그림으로 그린다
+    - 1단계 때 만든 클래식 캐릭터는 갈래가 그대로 같은 이름의 클래식 갈래로 이어진다. 차수는 클래식 전직 레벨로 다시 세서(Lv.65 는 3차 → 2차) 클래식 차수를 넘는 전직 날짜는 지우고 그 차수가 되면 그날로 다시 적는다. 클래식 스킬북에 없는 사냥 스킬·클래식 보스에 없는 보스 지정은 자동·무작위로 돌린다
+  - 스킬은 GMS 83 Skill.wz 의 모험가 스킬북이다(`src/game/skillBook.classic.ts`, 12갈래 1~4차 316개). 스킬창은 초보자~4차 탭만 있고 아이콘·이펙트를 v83 에서 받는다. 사냥 스킬 고르기·액티브 스킬 쓰기는 지금 시대와 같다
+    - 공격·액티브·패시브와 그림 유무는 지금 스킬북과 같은 기준으로 가렸다. v83 에는 KMS 의 info/type·psd 가 없어서 쓸 때 MP(HP)를 쓰는지(mpCon·hpCon)로 쓰는 스킬과 패시브를 가르고, 그 기준과 다른 21개(콤보 어택·속성 차지·인피니티·에너지 블라스트 등)만 손으로 적었다(`scripts/curate-classic-skills.ts` `TYPE_OVERRIDES`). v83 에서 마스터리북이 필요한 4차 스킬은 WZ 에 숨김(invisible)으로 적혀 있지만 그 시대에 배우던 스킬이라 넣었다
+    - 이름은 같은 ID 의 KMS 389 이름이다. 빅뱅 때 다른 스킬로 바뀐 ID(1121008 브랜디쉬 → 지금 레이징 블로우 등)와 KMS 389 에서 지워진 스킬은 빅뱅 전 KMS 이름을 손으로 적었다(`scripts/classicNames.ts` `CLASSIC_SKILL_NAME_OVERRIDES`). 남은 영문 이름은 없다
+    - 자동 스킬은 차수마다 그림이 있는 대표 공격 스킬이다(히어로 브랜디쉬·드래곤나이트 스피어 크러셔 등). 2차 공격 스킬이 없는 전사 갈래는 1차 슬래시 블러스트를, 궁수 1차·헌터는 v83 에 이펙트 그림이 없는 더블 샷·애로우 봄을 쓴다(맞는 그림만 나온다)
+    - v83 스킬 데이터는 `properties` 대신 레벨마다 값(`levelProperties`)이 있어 마지막 레벨의 사거리·타수·대상 수를 쓴다. 기기에 남길 때는 지금 시대와 칸을 나눈다(`GMS-83:{ID}`)
+    - 도적 허밋(411)의 스킬북 응답은 쉐도우 메소(4111004) 때문에 서버에서 500 이 나서 WZ 자식 목록으로 하나씩 받는다. 쉐도우 메소는 데이터를 못 받아 그림 없음이다
+  - 보스는 그 시대 보스 14마리다(`src/game/bosses.classic.ts`). 마노 Lv.20 · 스텀피 35 · 자쿰 50 · 머쉬맘 60 · 다일 65 · 좀비 머쉬맘 65 · 주니어 발록 80 · 크림슨 발록 100 · 그리프 105 · 마뇽 105 · 피아누스 110 · 레비아탄 120 · 파풀라투스 125 · 핑크빈 180. 맵은 v83 몹 정보의 foundAt 이 가리키는 맵이고, 마노(해안가풀숲3)·주니어 발록(저주받은신전)은 지금 시대 맵이 v83 에 없어서 그 시대 맵이다
+    - 자쿰은 몸통에 팔 여덟 개(8800003~10)를 겹친다. v83 은 팔이 프레임 그림이 있는 따로 나오는 몹이라 원점을 몸통과 같이 써서 원작 자리에 붙는다. 팔은 몸통 뒤에 두고 서 있기·맞기만 받는다(쓰러지는 그림까지 받으면 기준점 요청만 수백 개라 몸통과 같이 흐려진다). 부위가 있는 보스는 원작처럼 돌아서지 않는다
+    - 혼테일은 머리·몸·팔다리 아홉 부위가 따로 움직이는 몹이라 넣지 않았다. 디트와 로이·알리샤르 같은 파티 퀘스트·지역 보스도 넣지 않았다
+    - 보스 HP 게이지는 v83 `UI/UIWindow.img/MobGage` 그림(아이콘 틀·게이지 틀·색 띠·보스 아이콘)이다. 보스 맵 BGM 은 v83 맵 곡이다
+    - 보스 도전 창은 클래식 보스를 늘어놓고 v83 게이지 아이콘·v83 얼굴을 쓴다. 창 틀·버튼은 지금 판 그림이다
+    - 보스 맵 14곳은 감사 도구로 모두 띄워 봤다. 크림슨 발록 맵(오르비스행 배)만 지금 시대처럼 지면 보정이 정확히 맞지 않고 대략 맞춘 값이다. 나머지 13곳은 정확히 맞는다
+  - 장비 컬렉션은 클래식 표다(`src/game/equipment.classic.ts`). 모든 아이템이 v83 에 있다. 지금 시대 표에서 v83 에 있는 것은 같은 칸으로 두고 빅뱅 뒤 아이템(카오스 자쿰·앱솔랩스·아케인셰이드 등)은 뺐다. 자쿰의 투구3, 그리프·마뇽의 드래곤 바부타·골드 드래곤 크라운, 레비아탄의 블루 드래곤 실드, 핑크빈의 타임리스 장비, 레벨 선물 메이플 무기(Lv43)·타임리스 무기(Lv.120)·리버스 모자(Lv.200)를 더했다. 드롭 확률·천장·레벨 선물·장비 상점은 같다
+    - 1단계 때 지금 시대 표로 모은 장비는 가진 채로 두되 클래식 표에 없는 것은 벗는다
+    - 의자·탈것은 지금 시대 것을 그대로 쓴다. 클래식 보스에도 있는 보스(같은 몹 ID)의 의자·탈것과 레벨 선물·상점 탈것만 늘어놓고 센다. 아카이럼·매그너스·진 힐라의 의자·탈것은 클래식에서 얻을 수 없어 뺐다. 그림은 KMS 389 다
+  - 캐시샵은 GMS 83 캐시 아이템 중 KMS 389 에도 같은 ID 로 있는 1,605개만 판다(`src/maple/classicCashItems.ts`). 이 아이템은 v83 그림으로 그린다. 이름·성별·아이콘은 KMS 389 목록 것이다. 1단계 때 산 새 캐시 아이템은 옷장에 남고 지금 판 그림으로 그린다
+  - UI 는 세 군데만 빅뱅 전 그림이다. 나머지(HUD 위 줄·스탯 창·스킬창 틀·장비 창·보스 도전 창 틀·캐시샵)는 지금 판 그림이다
+    - NPC 대화창은 v83 `UI/UIWindow.img/UtilDlgEx` 다(폭 529, 띠 t 28 · c 20 · s 58). NPC 칸을 자르면 이름표(121)가 안 들어가서 흰 글 칸에서만 한 번 잘라 같은 340 폭으로 잇는다(`src/ui/npcDialog.ts` `CLASSIC_FRAME`). 버튼은 GMS 그림이라 글자가 영어(END CHAT·YES·NO·OK)다. NPC 초상화는 지금 판 그림이다(v83 다크로드는 174px 라 창에 안 들어간다)
+    - 경험치 바는 v83 `UI/StatusBar.img/gauge` 의 EXP 게이지(노랑·연두)와 광택을 바 폭으로 늘려 깐다. 빈 칸은 원작 gray 색이다
+    - 보스 HP 게이지는 v83 `MobGage` 다(위 「보스」)
   - 「BGM 고르기」 목록도 지금 판 곡이다. 클래식 맵 곡은 「맵 따라가기」로만 나오고, 그 곡을 「한 곡 반복」하면 같은 경로의 지금 판 곡을 반복한다
 - 원작처럼 캐릭터 발밑에 이름표(반투명 검은 상자에 흰 글자)가 따라다닌다. 원작 기본 이름표는 그림이 아니라 클라이언트가 그려서 같은 모양으로 그린다. 앞 레이어보다 위, 대미지 숫자보다 아래에 보이고 경험치 바와 겹치지 않는다
 - 기본 활동 3분마다 그 마을 몬스터가 나와 자동으로 사냥한다. 몬스터를 누르면 추가 타격
@@ -294,7 +317,11 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 - `equipPity`: 보스 몹 ID → `{ rare, veryRare }` 그 등급이 안 나온 채 잡은 수. 그 등급이 나오면 0 이다. 모르는 보스·음수·숫자가 아닌 값은 버린다
 - `equipGifts`: 받은 레벨 선물 아이템 ID. 같은 선물을 두 번 주지 않는다. 칸이 없던 예전 저장은 빈 배열로 읽고, 켤 때 이미 넘은 레벨 선물을 받으며 채운다
 - `chairOwned`: 보스가 떨어뜨려 모은 의자 아이템 ID 배열. 칸이 없던 예전 저장은 빈 배열이고, 의자 목록에 없는 ID·겹친 ID 는 빼고 읽는다
-- `era`: 만들 때 고른 시대(`current` 현재 메이플·`classic` 클래식). 칸이 없던 예전 저장이나 모르는 값은 `current` 로 읽는다. 합칠 때 어느 한쪽이 `classic` 이면 `classic` 이다(`current` 는 칸이 없을 때 채우는 값이라서)
+- `era`: 만들 때 고른 시대(`current` 현재 메이플·`classic` 클래식). 칸이 없던 예전 저장이나 모르는 값은 `current` 로 읽는다. 합칠 때 어느 한쪽이 `classic` 이면 `classic` 이다(`current` 는 칸이 없을 때 채우는 값이라서). 칸 모양은 시대와 상관없이 같다. 클래식 캐릭터는 같은 칸을 클래식 표로 읽는다
+  - `jobBranch` 갈래 ID 는 두 시대가 같아서 1단계 클래식 캐릭터의 갈래가 그대로 이어진다. 레벨은 경험치로 세고 클래식은 Lv.200 에서 멈춘다(`activeSeconds`·`killXp` 는 그대로 쌓인다)
+  - `huntSkillId` 가 클래식 스킬북에 없으면 `null`, `reservedBossId` 가 클래식 보스가 아니면 `null` 로 읽는다
+  - `advancedAt` 은 클래식 차수(4차까지, Lv.70·120)를 넘는 칸을 빼고 읽는다
+  - `equipOwned`·`equipGifts` 는 두 시대 표 어느 쪽에 있는 아이템이든 남기고, `equipWorn` 은 클래식 표에 있는 아이템만 남긴다. `equipPity` 는 클래식 보스 것만 남긴다
 - `chairSelected`: 쉴 때 앉는 의자 ID. 없으면 `null`(의자 없이 선다). 가진 적 없는 의자거나 숫자가 아니면 `null` 로 읽는다
 - `mountOwned`: 레벨 선물·보스 드롭·장비 상점으로 모은 탈것 아이템 ID 배열. 칸이 없던 예전 저장은 빈 배열이고, 탈것 목록에 없는 ID(목록에서 뺀 샤레니안의 악마 등)·겹친 ID 는 빼고 읽는다
 - `mountSelected`: 돌아다니거나 맵을 옮길 때 타는 탈것 ID. 없으면 `null`(걷는다). 가진 적 없는 탈것이거나 숫자가 아니면 `null` 로 읽는다
@@ -310,16 +337,18 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 
 ## 리소스
 
-캐릭터·몬스터·맵·BGM 은 저장소와 앱에 넣지 않는다. 실행 중에 팬 API [maplestory.io](https://maplestory.io) (KMS 389) 에서 받아 온다. 클래식 캐릭터의 맵·몹·맵 BGM·포털·캐릭터 그림은 같은 API 의 GMS 83 에서 받는다. 주소 꼴은 같고 지역·버전만 다르다(`src/maple/api.ts` `DATA_SOURCES`, 주소 함수의 마지막 인자 `era`). 보내는 값은 공개된 맵·몹·아이템 ID 뿐이다.
+캐릭터·몬스터·맵·BGM 은 저장소와 앱에 넣지 않는다. 실행 중에 팬 API [maplestory.io](https://maplestory.io) (KMS 389) 에서 받아 온다. 클래식 캐릭터의 맵·몹·맵 BGM·포털·캐릭터 그림·스킬 이펙트와 아이콘·보스 맵과 보스·보스 HP 게이지는 같은 API 의 GMS 83 에서 받는다. 주소 꼴은 같고 지역·버전만 다르다(`src/maple/api.ts` `DATA_SOURCES`, 주소 함수의 마지막 인자 `era`). 보내는 값은 공개된 맵·몹·아이템 ID 뿐이다.
 
 GMS 83 에서 다른 점은 이렇다.
 
 - v83 에 없는 맵·몹은 404, 없는 WZ 노드는 404 가 아니라 500(「Object reference not set」)으로 온다. 큐레이션 스크립트(`scripts/mapleio.ts`)는 둘 다 「없음」으로 남기고 다시 받지 않는다. 비어 있는 레이어 렌더가 404 인 것은 지금 판과 같다
 - 포털 그림은 `_Canvas` 가 없고 `Map/MapHelper.img/portal/game/pv/0~7` 에 그대로 있다. 원점이 KMS 389 와 달라 따로 적었다(`src/maple/portal.ts`)
 - 맵 정보 이름은 영문이라 맵에 띄우는 이름은 큐레이션한 한글 이름이다
-- 캐릭터 API 는 `/api/character/{아이템 JSON 목록}` 이고 아이템마다 `region`·`version` 을 적는다. `/api/GMS/83/character/{ID 목록}` 꼴은 400 이다. v83 에 없는 아이템을 v83 으로 적으면 오류 없이 빠진 채 그려져서 `classicItems.ts` 로 가른다
+- 캐릭터 API 는 `/api/character/{아이템 JSON 목록}` 이고 아이템마다 `region`·`version` 을 적는다. `/api/GMS/83/character/{ID 목록}` 꼴은 400 이다. v83 에 없는 아이템을 v83 으로 적으면 오류 없이 빠진 채 그려져서 `classicItems.ts`·`classicCashItems.ts` 로 가른다
+- 스킬 `/job/skill/{ID}` 응답에 `properties` 가 없고 레벨마다 값이 있는 `levelProperties` 가 온다. 스킬 아이콘은 `Skill/{직업}.img/skill/{ID}/icon` 원래 자리에 있다
+- 보스 HP 게이지는 `UI/UIWindow.img/MobGage` 아래에 그림이 그대로 있다(아이콘 틀 `backgrnd` 35×37, 색 띠 `Gage/1~7`, 보스 아이콘 `Mob/{몹 ID}`). 몹 프레임 기준점은 v83 WZ `Mob/{ID}.img/{동작}/{프레임}/origin` 에서 읽는다
 
-클래식 데이터의 한글 이름은 같은 ID 의 KMS 389 이름이다(`scripts/classicNames.ts`). 그 시대 한국어 데이터는 maplestory.io 에 없다. v83 영문 이름과 최근 GMS(270) 영문 이름이 다르면 뜻이 바뀌었을 수 있다고 알리고 영문 이름을 쓴다. 사람이 보고 같은 것이면(스포아·흰 모래토끼 등) KMS 이름을, 다른 맵으로 바뀐 것이면(엘리니아 북쪽 들판 → 지금은 빛나는 숲의 통로) v83 영문을 옮긴 이름을 `CLASSIC_NAME_OVERRIDES` 에 적는다. 남은 영문 이름은 없다.
+클래식 데이터(맵·몹·스킬·장비)의 한글 이름은 같은 ID 의 KMS 389 이름이다(`scripts/classicNames.ts`). 그 시대 한국어 데이터는 maplestory.io 에 없다. v83 영문 이름과 최근 GMS(270) 영문 이름이 다르면 뜻이 바뀌었을 수 있다고 알리고 영문 이름을 쓴다. 사람이 보고 같은 것이면(스포아·흰 모래토끼 등) KMS 이름을, 다른 맵으로 바뀐 것이면(엘리니아 북쪽 들판 → 지금은 빛나는 숲의 통로) v83 영문을 옮긴 이름을 `CLASSIC_NAME_OVERRIDES` 에 적는다. 스킬은 `String/Skill.img` 로 같은 기준을 보고, 바뀌거나 지워진 스킬의 빅뱅 전 이름을 `CLASSIC_SKILL_NAME_OVERRIDES` 에 적는다. 남은 영문 이름은 없다. 직업 이름은 지금 시대 표를 쓰고 그 시대에 달랐던 드래곤나이트만 `src/game/jobs.classic.ts` 에 적었다. 장비 이름은 같은 ID 의 KMS 389 이름이다.
 
 맵·캐릭터·몹 그림은 받을 때 기기(IndexedDB)에 남기고 다음부터는 네트워크 없이 그것으로 그린다(`src/maple/artStore.ts`, 위 「저장 위치」). maplestory.io 는 `max-age=86400` 만 줘서 HTTP 캐시는 하루가 지나면 다시 받고, WebKit 디스크 캐시는 몇 MB 짜리 맵 렌더를 남기지 않는 일이 있어 앱이 따로 남긴다. 남긴 바이트를 그대로 읽어 그려서 받은 것과 그림이 같다. 5xx·깨진 그림은 남기지 않고, 남긴 것을 못 읽으면 지우고 다시 받는다. 처음 받을 때는 지금처럼 시간 제한(30초, 맵 렌더 90초) 안에 받는다. 캐릭터는 모습 그대로의 요청 주소가 키라 옷·헤어가 바뀌면 새로 받는다. 캐릭터가 보인 뒤 5초쯤 지나 지금 모습의 서기·걷기·공격·alert·점프·사다리·로프 동작을 하나씩 받아 둔다. 맵 렌더(약 3MB)도 Rust 파일이 아니라 IndexedDB 에 둔다. 예산 400MB 는 WebKit(macOS 14 이상 WKWebView 앱은 디스크의 15%까지)과 WebView2 한도 안이고, 그림이 한곳에 있어야 예산·지우기를 한 번에 하고 브라우저 개발 화면에서도 똑같이 돈다.
 
@@ -453,11 +482,14 @@ pnpm dev                       # 브라우저로 화면만 (http://localhost:142
 pnpm test                      # 단위 테스트
 node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더]   # 마을 사냥터 다시 고르기 → src/game/routeData.ts
 node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더]      # 원작 BGM 목록·맵 곡 다시 읽기 → src/audio/bgmCatalog.ts
-# 클래식(GMS 83). 마을 → 사냥터 → 맵 곡 순서로 돌린다. 아이템은 장비 목록이 바뀌면 돌린다
+# 클래식(GMS 83). 마을 → 사냥터 → 맵 곡 순서로 돌린다. 아이템은 직업·장비 표가 바뀌면, 스킬은 자동 스킬·이름 표가 바뀌면 돌린다
+# 스킬 스크립트는 허밋 스킬북(job/411/skillbook)·쉐도우 메소(job/skill/4111004)를 「못 받은 주소」로 알린다. 서버가 늘 500 을 내는 것이라 그대로 둔다
 node --experimental-strip-types scripts/curate-classic-towns.ts [캐시 폴더]          # → src/game/classicTowns.ts
 node --experimental-strip-types scripts/curate-routes.ts [캐시 폴더] --era classic   # → src/game/routeData.classic.ts
-node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더] --era classic      # → src/audio/bgmCatalog.classic.ts
+node --experimental-strip-types scripts/curate-bgm.ts [캐시 폴더] --era classic      # → src/audio/bgmCatalog.classic.ts (보스 맵 곡 포함)
 node --experimental-strip-types scripts/curate-classic-items.ts [캐시 폴더]          # → src/maple/classicItems.ts
+node --experimental-strip-types scripts/curate-classic-skills.ts [캐시 폴더]         # → src/game/skillBook.classic.ts
+node --experimental-strip-types scripts/curate-classic-cash.ts [캐시 폴더]           # → src/maple/classicCashItems.ts
 node --experimental-strip-types scripts/release-icon.ts [그림 PNG]      # 릴리스 앱 아이콘 → src-tauri/icons-release (CI 는 시크릿으로 돌린다)
 pnpm tauri build --target universal-apple-darwin   # 배포용 .app·.dmg (src-tauri/target/universal-apple-darwin/release/bundle)
 pnpm tauri build               # Windows 에서 실행하면 -setup.exe·.msi (src-tauri/target/release/bundle/nsis·msi)
@@ -485,7 +517,8 @@ Rust 가 필요하다(`rustup`). 트레이 아이콘은 왼쪽·오른쪽 클릭
 src/
   main.ts            틱마다 활동 시간 → 레벨·전직·사냥·마을 이동을 정한다
   game/              레벨 곡선, 직업, 마을·몬스터 데이터, 사냥 정산, 저장
-    bosses.ts        보스 목록(몹·맵 ID), 보스 차례·고르기(지정한 보스 포함)·보상, 사냥 한 번 정산(settleHunt)
+    bosses.ts        보스 목록(몹·맵 ID), 시대별 보스 목록(bossesOf), 보스 차례·고르기(지정한 보스 포함)·보상, 사냥 한 번 정산(settleHunt)
+    bosses.classic.ts  클래식(GMS 83) 보스 14마리(몹·맵 ID, 자쿰 팔 부위)
     bossChallenge.ts 보스 도전: 보스 차례 상태·다음 보스까지 남은 활동 시간, 진짜 도전·연습전 정산, 저장된 보스 지정 읽기
     encounters.ts    몬스터 주기·사냥 진행(초 단위)·한 마리 보상
     settings.ts      설정 값·기본값·저장, 시간당 보상 몫 계산
@@ -493,12 +526,17 @@ src/
     alerts.ts        OS 알림으로 알릴 일(직업 고르기·전직·장비·의자·탈것 드롭)의 문구, 얻은 아이템 종류와 쓰는 곳, 알릴지 판정, 한 번만 알리기
     updates.ts       업데이트를 언제 확인할지, 새 버전 알림을 버전마다 한 번만, 알림 문구
     cashShop.ts      캐시샵 부위·가격, 캐시 아이템을 직업 장비에 덧입히는 규칙(composeLook), 사기·입기
-    equipment.ts     장비 컬렉션 93칸(보스 드롭·레벨 선물·장비 상점), 갈래가 드는 무기·방패, 보스 드롭(확률·천장, 의자·탈것은 레어 칸에 섞어 굴림)·레벨 선물·상점 사기, 컬렉션 장비를 직업 장비에 입히는 규칙(wearEquipment), 저장 정리·천장 합치기
-    chairs.ts        보스 의자 23개(ID·이름·보스), 의자 고르기·내리기, 의자 셈, 저장 정리
-    mounts.ts        탈것 목록(ID·이름·레벨 선물/보스 드롭/장비 상점), 탈것 고르기·내리기, 레벨 선물, 상점 사기, 탈것 셈, 저장 정리
-    characters.ts    캐릭터 목록, 활동 시간 나누기, 이름 검사, 예전 저장 옮기기, 맵 캐릭터 모습·사냥 스킬(characterJob)
-    skillBook.ts     직업 길·차수별 배우는 스킬(ID·이름·공격/액티브/패시브·그릴 수 있는지·아이콘 경로), 고른 사냥 스킬 풀기·자동으로 돌리기, 쓸 수 있는 스킬, 아이콘 미리 받을 순서
-    records.ts       함께한 시간 글자, 전직 날짜 기록(적기·예전 저장 채우기·합치기), 몬스터 기록에서 보스 처치 세기
+    equipment.ts     장비 컬렉션 93칸(보스 드롭·레벨 선물·장비 상점), 시대별 표(equipEntries), 갈래가 드는 무기·방패, 보스 드롭(확률·천장, 의자·탈것은 레어 칸에 섞어 굴림)·레벨 선물·상점 사기, 컬렉션 장비를 직업 장비에 입히는 규칙(wearEquipment), 저장 정리·천장 합치기
+    equipment.classic.ts  클래식 장비 컬렉션 표(v83 아이템). equipment.ts 의 표 만들기 도구를 받아 만든다
+    chairs.ts        보스 의자 23개(ID·이름·보스), 시대마다 얻을 수 있는 의자, 의자 고르기·내리기, 의자 셈, 저장 정리
+    mounts.ts        탈것 목록(ID·이름·레벨 선물/보스 드롭/장비 상점), 시대마다 얻을 수 있는 탈것, 탈것 고르기·내리기, 레벨 선물, 상점 사기, 탈것 셈, 저장 정리
+    characters.ts    캐릭터 목록, 활동 시간 나누기, 이름 검사, 예전 저장 옮기기, 시대별 최고 레벨로 센 레벨(characterLevel), 맵 캐릭터 모습·사냥 스킬(characterJob)
+    jobs.ts          전직 레벨·계열·2차 갈래(이름·장비·자동 스킬·동작), 시대별 표(jobLines·jobBranches·advancementLevels), 차수 이름·모습(describeJob)
+    jobs.classic.ts  클래식 계열·갈래 표(4차까지, v83 장비·자동 스킬, 드래곤나이트)
+    progression.ts   경험치 곡선, 시대별 최고 레벨(지금 300·클래식 200), 레벨·경험치 막대
+    skillBook.ts     직업 길·차수별 배우는 스킬(ID·이름·공격/액티브/패시브·그릴 수 있는지·아이콘 경로), 시대별 스킬북·탭, 고른 사냥 스킬 풀기·자동으로 돌리기, 쓸 수 있는 스킬, 아이콘 미리 받을 순서
+    skillBook.classic.ts  클래식 모험가 스킬북(1~4차, GMS 83). scripts/curate-classic-skills.ts 가 만든다
+    records.ts       함께한 시간 글자, 전직 날짜 기록(적기·예전 저장 채우기·합치기·차수 넘는 칸 빼기), 몬스터 기록에서 보스 처치 세기
     appearance.ts    캐릭터 생성에서 고르는 성별·헤어·얼굴·피부
     routes.ts        마을 ↔ 사냥터 포털 이동: 지금 맵에서 갈 수 있는 맵(통로 맵은 포털을 이어 타 지나간다), 옮길 때(사냥 수·머문 시간), 고르기, 직접 조작으로 들어간 포털이 잇는 맵(hopAt)
     routeData.ts     마을별 사냥터(맵 ID·포털 좌표·몬스터). scripts/curate-routes.ts 가 만든다
@@ -507,11 +545,13 @@ src/
     classicTowns.ts  클래식 마을(맵·몹 ID, 한글 이름). scripts/curate-classic-towns.ts 가 만든다
     routeCuration.ts 사냥터 고르기 규칙: 바닥에서 포털까지 오갈 길이 있는지, 맵 몬스터 고르기, 레벨 폭·넓힌 폭, 마을에서 너비 우선으로 셋까지, 몹 없는 통로 지나기
   maple/             maplestory.io 주소, 텍스처 로딩, 발판·맵 이미지 맞추기, 대미지 숫자·레벨업 이펙트(basicEff.ts)
-    skills.ts        스킬 데이터 받기·그림으로 풀기, 쓰거나 사냥에 쓸 스킬 데이터 미리 받기
-    skillStore.ts    스킬 데이터를 IndexedDB 에 남기기(크기 제한·예산·오래 안 쓴 것부터 지우기)
+    skills.ts        스킬 데이터 받기(시대마다)·그림으로 풀기, 쓰거나 사냥에 쓸 스킬 데이터 미리 받기
+    skillStore.ts    스킬 데이터를 IndexedDB 에 남기기(크기 제한·예산·오래 안 쓴 것부터 지우기, 클래식은 칸을 나눈다), v83 레벨별 값 읽기
+    bossMob.ts       보스 몹 애니메이션·프레임 기준점·HP 게이지 그림 받기(시대마다, 클래식 자쿰 팔 같은 부위 포함)
     artStore.ts      맵·캐릭터·몹 그림과 맵 정보 JSON 을 요청 주소 그대로 IndexedDB 에 남기고 먼저 거기서 읽기(400MB 예산, 지금 맵·모습은 안 지우기)
     api.ts           maplestory.io 주소. 시대(era)마다 KMS 389·GMS 83 을 고르고, 캐릭터 아이템마다 받을 판을 가른다
     classicItems.ts  앱이 입히는 아이템 중 GMS 83 에도 있는 것. scripts/curate-classic-items.ts 가 만든다
+    classicCashItems.ts  GMS 83 캐시 아이템 중 KMS 389 에도 있는 것(클래식 캐시샵). scripts/curate-classic-cash.ts 가 만든다
     portal.ts        원작 포털 그림(MapHelper.img pv, 시대마다), 곧 갈 사냥터 맵을 미리 받아 기기에 남기기
     chairArt.ts      보스 의자의 WZ 값(bodyRelMove·sitAction·effect 레이어 z·pos·프레임 origin·delay·_outlink)과 프레임 그림 받기
     mountArt.ts      탈것의 WZ 값(stand1·walk1 프레임마다 navel·delay·레이어 z·origin·navel·그림 경로, 안장, 탄 몸 동작, 망토 숨김), 몸 navel 표, API 그림 보정값(−8, −2), 레이어 그림 받기
@@ -529,20 +569,20 @@ src/
   audio/bgm.ts       BGM 재생. 맵 따라가기·한 곡 반복·즐겨찾기 무작위, 곡을 통째로 받아 남긴 것으로 틀기, 맵 따라가기일 때 곧 갈 맵 곡 미리 받기, 없으면 스트리밍하다 받은 파일로 갈아 끼우기, 남긴 곡 용량(300MB) 넘으면 오래 안 들은 곡 지우기, 예전 맵 번호 파일 옮기기
   audio/bgmTracks.ts 원작 BGM 목록(곡 경로·폴더·이 앱의 맵 이름), 「헤네시스 · FloralLife」 이름, 찾기·목록 좁히기, 맵 → 곡, 남길 파일 이름
   audio/bgmCatalog.ts  원작 BGM 폴더·곡 이름과 이 앱이 아는 맵의 곡. scripts/curate-bgm.ts 가 만든다
-  audio/bgmCatalog.classic.ts  클래식 마을·사냥터 맵의 곡(GMS 83 경로). scripts/curate-bgm.ts --era classic 이 만든다
-  ui/hud.ts          레벨·경험치 바·「전직 가능!」·스탯·스킬·보스·캐시샵 버튼·⚙️ 메뉴(직접 조작·소리·장비·BGM 고르기·설정·캐릭터 선택)·연습전 표시·장비 획득 알림·직접 조작 표시
+  audio/bgmCatalog.classic.ts  클래식 마을·사냥터·보스 맵의 곡(GMS 83 경로). scripts/curate-bgm.ts --era classic 이 만든다
+  ui/hud.ts          레벨·경험치 바(클래식은 v83 EXP 게이지)·「전직 가능!」·스탯·스킬·보스·캐시샵 버튼·⚙️ 메뉴(직접 조작·소리·장비·BGM 고르기·설정·캐릭터 선택)·연습전 표시·장비 획득 알림·직접 조작 표시
   ui/manualKeys.ts   직접 조작 키(방향키·Space·Alt·A·Esc) 읽기. 창 포커스가 있을 때만, 포커스를 잃으면 다 뗀다
   ui/musicWindow.ts  BGM 고르기 창(원작 의자 BGM 고르기 창 PLAYLIST 틀·곡 칸·재생 중 칸). 트는 방식, 찾기, 전체·★·맵 곡, ▶·★, 지금 곡
   ui/settings.ts     설정 화면
   ui/statWindow.ts   원작 캐릭터 정보창. 지금 모습과 함께한 시간·사냥·보스·메소·장비 컬렉션·전직 날짜 기록
   ui/equipWindow.ts  장비 창(원작 장비창 틀을 늘려 깔고 캐릭터 칸·흰 판). 컬렉션 칸(가진 것·그림자와 얻는 법·천장), 얻는 곳 고르기, 자리별 입기·벗기, 캐시에 가린 표시, 의자 탭(앉기·내리기)·탈것 탭(타기·내리기)
   ui/equipTabs.ts    장비 창 탭(전체·보스·레벨·상점·의자·탈것)마다 늘어놓을 칸, 의자·탈것 칸의 보유·고름·얻는 법, 왼쪽 셈 글자
-  ui/skillWindow.ts  원작 스킬창(원작 좌표로 짜고 띠를 빼서 230 높이로). 차수 탭별 배운 스킬, 사냥 스킬 고르기, 액티브 스킬 쓰기, 아이콘 미리 받기
-  ui/bossWindow.ts   보스 도전 창(원작 보스 입장 창 틀·보스 목록). 같은 버튼 틀에 이름·얼굴(자쿰은 원작 버튼 그대로), 보스별 처치 수, 다음 보스 지정, 지금 도전·연습전 확인
+  ui/skillWindow.ts  원작 스킬창(원작 좌표로 짜고 띠를 빼서 230 높이로). 차수 탭별 배운 스킬(클래식은 4차 탭까지·v83 아이콘), 사냥 스킬 고르기, 액티브 스킬 쓰기, 아이콘 미리 받기
+  ui/bossWindow.ts   보스 도전 창(원작 보스 입장 창 틀·보스 목록). 시대마다 보스 목록, 같은 버튼 틀에 이름·얼굴(지금 시대 자쿰은 원작 버튼 그대로, 클래식은 v83 얼굴·게이지 아이콘), 보스별 처치 수, 다음 보스 지정, 지금 도전·연습전 확인
   ui/glyph.ts        버튼 그림에서 바탕색·옅은 점을 빼고 그림만 떼어 내기(HUD 스탯·스킬·보스 버튼)
   ui/buttonArt.ts    원작 버튼을 3조각으로 늘릴 때 뗄 열 계산, 원작 보스 버튼(윌)에서 이름·초상을 걷은 빈 틀 만들기(픽셀 계산만)
   ui/mapleButton.ts  원작 범용 버튼(보스 UI·스킬창·기본 버튼)을 글자 없는 띠로 떼어 border-image 로 입히고 글자를 얹기
-  ui/npcDialog.ts    원작 NPC 대화창과 전직 대화(직업 선택·전직 축하). 대화가 겹치면 차례로 띄운다
+  ui/npcDialog.ts    원작 NPC 대화창과 전직 대화(직업 선택·전직 축하). 대화가 겹치면 차례로 띄운다. 클래식은 빅뱅 전 대화창 틀·그 시대 직업 이름
   ui/characterSelect.ts  캐릭터 선택·생성·삭제 화면. 생성에서 시대(현재 메이플·클래식)를 고르고, 선택 화면에 클래식 표시
   ui/cashShop.ts     캐시샵 화면. 목록·무기 종류는 ui/cashCatalog.ts 가 받아 둔다. 「장비」 버튼은 장비 상점 탭(컬렉션 장비 사기·입어 보기·입기, 「탈것」 칸에서 탈것 사기·타기)
   ui/cashShopLayout.ts  캐시샵 칸 영역 크기로 열·행·한 페이지 개수 정하기, 아이템 설명 줄(이름·값·보유·착용 중) 글자
@@ -555,10 +595,12 @@ src/
 scripts/
   curate-routes.ts   마을에서 걸어서 가는 사냥터를 maplestory.io 에서 찾아 src/game/routeData.ts 를 쓴다. 응답은 캐시 폴더에 남기고 요청은 하나씩 보낸다. --era classic 이면 GMS 83 으로 routeData.classic.ts 를 쓴다
   curate-classic-towns.ts  클래식 마을 맵·몹이 v83 에 있는지 보고 한글 이름을 채워 src/game/classicTowns.ts 를 쓴다
-  curate-classic-items.ts  앱 장비·외형 아이템 중 v83 에 있는 것을 골라 src/maple/classicItems.ts 를 쓴다
-  classicNames.ts    클래식 맵·몹 한글 이름(손으로 쓴 표 → KMS 389 → v83 영문). 뜻이 바뀌었을 수 있는 ID 를 알린다
+  curate-classic-items.ts  앱 장비·외형 아이템(지금·클래식 직업 장비, 두 시대 장비 컬렉션) 중 v83 에 있는 것을 골라 src/maple/classicItems.ts 를 쓴다
+  classicNames.ts    클래식 맵·몹·스킬 한글 이름(손으로 쓴 표 → KMS 389 → v83 영문). 뜻이 바뀌었을 수 있는 ID 를 알린다
+  curate-classic-skills.ts  GMS 83 모험가 스킬북을 읽어 공격·액티브·패시브·그림 유무·크기를 가리고 src/game/skillBook.classic.ts 를 쓴다
+  curate-classic-cash.ts    캐시샵 부위마다 GMS 83·KMS 389 캐시 아이템 목록을 견줘 src/maple/classicCashItems.ts 를 쓴다
   mapleio.ts         스크립트가 같이 쓰는 maplestory.io 요청(캐시·다시 받기·없는 노드 500 처리)·시대 인자
-  curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다. --era classic 이면 클래식 마을·사냥터 맵 곡만 bgmCatalog.classic.ts 로 쓴다
+  curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다. --era classic 이면 클래식 마을·사냥터·보스 맵 곡만 bgmCatalog.classic.ts 로 쓴다
   release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)

@@ -1,6 +1,6 @@
-import { BOSSES, type BossSpec, ZAKUM_ID } from '../game/bosses';
+import { type BossSpec, ZAKUM_ID, bossesOf } from '../game/bosses';
 import { type BossTurn, formatBossWait } from '../game/bossChallenge';
-import { type WzValue, mobFrameUrl, mobGageIconLinkUrl, mobGageUrl, wzImageUrl } from '../maple/api';
+import { type Era, type WzValue, classicMobGageUrl, mobFrameUrl, mobGageIconLinkUrl, mobGageUrl, wzImageUrl } from '../maple/api';
 import { applyArt, cropArt, loadWithRetry } from './art';
 import { type FrameRecipe, rebuildBossFrame } from './buttonArt';
 import { PRIORITY, loadImageAsset, loadStoredJson } from './cashAssets';
@@ -14,6 +14,8 @@ export interface BossWindowState {
   turn: BossTurn;
   /** 지금 도전할 수 없는 까닭(사냥·이동 중 등). 도전할 수 있으면 null */
   blocked: string | null;
+  /** 클래식은 그 시대 보스 목록·v83 게이지 아이콘·얼굴이다 */
+  era?: Era;
 }
 
 export interface BossWindowHandlers {
@@ -107,7 +109,25 @@ const FACE_CROP: Record<number, [x: number, y: number]> = {
   8880000: [125, 50],
   8880405: [84, 100],
 };
-const faceUrl = (boss: BossSpec) => mobFrameUrl(boss.id, 'stand', 0);
+/** 클래식은 v83 stand 첫 프레임에서 자른다. 그림이 지금 판과 달라 따로 맞췄다 */
+const CLASSIC_FACE_CROP: Record<number, [x: number, y: number]> = {
+  2220000: [1, 24],
+  3220000: [64, 88],
+  8800000: [165, 95],
+  6130101: [23, 46],
+  6220000: [36, 84],
+  6300005: [26, 52],
+  8130100: [34, 52],
+  8150000: [26, 166],
+  8180001: [65, 62],
+  8180000: [10, 62],
+  8510000: [176, 236],
+  8220003: [10, 70],
+  8500002: [21, 31],
+  8820001: [8, 28],
+};
+const faceUrl = (boss: BossSpec, era: Era) => mobFrameUrl(boss.id, 'stand', 0, era);
+const faceCrop = (boss: BossSpec, era: Era) => (era === 'classic' ? CLASSIC_FACE_CROP : FACE_CROP)[boss.id] ?? [0, 0];
 
 /** 버튼 틀 세 상태. 한 번 만들면 다시 만들지 않는다 */
 let bossFrame: Promise<Record<keyof typeof FRAME_STATES, string>> | null = null;
@@ -151,8 +171,9 @@ const ICON_TIMEOUT_MS = 8000;
 const ICON_INNER_OFFSET = 6;
 const ICON_INNER = 26;
 
-/** 보스 HP 게이지 아이콘. 노드가 가리키는 그림 경로를 기기에 남겨 두고 그 그림을 받는다 */
-async function bossIcon(boss: BossSpec): Promise<string> {
+/** 보스 HP 게이지 아이콘. 노드가 가리키는 그림 경로를 기기에 남겨 두고 그 그림을 받는다. v83 은 링크 없이 그 자리에 있다 */
+async function bossIcon(boss: BossSpec, era: Era): Promise<string> {
+  if (era === 'classic') return loadImageAsset(classicMobGageUrl(`Mob/${boss.id}`), PRIORITY.page);
   const target = await loadStoredJson<WzValue<string>, string>(mobGageIconLinkUrl(boss.id), (raw) => raw.value, ICON_TIMEOUT_MS);
   return loadImageAsset(wzImageUrl(target), PRIORITY.page);
 }
@@ -219,12 +240,17 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
   }, 0);
 
   let state: BossWindowState | null = null;
-  let selectedId = BOSSES[0].id;
+  const eraOf = (current: BossWindowState | null): Era => current?.era ?? 'current';
+  /** 지금 그린 목록의 시대. 다른 시대 캐릭터로 열면 목록을 다시 만든다 */
+  let rowsEra: Era = 'current';
+  const bosses = () => bossesOf(rowsEra);
+  let selectedId = bosses()[0].id;
   /** 연습전 확인 중인 보스. 확인 화면에서는 시작·취소만 보인다 */
   let confirming: number | null = null;
   /** 도전을 못 했을 때의 까닭. 보스를 바꾸면 지운다 */
   let problem: string | null = null;
-  const icons = new Map<number, string>();
+  /** `{시대}|{몹 ID}` → 아이콘 */
+  const icons = new Map<string, string>();
 
   const placeIcon = (holder: HTMLElement, boss: BossSpec) => {
     const show = (src: string) => {
@@ -240,19 +266,28 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
       image.style.visibility = 'hidden';
       holder.replaceChildren(image);
     };
-    const ready = icons.get(boss.id);
+    const era = rowsEra;
+    const key = `${era}|${boss.id}`;
+    const ready = icons.get(key);
     if (ready) return show(ready);
     holder.replaceChildren();
-    bossIcon(boss).then(
+    bossIcon(boss, era).then(
       (src) => {
-        icons.set(boss.id, src);
+        icons.set(key, src);
         if (holder.isConnected && holder.dataset.bossId === String(boss.id)) show(src);
       },
       () => {},
     );
   };
 
-  const rows = BOSSES.map((boss) => {
+  type Row = { boss: BossSpec; row: HTMLButtonElement; face: HTMLElement };
+  let rows: Row[] = [];
+  const buildRows = (era: Era) => {
+    rowsEra = era;
+    rows = bosses().map((boss) => makeRow(boss));
+    list.replaceChildren(...rows.map(({ row }) => row));
+  };
+  const makeRow = (boss: BossSpec): Row => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'boss-row';
@@ -261,15 +296,15 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
     row.innerHTML = `<span class="boss-row-art"></span><span class="boss-row-face"></span><span class="boss-row-name"></span><span class="boss-row-tag">지정</span><span class="boss-row-count"></span><span class="boss-row-lock"></span>`;
     row.querySelector('.boss-row-name')!.textContent = boss.name;
     row.addEventListener('click', () => select(boss.id));
-    list.appendChild(row);
     return { boss, row, face: row.querySelector<HTMLElement>('.boss-row-face')! };
-  });
+  };
+  buildRows('current');
 
   function placeFace(face: HTMLElement, boss: BossSpec) {
     if (face.dataset.state) return;
     face.dataset.state = 'loading';
-    const [x, y] = FACE_CROP[boss.id] ?? [0, 0];
-    loadImageAsset(faceUrl(boss), PRIORITY.page).then(
+    const [x, y] = faceCrop(boss, rowsEra);
+    loadImageAsset(faceUrl(boss, rowsEra), PRIORITY.page).then(
       (src) => {
         face.style.backgroundImage = `url("${src}")`;
         face.style.backgroundPosition = `-${x}px -${y}px`;
@@ -288,7 +323,7 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
   }
 
   function keepVisible() {
-    const index = BOSSES.findIndex((boss) => boss.id === selectedId);
+    const index = bosses().findIndex((boss) => boss.id === selectedId);
     const top = index * ROW_PITCH;
     const visible = Math.round(list.clientHeight / ROW_PITCH);
     if (top < list.scrollTop) list.scrollTop = top;
@@ -378,7 +413,7 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
   }
 
   function renderDetail(current: BossWindowState) {
-    const boss = BOSSES.find((each) => each.id === selectedId) ?? BOSSES[0];
+    const boss = bosses().find((each) => each.id === selectedId) ?? bosses()[0];
     const isLocked = locked(current, boss);
     if (iconFrame.dataset.bossId !== String(boss.id) || !iconFrame.firstChild) {
       iconFrame.dataset.bossId = String(boss.id);
@@ -389,7 +424,7 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
     if (confirming === boss.id) return renderConfirm(current, boss);
 
     const turn = turnLine(current.turn);
-    const reserved = BOSSES.find((each) => each.id === current.reservedBossId) ?? null;
+    const reserved = bosses().find((each) => each.id === current.reservedBossId) ?? null;
     const reservation = document.createElement('p');
     reservation.className = `boss-line is-reservation${reserved ? '' : ' is-random'}`;
     reservation.append(`다음 보스 · ${reserved ? reserved.name : '무작위'}`);
@@ -469,9 +504,9 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
     }
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
-    const index = BOSSES.findIndex((boss) => boss.id === selectedId) + (event.key === 'ArrowUp' ? -1 : 1);
-    if (index < 0 || index >= BOSSES.length) return;
-    select(BOSSES[index].id);
+    const index = bosses().findIndex((boss) => boss.id === selectedId) + (event.key === 'ArrowUp' ? -1 : 1);
+    if (index < 0 || index >= bosses().length) return;
+    select(bosses()[index].id);
     rows[index].row.focus();
   });
 
@@ -484,7 +519,8 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
     applyArt(iconFrame, ICON_FRAME_ART);
     rows.forEach(({ boss, row, face }) => {
       placeFace(face, boss);
-      const original = ORIGINAL_BUTTON[boss.id];
+      // 원작 버튼(자쿰)은 지금 판 초상이라 클래식은 다른 보스처럼 v83 얼굴을 얹는다
+      const original = rowsEra === 'current' ? ORIGINAL_BUTTON[boss.id] : undefined;
       if (original !== undefined) applyArt(row, originalButtonArt(original), 'has-original');
     });
     if (!list.classList.contains('has-frame')) {
@@ -500,15 +536,16 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
 
   /** 지정한 보스, 없으면 잡을 수 있는 가장 센 보스부터 보여 준다 */
   function initialBoss(current: BossWindowState): number {
-    const reserved = BOSSES.find((boss) => boss.id === current.reservedBossId);
+    const reserved = bosses().find((boss) => boss.id === current.reservedBossId);
     if (reserved) return reserved.id;
-    const open = BOSSES.filter((boss) => !locked(current, boss));
-    return (open[open.length - 1] ?? BOSSES[0]).id;
+    const open = bosses().filter((boss) => !locked(current, boss));
+    return (open[open.length - 1] ?? bosses()[0]).id;
   }
 
   return {
     show(next) {
       state = next;
+      if (eraOf(next) !== rowsEra) buildRows(eraOf(next));
       selectedId = initialBoss(next);
       confirming = null;
       problem = null;
@@ -532,10 +569,10 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
 }
 
 /** 창 그림·보스 아이콘·얼굴·버튼 틀을 뒤에서 받아 둔다. 창을 열 때 그림을 기다리지 않게 한다 */
-export function prefetchBossWindow(): void {
-  BOSSES.forEach((boss) => {
-    void bossIcon(boss).catch(() => {});
-    void loadImageAsset(faceUrl(boss), PRIORITY.prefetch).catch(() => {});
+export function prefetchBossWindow(era: Era = 'current'): void {
+  bossesOf(era).forEach((boss) => {
+    void bossIcon(boss, era).catch(() => {});
+    void loadImageAsset(faceUrl(boss, era), PRIORITY.prefetch).catch(() => {});
   });
   [FRAME_ART.frame, SLOT_ART.slot, PRACTICE_BANNER_URL, ICON_FRAME_ART.frame, ...Object.values(PRACTICE_BUTTON_ART)].forEach(
     (url) => void loadWithRetry(url).catch(() => {}),

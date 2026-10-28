@@ -1,5 +1,5 @@
-import { JOB_BRANCHES, JOB_LINES, type JobBranchId, type JobLineId, type JobPath, lineOf, tierName } from '../game/jobs';
-import { npcDialogUrl, npcStandUrl, wzImageUrl } from '../maple/api';
+import { JOB_BRANCHES, JOB_LINES, type JobBranchId, type JobLineId, type JobPath, jobBranches, lineOf, tierName } from '../game/jobs';
+import { type Era, npcDialogUrl, npcStandUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry, loadedImage } from './art';
 
 export interface Npc {
@@ -41,6 +41,8 @@ export interface NpcDialog {
   clear(): void;
   /** 대화가 떠 있다 */
   isOpen(): boolean;
+  /** 대화창 틀을 그 시대 원작 그림으로 바꾼다. 클래식은 빅뱅 전 대화창이다 */
+  setEra(era: Era): void;
 }
 
 export interface Conversation {
@@ -94,34 +96,81 @@ export function hasFinalConsonant(word: string): boolean {
   return code % 28 > 0;
 }
 
+/** 대화창 틀 그림을 잘라 잇는 방법과 띠 높이. 시대마다 원작 대화창 그림이 달라서 따로 둔다 */
+export interface DialogFrame {
+  /** 원본 띠에서 잘라 이을 세로 구간 [원본 x, 폭] */
+  slices: [srcX: number, width: number][];
+  /** 위 띠(t)·가운데 띠 한 줄(c)·아래 띠(s) 높이 */
+  top: number;
+  row: number;
+  bottom: number;
+  minRows: number;
+  maxRows: number;
+  /** 글 칸 위아래 안쪽 여백의 합 */
+  textMargin: number;
+  /** NPC 칸 위 여백 + 아래에서 이름표 아래까지 + 이름표 + 위아래 여백 */
+  portraitMargin: number;
+  /** UtilDlgEx 아래 노드 그림 */
+  art(node: string): string;
+  /** 확인 버튼 그림 */
+  okArt(state: string): string;
+}
+
 // 원작 대화창(UI/UIWindow2.img/UtilDlgEx)은 폭 519 에 위(t, 28)·가운데(c, 13 을 세로로 반복)·아래(s, 44) 세 띠다.
 // 360 창에 맞추려고 원본 크기 그대로 두고 세로로 한 줄씩 똑같은 구간 두 곳(NPC 칸 80~100, 글 칸 190~349)을 잘라 낸다.
-// 잘라 낸 양옆 줄이 같은 색이라 이은 자리가 보이지 않는다
-const SLICES: [srcX: number, width: number][] = [
-  [0, 80],
-  [100, 90],
-  [349, 170],
-];
-export const DIALOG_WIDTH = SLICES.reduce((sum, [, width]) => sum + width, 0);
-const TOP_HEIGHT = 28;
-const ROW_HEIGHT = 13;
-const BOTTOM_HEIGHT = 44;
-const MIN_ROWS = 5;
-/** 72 + 13 × 11 = 215 로 창 높이(230) 안에 든다. 가장 큰 초상화(하인즈 150)도 이 높이에 들어간다 */
-const MAX_ROWS = 11;
-/** 글 칸은 위에서 19, 아래에서 39 안쪽이다 */
-const TEXT_MARGIN = 19 + 39;
-/** NPC 칸은 위에서 13, 아래 파란 띠까지 28. 그 안에 초상화 + 이름표(19) + 위아래 여백 */
-const PORTRAIT_MARGIN = 13 + 28 + 19 + 5;
+// 잘라 낸 양옆 줄이 같은 색이라 이은 자리가 보이지 않는다.
+// 글 칸은 위에서 19, 아래에서 39 안쪽이다. NPC 칸은 위에서 13, 아래 파란 띠까지 28 이고 그 안에 초상화 + 이름표(19) + 위아래 여백.
+// 72 + 13 × 11 = 215 로 창 높이(230) 안에 든다. 가장 큰 초상화(하인즈 150)도 이 높이에 들어간다
+const CURRENT_FRAME: DialogFrame = {
+  slices: [
+    [0, 80],
+    [100, 90],
+    [349, 170],
+  ],
+  top: 28,
+  row: 13,
+  bottom: 44,
+  minRows: 5,
+  maxRows: 11,
+  textMargin: 19 + 39,
+  portraitMargin: 13 + 28 + 19 + 5,
+  art: npcDialogUrl,
+  // 확인 버튼은 _outlink 가 공용 버튼(Basic.img/BtOK4)을 가리킨다
+  okArt: (state) => wzImageUrl(`UI/_Canvas/Basic.img/BtOK4/${state}/0`),
+};
+
+// 빅뱅 전 대화창(v83 UI/UIWindow.img/UtilDlgEx)은 폭 529 에 t 28 · c 20 · s 58(아래 25px 가 버튼 띠)이다. 베이지 NPC 칸(15~140)을
+// 자르면 이름표(121)가 안 들어가서 흰 글 칸(152~507)에서만 한 번(160~349) 잘라 낸다. 글 칸은 위에서 27, 아래에서 57 안쪽이고,
+// 이름표는 아래에서 45 에 둔다. 하인즈(150)는 7줄(226)에 위 테두리를 몇 px 덮는다
+const CLASSIC_FRAME: DialogFrame = {
+  slices: [
+    [0, 160],
+    [349, 180],
+  ],
+  top: 28,
+  row: 20,
+  bottom: 58,
+  minRows: 3,
+  maxRows: 7,
+  textMargin: 27 + 57,
+  portraitMargin: 13 + 45 + 19 + 3,
+  art: (node) => wzImageUrl(`UI/UIWindow.img/UtilDlgEx/${node}`, 'classic'),
+  okArt: (state) => wzImageUrl(`UI/UIWindow.img/UtilDlgEx/BtOK/${state}/0`, 'classic'),
+};
+
+export const dialogFrame = (era: Era = 'current'): DialogFrame => (era === 'classic' ? CLASSIC_FRAME : CURRENT_FRAME);
+
+const frameWidth = (frame: DialogFrame) => frame.slices.reduce((sum, [, width]) => sum + width, 0);
+export const DIALOG_WIDTH = frameWidth(CURRENT_FRAME);
 const FALLBACK_PORTRAIT_HEIGHT = 80;
 
-export const dialogHeight = (rows: number) => TOP_HEIGHT + ROW_HEIGHT * rows + BOTTOM_HEIGHT;
+export const dialogHeight = (rows: number, frame: DialogFrame = CURRENT_FRAME) => frame.top + frame.row * rows + frame.bottom;
 
 /** 글과 초상화가 다 들어가는 가운데 띠 반복 수. 넘치는 글은 글 칸 안에서 스크롤한다 */
-export function dialogRows(textHeight: number, portraitHeight: number): number {
-  const needed = Math.max(textHeight + TEXT_MARGIN, portraitHeight + PORTRAIT_MARGIN);
-  const rows = Math.ceil((needed - TOP_HEIGHT - BOTTOM_HEIGHT) / ROW_HEIGHT);
-  return Math.min(MAX_ROWS, Math.max(MIN_ROWS, rows));
+export function dialogRows(textHeight: number, portraitHeight: number, frame: DialogFrame = CURRENT_FRAME): number {
+  const needed = Math.max(textHeight + frame.textMargin, portraitHeight + frame.portraitMargin);
+  const rows = Math.ceil((needed - frame.top - frame.bottom) / frame.row);
+  return Math.min(frame.maxRows, Math.max(frame.minRows, rows));
 }
 
 type ButtonName = 'close' | 'no' | 'yes' | 'next' | 'ok';
@@ -132,24 +181,18 @@ const BUTTON_LABELS: Record<ButtonName, string> = {
   next: '다음',
   ok: '확인',
 };
-// 확인 버튼은 _outlink 가 공용 버튼(Basic.img/BtOK4)을 가리킨다
-const BUTTON_NODES: Record<ButtonName, (state: string) => string> = {
-  close: (state) => npcDialogUrl(`BtClose/${state}/0`),
-  no: (state) => npcDialogUrl(`BtNo/${state}/0`),
-  yes: (state) => npcDialogUrl(`BtYes/${state}/0`),
-  next: (state) => npcDialogUrl(`BtNext/${state}/0`),
-  ok: (state) => wzImageUrl(`UI/_Canvas/Basic.img/BtOK4/${state}/0`),
+const BUTTON_NODES: Record<Exclude<ButtonName, 'ok'>, string> = { close: 'BtClose', no: 'BtNo', yes: 'BtYes', next: 'BtNext' };
+const buttonArt = (name: ButtonName, frame: DialogFrame) => {
+  const node = (state: string) => (name === 'ok' ? frame.okArt(state) : frame.art(`${BUTTON_NODES[name]}/${state}/0`));
+  return { normal: node('normal'), hover: node('mouseOver'), pressed: node('pressed'), disabled: node('disabled') };
 };
-const buttonArt = (name: ButtonName) => ({
-  normal: BUTTON_NODES[name]('normal'),
-  hover: BUTTON_NODES[name]('mouseOver'),
-  pressed: BUTTON_NODES[name]('pressed'),
-  disabled: BUTTON_NODES[name]('disabled'),
-});
-// 선택지 앞 화살표. 회색(dot0)이 평소, 빨강(dot1)이 고를 때다
-const DOT_ART = {
-  dot0: wzImageUrl('UI/_Canvas/UIWindow.img/UtilDlgEx/dot0'),
-  dot1: wzImageUrl('UI/_Canvas/UIWindow.img/UtilDlgEx/dot1'),
+// 선택지 앞 화살표. 회색(dot0)이 평소, 빨강(dot1)이 고를 때다. 지금 판도 UIWindow.img 쪽 그림을 쓴다
+const DOT_ART: Record<Era, Record<'dot0' | 'dot1', string>> = {
+  current: {
+    dot0: wzImageUrl('UI/_Canvas/UIWindow.img/UtilDlgEx/dot0'),
+    dot1: wzImageUrl('UI/_Canvas/UIWindow.img/UtilDlgEx/dot1'),
+  },
+  classic: { dot0: CLASSIC_FRAME.art('dot0'), dot1: CLASSIC_FRAME.art('dot1') },
 };
 
 export function createNpcDialog(root: HTMLElement): NpcDialog {
@@ -175,17 +218,24 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
   const textBox = overlay.querySelector<HTMLElement>('.npc-text')!;
   const buttonRow = overlay.querySelector<HTMLElement>('.npc-buttons')!;
 
-  (['t', 'c', 's'] as const).forEach((band) => {
-    let left = 0;
-    SLICES.forEach(([srcX, width]) => {
-      const piece = document.createElement('span');
-      piece.className = `npc-piece is-${band}`;
-      Object.assign(piece.style, { left: `${left}px`, width: `${width}px`, backgroundPositionX: `${-srcX}px` });
-      frame.appendChild(piece);
-      left += width;
+  let era: Era = 'current';
+  let frameArt = CURRENT_FRAME;
+  /** 시대마다 틀 그림을 자르는 자리가 달라서 조각을 다시 놓는다 */
+  function placePieces() {
+    frame.replaceChildren();
+    (['t', 'c', 's'] as const).forEach((band) => {
+      let left = 0;
+      frameArt.slices.forEach(([srcX, width]) => {
+        const piece = document.createElement('span');
+        piece.className = `npc-piece is-${band}`;
+        Object.assign(piece.style, { left: `${left}px`, width: `${width}px`, backgroundPositionX: `${-srcX}px` });
+        frame.appendChild(piece);
+        left += width;
+      });
     });
-  });
-  windowEl.style.width = `${DIALOG_WIDTH}px`;
+    windowEl.style.width = `${frameWidth(frameArt)}px`;
+  }
+  placePieces();
 
   const buttons = {} as Record<ButtonName, HTMLButtonElement>;
   (Object.keys(BUTTON_LABELS) as ButtonName[]).forEach((key) => {
@@ -204,10 +254,10 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
   let portraitHeight = FALLBACK_PORTRAIT_HEIGHT;
 
   function dressUp() {
-    applyArt(windowEl, { t: npcDialogUrl('t'), c: npcDialogUrl('c'), s: npcDialogUrl('s') }, 'has-art', layout);
-    applyArt(name, { bar: npcDialogUrl('bar') });
-    applyArt(overlay, DOT_ART, 'has-dot-art');
-    (Object.keys(buttons) as ButtonName[]).forEach((key) => applyArt(buttons[key], buttonArt(key)));
+    applyArt(windowEl, { t: frameArt.art('t'), c: frameArt.art('c'), s: frameArt.art('s') }, 'has-art', layout);
+    applyArt(name, { bar: frameArt.art('bar') });
+    applyArt(overlay, DOT_ART[era], 'has-dot-art');
+    (Object.keys(buttons) as ButtonName[]).forEach((key) => applyArt(buttons[key], buttonArt(key, frameArt)));
   }
 
   /** 글 높이와 초상화 높이에 맞춰 창 높이를 띠 단위로 정하고 창 가운데에 둔다 */
@@ -217,13 +267,13 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
     // WebKit 은 zoom 이 걸린 글의 줄 높이를 확대된 픽셀로 반올림해서 배율마다 글 높이가 몇 px 씩 달라진다.
     // 창 높이(띠 수)가 배율 따라 바뀌지 않게 잠깐 1배로 배치해서 잰다
     overlay.style.zoom = '1';
-    const rows = dialogRows(textBox.scrollHeight, portraitHeight);
+    const rows = dialogRows(textBox.scrollHeight, portraitHeight, frameArt);
     overlay.style.zoom = '';
-    const height = dialogHeight(rows);
+    const height = dialogHeight(rows, frameArt);
     windowEl.style.height = `${height}px`;
     // root 는 75% 창에서 줄어 있다. zoom 이 걸린 overlay 로 재야 배율과 무관한 값이 나온다
     windowEl.style.top = `${Math.floor((overlay.clientHeight - height) / 2)}px`;
-    windowEl.style.left = `${Math.floor((overlay.clientWidth - DIALOG_WIDTH) / 2)}px`;
+    windowEl.style.left = `${Math.floor((overlay.clientWidth - frameWidth(frameArt)) / 2)}px`;
     textBox.style.bottom = '';
   }
 
@@ -327,6 +377,20 @@ export function createNpcDialog(root: HTMLElement): NpcDialog {
   });
 
   return {
+    setEra(next) {
+      if (next === era) return;
+      era = next;
+      frameArt = dialogFrame(era);
+      overlay.dataset.era = era;
+      placePieces();
+      // 앞 시대 그림이 입혀 있으면 applyArt 가 건너뛰어서 표시를 지우고 다시 입힌다
+      [windowEl, name, ...Object.values(buttons)].forEach((element) => element.classList.remove('has-art'));
+      overlay.classList.remove('has-dot-art');
+      if (!overlay.hidden) {
+        dressUp();
+        layout();
+      }
+    },
     open(key, first, passive = false, onDismiss) {
       if (current?.key === key) {
         // 축하 창이 떠 있는 사이 또 전직하면 새 축하로 바꾼다. 직업 선택은 고르던 쪽을 그대로 둔다
@@ -488,21 +552,26 @@ export function openJobChoice(dialog: NpcDialog, onChoose: (id: JobLineId) => vo
 }
 
 /** 선택지에 붙이는 갈래 이름. 「건슬링어 → 발키리 → 캡틴」 */
-export const branchRoute = (id: JobBranchId): string => JOB_BRANCHES[id].names.join(' → ');
-const laterNames = (id: JobBranchId) => JOB_BRANCHES[id].names.slice(1).join(', ');
+export const branchRoute = (id: JobBranchId, era: Era = 'current'): string => jobBranches(era)[id].names.join(' → ');
+const laterNames = (id: JobBranchId, era: Era) => jobBranches(era)[id].names.slice(1).join(', ');
 
 /** 2차 전직 레벨에 그 계열 전직관이 갈래를 묻는다. 「예」를 누르면 onChoose 를 부른다 */
-export function openBranchChoice(dialog: NpcDialog, line: JobLineId, onChoose: (id: JobBranchId) => void): void {
+export function openBranchChoice(
+  dialog: NpcDialog,
+  line: JobLineId,
+  onChoose: (id: JobBranchId) => void,
+  era: Era = 'current',
+): void {
   const instructor = INSTRUCTORS[line];
   const ask: NpcPage = {
     npc: instructor.npc,
     text: instructor.askBranch,
     options: JOB_LINES[line].branches.map((id) => ({
-      label: branchRoute(id),
+      label: branchRoute(id, era),
       select: () =>
         dialog.show({
           npc: instructor.npc,
-          text: instructor.confirmBranch(JOB_BRANCHES[id].names[0], laterNames(id)),
+          text: instructor.confirmBranch(jobBranches(era)[id].names[0], laterNames(id, era)),
           no: () => dialog.show(ask),
           yes: () => {
             dialog.end();
@@ -522,6 +591,8 @@ export interface JobChangeOffer {
   free: boolean;
   price: number;
   meso: number;
+  /** 클래식은 빅뱅 전 이름(드래곤나이트)으로 적는다 */
+  era?: Era;
 }
 
 export interface JobChangeHandlers {
@@ -544,7 +615,8 @@ export function jobChangePriceText(offer: Pick<JobChangeOffer, 'free' | 'price' 
 export function openJobChange(dialog: NpcDialog, offer: JobChangeOffer, handlers: JobChangeHandlers): void {
   const line = JOB_BRANCHES[offer.current].line;
   const instructor = INSTRUCTORS[line];
-  const current = tierName(offer.current, offer.tier);
+  const era = offer.era ?? 'current';
+  const current = tierName(offer.current, offer.tier, era);
   const poor = !offer.free && offer.meso < offer.price;
   const others = JOB_LINES[line].branches.filter((id) => id !== offer.current);
   const ask: NpcPage = {
@@ -552,12 +624,12 @@ export function openJobChange(dialog: NpcDialog, offer: JobChangeOffer, handlers
     text: offer.free ? instructor.offerFree(current) : `${instructor.askChange(current)}\n${jobChangePriceText(offer)}`,
     options: [
       ...others.map((id) => ({
-        label: branchRoute(id),
+        label: branchRoute(id, era),
         disabled: poor,
         select: () =>
           dialog.show({
             npc: instructor.npc,
-            text: `${instructor.confirmChange(tierName(id, offer.tier))}${offer.free ? '' : `\n#r${mesoText(offer.price)} 메소#k를 낸다.`}`,
+            text: `${instructor.confirmChange(tierName(id, offer.tier, era))}${offer.free ? '' : `\n#r${mesoText(offer.price)} 메소#k를 낸다.`}`,
             no: () => dialog.show(ask),
             yes: () => {
               dialog.end();
@@ -582,11 +654,11 @@ export function openJobChange(dialog: NpcDialog, offer: JobChangeOffer, handlers
 }
 
 /** 2차부터 6차까지. 게임은 계속 돌고 「확인」으로 닫는다 */
-export function openAdvancementCongratulation(dialog: NpcDialog, path: JobPath, tier: number): void {
+export function openAdvancementCongratulation(dialog: NpcDialog, path: JobPath, tier: number, era: Era = 'current'): void {
   const instructor = INSTRUCTORS[lineOf(path)];
   dialog.open(
     CONGRATULATION_KEY,
-    { npc: instructor.npc, text: instructor.congratulate(tier, tierName(path, tier)), ok: () => dialog.end() },
+    { npc: instructor.npc, text: instructor.congratulate(tier, tierName(path, tier, era)), ok: () => dialog.end() },
     true,
   );
 }

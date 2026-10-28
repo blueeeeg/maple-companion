@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOSSES } from '../game/bosses';
+import { BOSSES, bossesOf } from '../game/bosses';
 import { TOWNS, townsFor } from '../game/towns';
 import { musicUrl } from '../maple/api';
 import type { BgmCacheEntry } from '../platform/bgmCache';
@@ -732,15 +732,25 @@ describe('클래식 맵 BGM', () => {
     expect(mapTrack).toHaveBeenCalledWith(ZAKUM, 'classic');
   });
 
-  it('곧 갈 맵은 클래식 마을에 시대를 붙이고, 보스는 지금 시대 맵 그대로다', () => {
+  it('곧 갈 맵은 클래식 마을·클래식 보스 맵에 시대를 붙인다. 지금 시대 맵은 섞이지 않는다', () => {
     const level = 70;
     const maps = likelyBgmMaps(level, [], 'classic');
     const towns = townsFor('classic').filter((town) => town.minLevel <= level);
-    const bosses = BOSSES.filter((boss) => boss.minLevel <= level).map((boss) => boss.mapId);
-    expect(maps.filter((map) => typeof map !== 'number')).toEqual(
-      expect.arrayContaining(towns.map((town) => ({ mapId: town.mapId, era: 'classic' }))),
+    const bosses = bossesOf('classic').filter((boss) => boss.minLevel <= level);
+    expect(maps).toEqual(
+      expect.arrayContaining([
+        ...towns.map((town) => ({ mapId: town.mapId, era: 'classic' })),
+        ...bosses.map((boss) => ({ mapId: boss.mapId, era: 'classic' })),
+      ]),
     );
-    expect(new Set(maps.filter((map) => typeof map === 'number'))).toEqual(new Set(bosses));
+    expect(maps.filter((map) => typeof map === 'number')).toEqual([]);
+  });
+
+  it('지금 시대 캐릭터의 곧 갈 맵은 그대로 지금 시대 보스 맵이다', () => {
+    const maps = likelyBgmMaps(70, [], 'current');
+    const bosses = BOSSES.filter((boss) => boss.minLevel <= 70).map((boss) => boss.mapId);
+    expect(maps).toEqual(expect.arrayContaining(bosses));
+    expect(maps.every((map) => typeof map === 'number')).toBe(true);
   });
 });
 

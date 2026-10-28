@@ -1,4 +1,5 @@
-import { BOSSES } from './bosses';
+import type { Era } from '../maple/api';
+import { BOSSES, bossesOf } from './bosses';
 
 /** 레벨 선물, 보스 드롭(레어 칸), 장비 상점 중 하나로 얻는다 */
 export type MountSource =
@@ -68,8 +69,15 @@ export function selectMount(owned: number[], selected: number | null, mountId: n
   return selected === mountId ? null : mountId;
 }
 
-export function mountProgress(owned: number[]): { owned: number; total: number } {
-  return { owned: MOUNTS.filter((each) => owned.includes(each.id)).length, total: MOUNTS.length };
+/** 그 시대 캐릭터가 얻을 수 있는 탈것. 클래식은 클래식 보스에 없는 보스의 탈것만 빠지고, 레벨 선물·상점은 같다 */
+export const mountsFor = (era: Era = 'current'): Mount[] =>
+  era === 'current'
+    ? MOUNTS
+    : MOUNTS.filter(({ source }) => source.kind !== 'boss' || bossesOf(era).some((boss) => boss.id === source.bossId));
+
+export function mountProgress(owned: number[], era: Era = 'current'): { owned: number; total: number } {
+  const mounts = mountsFor(era);
+  return { owned: mounts.filter((each) => owned.includes(each.id)).length, total: mounts.length };
 }
 
 /** 상점 탈것 칸. 장비 상점 「탈것」에 이 순서로 늘어놓는다 */

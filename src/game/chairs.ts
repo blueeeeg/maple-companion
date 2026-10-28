@@ -1,4 +1,5 @@
-import { BOSSES } from './bosses';
+import type { Era } from '../maple/api';
+import { BOSSES, bossesOf } from './bosses';
 
 /** 보스가 떨어뜨리는 의자. 겉모습뿐이고 쉴 때 앉는다 */
 export interface Chair {
@@ -52,8 +53,13 @@ export function selectChair(owned: number[], selected: number | null, chairId: n
   return selected === chairId ? null : chairId;
 }
 
-export function chairProgress(owned: number[]): { owned: number; total: number } {
-  return { owned: CHAIRS.filter((each) => owned.includes(each.id)).length, total: CHAIRS.length };
+/** 그 시대 캐릭터가 얻을 수 있는 의자. 클래식은 클래식 보스에도 있는 보스(같은 몹 ID)의 의자뿐이다. 그림은 시대와 상관없이 지금 판이다 */
+export const chairsFor = (era: Era = 'current'): Chair[] =>
+  era === 'current' ? CHAIRS : CHAIRS.filter((each) => bossesOf(era).some((boss) => boss.id === each.bossId));
+
+export function chairProgress(owned: number[], era: Era = 'current'): { owned: number; total: number } {
+  const chairs = chairsFor(era);
+  return { owned: chairs.filter((each) => owned.includes(each.id)).length, total: chairs.length };
 }
 
 /** 의자가 생기기 전 저장은 빈 목록이다. 모르는 의자는 버리고, 가진 적 없는 의자를 골라 뒀으면 고르지 않은 것으로 친다 */

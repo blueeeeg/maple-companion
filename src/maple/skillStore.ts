@@ -2,7 +2,7 @@
 // 캐시샵 아이콘과 같은 DB 라 KMS 버전이 바뀌면 통째로 새로 받는다. 크기 제한을 넘는 스킬은 남기지 않고,
 // 모두 합쳐 예산을 넘으면 가장 오래 안 쓴 스킬부터 지운다
 import { deleteStored, readStored, writeStored } from '../ui/cashAssets';
-import { DATA_KEY, type SkillInfo } from './api';
+import { DATA_KEY, type Era, type SkillInfo, dataKey } from './api';
 
 /** 이보다 큰 스킬은 기기에 남기지 않는다. 눌렀을 때마다 받는다 */
 export const SKILL_STORE_CAP_BYTES = 5 * 1024 * 1024;
@@ -10,7 +10,9 @@ export const SKILL_STORE_CAP_BYTES = 5 * 1024 * 1024;
 export const SKILL_STORE_BUDGET_BYTES = 60 * 1024 * 1024;
 
 const INDEX_KEY = `${DATA_KEY}:skill-index`;
-const dataKey = (skillId: number) => `${DATA_KEY}:skill:${skillId}`;
+/** 목록 칸 이름. 같은 ID 라도 클래식(v83)은 다른 스킬일 수 있어서 버전을 붙여 나눈다. 지금 시대는 예전 칸 이름 그대로다 */
+export const skillStoreId = (skillId: number, era: Era = 'current') => (era === 'current' ? `${skillId}` : `${dataKey(era)}:${skillId}`);
+const storedKey = (storeId: string) => `${DATA_KEY}:skill:${storeId}`;
 
 /** 남겨 둔 스킬 → 크기·마지막으로 쓴 때 */
 export type SkillStoreIndex = Record<string, { bytes: number; usedAt: number }>;
@@ -31,7 +33,8 @@ export function evictionPlan(index: SkillStoreIndex, budget: number): string[] {
 
 /** 맵에 그리는 데 쓰는 것만 남긴다. 아이콘·설명·레벨별 수치는 버린다 */
 export function trimSkillInfo(info: SkillInfo): SkillInfo {
-  const { lt, attackCount, mobCount } = info.properties ?? {};
+  const levels = info.levelProperties ?? [];
+  const { lt, attackCount, mobCount } = info.properties ?? levels[levels.length - 1] ?? {};
   return {
     description: { name: info.description?.name ?? '' },
     properties: {
@@ -49,14 +52,15 @@ let index: Promise<SkillStoreIndex> | null = null;
 const loadIndex = () => (index ??= readStored<SkillStoreIndex>(INDEX_KEY).then((saved) => saved ?? {}));
 const saveIndex = (current: SkillStoreIndex) => writeStored(INDEX_KEY, current);
 
-export async function readStoredSkill(skillId: number): Promise<SkillInfo | undefined> {
+export async function readStoredSkill(skillId: number, era: Era = 'current'): Promise<SkillInfo | undefined> {
   const current = await loadIndex();
-  const entry = current[skillId];
+  const id = skillStoreId(skillId, era);
+  const entry = current[id];
   if (!entry) return undefined;
-  const info = await readStored<SkillInfo>(dataKey(skillId));
+  const info = await readStored<SkillInfo>(storedKey(id));
   if (!info) {
     // 저장소를 비웠으면 목록에서도 뺀다
-    delete current[skillId];
+    delete current[id];
     saveIndex(current);
     return undefined;
   }
@@ -66,14 +70,15 @@ export async function readStoredSkill(skillId: number): Promise<SkillInfo | unde
 }
 
 /** bytes: 남길 데이터의 크기(JSON 길이) */
-export async function storeSkill(skillId: number, info: SkillInfo, bytes: number): Promise<void> {
+export async function storeSkill(skillId: number, info: SkillInfo, bytes: number, era: Era = 'current'): Promise<void> {
   if (bytes > SKILL_STORE_CAP_BYTES) return;
   const current = await loadIndex();
-  writeStored(dataKey(skillId), info);
-  current[skillId] = { bytes, usedAt: Date.now() };
-  evictionPlan(current, SKILL_STORE_BUDGET_BYTES).forEach((id) => {
-    delete current[id];
-    deleteStored(dataKey(Number(id)));
+  const id = skillStoreId(skillId, era);
+  writeStored(storedKey(id), info);
+  current[id] = { bytes, usedAt: Date.now() };
+  evictionPlan(current, SKILL_STORE_BUDGET_BYTES).forEach((evicted) => {
+    delete current[evicted];
+    deleteStored(storedKey(evicted));
   });
   saveIndex(current);
 }

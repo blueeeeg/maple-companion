@@ -1,4 +1,4 @@
-import { BOSSES } from '../game/bosses';
+import { BOSSES, bossesOf } from '../game/bosses';
 import { TOWN_ROUTES } from '../game/routeData';
 import { CLASSIC_TOWN_ROUTES } from '../game/routeData.classic';
 import { TOWNS, townsFor } from '../game/towns';
@@ -58,6 +58,7 @@ function classicMapNames(): Map<string, string[]> {
   };
   townsFor('classic').forEach((town) => add(town.mapId, town.name));
   Object.values(CLASSIC_TOWN_ROUTES).forEach((fields) => fields.forEach((field) => add(field.mapId, field.name)));
+  bossesOf('classic').forEach((boss) => add(boss.mapId, boss.name));
   return names;
 }
 const classicNames = classicMapNames();

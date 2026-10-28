@@ -1,3 +1,5 @@
+import type { Era } from '../maple/api';
+import { CLASSIC_BOSSES } from './bosses.classic';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS, type HuntClock, killXp, mesoDrop, pickMonster, spendHunts } from './encounters';
 import type { Town } from './towns';
 
@@ -11,6 +13,8 @@ export interface BossSpec {
   mapId: number;
   /** 맵 렌더에는 하늘 배경이 빠져 있어서 뒤에 까는 색 */
   sky: [top: number, bottom: number];
+  /** 몸통과 같은 자리에 원점을 맞춰 겹쳐 그리는 부위(몹 ID). 클래식 자쿰의 팔처럼 원작에서 따로 나오는 몹이다 */
+  parts?: number[];
 }
 
 function shuffleArray<T>(arr: T[], random: () => number): T[] {
@@ -65,9 +69,12 @@ export interface HuntPace {
 
 export const DEFAULT_PACE: HuntPace = { encounterSeconds: ENCOUNTER_EVERY_ACTIVE_SECONDS, bossEvery: BOSS_EVERY_ENCOUNTERS };
 
+/** 그 시대 보스. 클래식은 GMS 83 맵·몹으로 싸운다 */
+export const bossesOf = (era: Era = 'current'): BossSpec[] => (era === 'classic' ? CLASSIC_BOSSES : BOSSES);
+
 /** 레벨에 맞는 보스 전부에서 고른다. 여러 보스를 보는 재미를 위해 센 보스만으로 좁히지 않는다. 맞는 보스가 없으면 null */
-export function pickBoss(level: number, random = Math.random): BossSpec | null {
-  const pool = BOSSES.filter((boss) => boss.minLevel <= level);
+export function pickBoss(level: number, random = Math.random, era: Era = 'current'): BossSpec | null {
+  const pool = bossesOf(era).filter((boss) => boss.minLevel <= level);
   if (pool.length === 0) return null;
   return pool[Math.floor(random() * pool.length)];
 }
@@ -82,8 +89,9 @@ export function drawFromBag(
   lastBossId: number | null,
   level: number,
   random = Math.random,
+  era: Era = 'current',
 ): { boss: BossSpec; bag: number[]; lastBossId: number } | null {
-  const eligible = BOSSES.filter((b) => b.minLevel <= level);
+  const eligible = bossesOf(era).filter((b) => b.minLevel <= level);
   if (eligible.length === 0) return null;
   const eligibleIds = new Set(eligible.map((b) => b.id));
   let remaining = bag.filter((id) => eligibleIds.has(id));
@@ -95,19 +103,24 @@ export function drawFromBag(
     }
   }
   const id = remaining[0];
-  const boss = BOSSES.find((b) => b.id === id)!;
+  const boss = eligible.find((b) => b.id === id)!;
   return { boss, bag: remaining.slice(1), lastBossId: id };
 }
 
 /** 보스 도전 창에서 다음 보스로 지정해 둔 보스. 지정이 없거나, 없는 보스거나, 아직 레벨이 모자라면 null */
-export function reservedBoss(level: number, reservedBossId: number | null): BossSpec | null {
-  const boss = BOSSES.find((each) => each.id === reservedBossId);
+export function reservedBoss(level: number, reservedBossId: number | null, era: Era = 'current'): BossSpec | null {
+  const boss = bossesOf(era).find((each) => each.id === reservedBossId);
   return boss && boss.minLevel <= level ? boss : null;
 }
 
 /** 보스 차례에 나올 보스. 지정해 둔 보스가 있으면 그 보스다. 어느 보스든 보상은 같다(settleHunt) */
-export function scheduledBoss(level: number, reservedBossId: number | null, random = Math.random): BossSpec | null {
-  return reservedBoss(level, reservedBossId) ?? pickBoss(level, random);
+export function scheduledBoss(
+  level: number,
+  reservedBossId: number | null,
+  random = Math.random,
+  era: Era = 'current',
+): BossSpec | null {
+  return reservedBoss(level, reservedBossId, era) ?? pickBoss(level, random, era);
 }
 
 export function bossHits(random = Math.random): number {
@@ -207,25 +220,26 @@ export function resolveHunts(
   count: number,
   random = Math.random,
   reservedBossId: number | null = null,
+  era: Era = 'current',
 ): HuntResult {
   const result: HuntResult = { kills: {}, bosses: {}, xp: 0, meso: 0, reservationUsed: false };
   for (let index = 0; index < count; index += 1) {
     const due = bossDue(progress, pace);
-    const reserved = due && !result.reservationUsed ? reservedBoss(level, reservedBossId) : null;
+    const reserved = due && !result.reservationUsed ? reservedBoss(level, reservedBossId, era) : null;
     if (reserved) result.reservationUsed = true;
     let boss: BossSpec | null = null;
     if (due) {
       if (reserved) {
         boss = reserved;
       } else if (progress.bossBag !== undefined) {
-        const drawn = drawFromBag(progress.bossBag, progress.lastBossId ?? null, level, random);
+        const drawn = drawFromBag(progress.bossBag, progress.lastBossId ?? null, level, random, era);
         if (drawn) {
           progress.bossBag = drawn.bag;
           progress.lastBossId = drawn.lastBossId;
           boss = drawn.boss;
         }
       } else {
-        boss = pickBoss(level, random);
+        boss = pickBoss(level, random, era);
       }
     }
     const name = boss ? boss.name : pickMonster(town, random).name;

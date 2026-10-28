@@ -15,7 +15,7 @@ import {
 } from './jobs';
 import { BOSS_EVERY_ENCOUNTERS } from './bosses';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS } from './encounters';
-import { XP_PER_ACTIVE_SECOND, levelInfo } from './progression';
+import { type LevelInfo, XP_PER_ACTIVE_SECOND, levelInfo, maxLevel } from './progression';
 import { type AdvancementLog, baselineAdvancements } from './records';
 import { huntSkill } from './skillBook';
 
@@ -200,10 +200,10 @@ export function legacyHuntProgress(encountersResolved: number | undefined): Pick
  * 아직 2차 전이면 Lv.30 에 고른다
  */
 export function legacyBranch(
-  character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine'>,
+  character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine'> & { era?: Era },
 ): Pick<Character, 'jobBranch' | 'freeJobChange'> {
-  const level = levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp).level;
-  if (!character.jobLine || advancementTier(level) < 2) return { jobBranch: null, freeJobChange: false };
+  const level = levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp, maxLevel(character.era)).level;
+  if (!character.jobLine || advancementTier(level, character.era) < 2) return { jobBranch: null, freeJobChange: false };
   return { jobBranch: defaultBranch(character.jobLine), freeJobChange: true };
 }
 
@@ -276,6 +276,11 @@ export function characterXp(character: Character): number {
   return character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp;
 }
 
+/** 레벨·경험치 막대. 시대마다 최고 레벨이 달라서(클래식 200) 캐릭터 레벨은 늘 이것으로 센다 */
+export function characterLevel(character: Character): LevelInfo {
+  return levelInfo(characterXp(character), maxLevel(character.era));
+}
+
 export interface CharacterSummary {
   id: string;
   name: string;
@@ -292,23 +297,25 @@ export interface CharacterSummary {
  */
 export function characterJob(character: Character, level: number): JobView {
   const path = jobPath(character.jobLine, character.jobBranch);
-  const job = describeJob(level, path, character.appearance);
+  const job = describeJob(level, path, character.appearance, character.era);
   return {
     ...job,
     look: composeLook(wearEquipment(job.look, character.equipWorn, path), character.cashEquipped),
-    skillId: huntSkill(path, job.tier, character.huntSkillId),
+    skillId: huntSkill(path, job.tier, character.huntSkillId, character.era),
     autoSkillId: job.skillId,
   };
 }
 
 /** 지금 몇 차인지. 직업을 아직 안 골랐으면 레벨이 넘어도 0, 2차 갈래를 안 골랐으면 1 이다 */
-export function reachedTier(character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine' | 'jobBranch'>): number {
-  const { level } = levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp);
-  return pathTier(level, jobPath(character.jobLine, character.jobBranch));
+export function reachedTier(
+  character: Pick<Character, 'activeSeconds' | 'killXp' | 'jobLine' | 'jobBranch'> & { era?: Era },
+): number {
+  const { level } = levelInfo(character.activeSeconds * XP_PER_ACTIVE_SECOND + character.killXp, maxLevel(character.era));
+  return pathTier(level, jobPath(character.jobLine, character.jobBranch), character.era);
 }
 
 export function summarizeCharacter(character: Character): CharacterSummary {
-  const { level } = levelInfo(characterXp(character));
+  const { level } = characterLevel(character);
   const job = characterJob(character, level);
   return {
     id: character.id,

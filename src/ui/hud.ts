@@ -1,6 +1,6 @@
 import { itemKind } from '../game/alerts';
 import type { JobBranchId, JobLineId, JobPath } from '../game/jobs';
-import { cashShopUiUrl, itemIconUrl, wzImageUrl } from '../maple/api';
+import { type Era, cashShopUiUrl, itemIconUrl, wzImageUrl } from '../maple/api';
 import { applyArt, cropArt, loadWithRetry, loadedImage } from './art';
 import { PRACTICE_BANNER_URL } from './bossWindow';
 import { type GlyphBox, isQuickKeyBlue, keyOutBackground, keyOutFaint } from './glyph';
@@ -29,6 +29,8 @@ export interface HudState {
   resting: boolean;
   /** 직접 조작 모드가 켜져 있다 */
   manual: boolean;
+  /** 전직관 대화의 직업 이름을 그 시대 이름으로 적는다 */
+  era?: Era;
 }
 
 export interface HudHandlers {
@@ -52,12 +54,12 @@ export interface Hud {
   notify(text: string): void;
   /** 직업을 묻는 NPC 대화를 연다. 다른 대화가 떠 있으면 그 뒤에 연다 */
   openJobChoice(): void;
-  /** 2차 전직 레벨에 그 계열 전직관이 갈래를 묻는다 */
-  openBranchChoice(line: JobLineId): void;
+  /** 2차 전직 레벨에 그 계열 전직관이 갈래를 묻는다. era 가 없으면 마지막으로 그린 캐릭터의 시대다 */
+  openBranchChoice(line: JobLineId, era?: Era): void;
   /** 같은 계열의 다른 갈래로 바꾸는 대화 */
   openJobChange(offer: JobChangeOffer, handlers: JobChangeHandlers): void;
   /** 2차 이상 전직 때 그 직업 전직관의 축하 대화를 띄운다. 게임을 멈추지 않는다 */
-  congratulate(path: JobPath, tier: number): void;
+  congratulate(path: JobPath, tier: number, era?: Era): void;
   /** 떠 있거나 기다리는 NPC 대화를 모두 닫는다 */
   closeDialogs(): void;
   /** NPC 대화가 떠 있거나 알림 줄이 아직 보인다. 이때 알리면 대화에 가리거나 앞 알림을 바로 덮는다 */
@@ -93,6 +95,22 @@ function quickKeyGlyph(node: string): Promise<string> {
  */
 const BOSS_GLYPH_MIN_ALPHA = 48;
 const BOSS_MENU_GLYPH = wzImageUrl('UI/_Canvas/StatusBar3.img/mainBar/submenu/community/button:boss/normal/0');
+
+/**
+ * 빅뱅 전 상태 바(v83 StatusBar.img/gauge)의 EXP 칸. bar 는 HP·MP·EXP 게이지가 한 그림이고 EXP 의 노랑·연두 칸은 (223, 15) 에서
+ * 115×14 다. graduation 은 같은 자리의 광택·눈금이다. 클래식 캐릭터의 경험치 바에 깐다
+ */
+const CLASSIC_EXP_RECT = { x: 223, y: 15, width: 115, height: 14 };
+function classicExpArt(node: 'bar' | 'graduation'): Promise<string> {
+  const { x, y, width, height } = CLASSIC_EXP_RECT;
+  return cropArt(wzImageUrl(`UI/StatusBar.img/gauge/${node}`, 'classic'), `v83-exp-${x},${y},${width},${height}`, (image) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d')!.drawImage(image, x, y, width, height, 0, 0, width, height);
+    return canvas.toDataURL();
+  });
+}
 
 /** 뗀 그림은 기기에 남긴다. 떼는 법(keyOut)을 바꾸면 version 을 올린다 */
 function cropGlyph(
@@ -160,7 +178,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   );
   const dialog = createNpcDialog(root);
   const openChoice = () => openJobChoice(dialog, handlers.onChooseJob);
-  const openBranch = (line: JobLineId) => openBranchChoice(dialog, line, handlers.onChooseBranch);
+  let era: Era = 'current';
+  const openBranch = (line: JobLineId, which: Era = era) => openBranchChoice(dialog, line, handlers.onChooseBranch, which);
   let branchChoice: JobLineId | null = null;
 
   const pick = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
@@ -171,7 +190,24 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   const mute = pick<HTMLButtonElement>('.hud-mute');
   const manualToggle = pick<HTMLButtonElement>('.hud-manual-toggle');
   const manualHint = pick('.hud-manual');
+  const expBar = pick('.exp');
   const expFill = pick('.exp-fill');
+  let classicExp: Promise<void> | null = null;
+  /** 클래식 캐릭터면 경험치 바를 빅뱅 전 상태 바 그림으로 바꾼다. 그림을 못 받으면 지금 바 그대로다 */
+  function dressExp(which: Era) {
+    expBar.dataset.era = which;
+    if (which !== 'classic' || classicExp) return;
+    classicExp = Promise.all([classicExpArt('bar'), classicExpArt('graduation')]).then(
+      ([fill, gloss]) => {
+        expBar.style.setProperty('--classic-exp', `url("${fill}")`);
+        expBar.style.setProperty('--classic-exp-gloss', `url("${gloss}")`);
+        expBar.classList.add('has-classic-art');
+      },
+      () => {
+        classicExp = null;
+      },
+    );
+  }
   const expText = pick('.exp-text');
   const notice = pick('.notice');
   let noticeTimer: number | null = null;
@@ -244,6 +280,9 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       level.textContent = `Lv.${state.level}`;
       job.textContent = state.jobTitle;
       branchChoice = state.branchChoice;
+      era = state.era ?? 'current';
+      dialog.setEra(era);
+      dressExp(era);
       advance.hidden = !state.canChooseJob && !state.branchChoice;
       // 직업 선택 대화를 띄운 채 다른 캐릭터로 바꾸면 그 캐릭터에는 맞지 않는 대화가 남는다
       if (!state.canChooseJob) dialog.cancel(JOB_CHOICE_KEY);
@@ -266,7 +305,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     openJobChoice: openChoice,
     openBranchChoice: openBranch,
     openJobChange: (offer, changeHandlers) => openJobChange(dialog, offer, changeHandlers),
-    congratulate: (path, tier) => openAdvancementCongratulation(dialog, path, tier),
+    congratulate: (path, tier, which = era) => openAdvancementCongratulation(dialog, path, tier, which),
     closeDialogs: dialog.clear,
     isBusy: () => dialog.isOpen() || !notice.hidden,
     notifyItems(items, source) {

@@ -1,4 +1,11 @@
+import type { Era } from '../maple/api';
+
 export const MAX_LEVEL = 300;
+/** 빅뱅 전 최고 레벨 */
+export const CLASSIC_MAX_LEVEL = 200;
+
+/** 그 시대의 최고 레벨. 경험치 곡선은 시대와 상관없이 같고 최고 레벨에서 멈춘다 */
+export const maxLevel = (era: Era = 'current'): number => (era === 'classic' ? CLASSIC_MAX_LEVEL : MAX_LEVEL);
 
 /** 자리에 앉아 활동한 1초가 경험치 1 */
 export const XP_PER_ACTIVE_SECOND = 1;
@@ -32,16 +39,17 @@ export interface LevelInfo {
   ratio: number;
 }
 
-export function levelInfo(totalXp: number): LevelInfo {
+/** cap: 최고 레벨. 넘는 경험치는 그 레벨에서 멈춘 채 쌓인다 */
+export function levelInfo(totalXp: number, cap = MAX_LEVEL): LevelInfo {
   let low = 1;
-  let high = MAX_LEVEL;
+  let high = cap;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
     if (CUMULATIVE_XP[mid] <= totalXp) low = mid;
     else high = mid - 1;
   }
   const level = low;
-  if (level >= MAX_LEVEL) {
+  if (level >= cap) {
     return { level, xpIntoLevel: 0, xpForLevel: 0, ratio: 1 };
   }
   const xpForLevel = xpToNextLevel(level);

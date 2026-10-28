@@ -1,11 +1,11 @@
 import { type CashEquipped, cashCategory } from '../game/cashShop';
 import {
-  EQUIP_ENTRIES,
   type EquipEntry,
   type EquipPity,
   type EquipSlot,
   type EquipWorn,
   entryItems,
+  equipEntries,
   equipItemName,
   hiddenByCash,
   howToGet,
@@ -201,7 +201,9 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
   const filterButtons = new Map<EquipTab, HTMLButtonElement>();
 
   const owns = (itemId: number) => state?.owned.includes(itemId) ?? false;
-  const items = (entry: EquipEntry) => (state ? entryItems(entry, state.path) : []);
+  const eraOf = () => state?.era ?? 'current';
+  const items = (entry: EquipEntry) => (state ? entryItems(entry, state.path, eraOf()) : []);
+  const entryById = (id: string | null | undefined) => equipEntries(eraOf()).find((entry) => entry.id === id) ?? null;
 
   /** 칸에 보일 아이템. 입은 색 → 고른 색 → 가진 첫 색 → 첫 색 */
   function shownItem(entry: EquipEntry): number {
@@ -213,11 +215,11 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
     return list.find(owns) ?? list[0];
   }
 
-  const visibleEntries = (): EquipEntry[] => (state ? tabEntries(filter, state.path) : []);
+  const visibleEntries = (): EquipEntry[] => (state ? tabEntries(filter, state.path, eraOf()) : []);
   const pickCells = (tab: PickTab): PickCell[] => {
     if (!state) return [];
-    if (tab === 'chair') return chairCells(state.chairOwned, state.chairSelected, state.pity);
-    return mountCells(state.mountOwned, state.mountSelected, state.pity);
+    if (tab === 'chair') return chairCells(state.chairOwned, state.chairSelected, state.pity, eraOf());
+    return mountCells(state.mountOwned, state.mountSelected, state.pity, eraOf());
   };
   const visiblePicks = (): PickCell[] => (isPickTab(filter) ? pickCells(filter) : []);
   /** 의자·탈것 칸은 장비 칸 id 와 겹치지 않게 앞에 붙인다 */
@@ -228,7 +230,7 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
 
   function noteFor(entry: EquipEntry, itemId: number): { text: string; tone: string } {
     if (!state) return { text: '', tone: '' };
-    if (!owns(itemId)) return { text: howToGet(entry, state.pity), tone: 'locked' };
+    if (!owns(itemId)) return { text: howToGet(entry, state.pity, eraOf()), tone: 'locked' };
     if (state.worn[entry.slot] !== itemId) return { text: `보유 · ${SLOT_LABEL[entry.slot]}`, tone: 'owned' };
     const cash = hiddenByCash(entry.slot, state.cash) ? coveringCash(entry.slot, state.cash) : '';
     if (cash) return { text: `착용 중 · 캐시 ${cash}에 가려 안 보여요`, tone: 'covered' };
@@ -363,7 +365,7 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
       grid.querySelectorAll<HTMLButtonElement>('button.equip-cell').forEach((button) => {
         const pickState = picks.find((each) => pickCellId(each.itemId) === button.dataset.entryId);
         if (pickState) markPickCell(button, pickState);
-        else markCell(button, EQUIP_ENTRIES.find((entry) => entry.id === button.dataset.entryId)!);
+        else markCell(button, entryById(button.dataset.entryId)!);
       });
     }
     pageNumber.textContent = `${page + 1} / ${pageCount()}`;
@@ -375,7 +377,7 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
     });
   }
 
-  const selectedEntry = () => EQUIP_ENTRIES.find((entry) => entry.id === selectedId) ?? null;
+  const selectedEntry = () => entryById(selectedId);
 
   function renderDetail() {
     const pickShown = pickCellOf(hoveredId ?? selectedId);
@@ -385,7 +387,7 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
       detailNote.textContent = pickShown.note;
       return;
     }
-    const entry = EQUIP_ENTRIES.find((each) => each.id === (hoveredId ?? selectedId)) ?? null;
+    const entry = entryById(hoveredId ?? selectedId);
     if (!entry && isPickTab(filter)) {
       detail.dataset.tone = 'hint';
       detailName.textContent = filter === 'chair' ? '의자를 고르면 쉴 때 앉아요' : '탈것을 고르면 돌아다닐 때 타요';

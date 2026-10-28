@@ -37,7 +37,7 @@ describe('경험치 곡선', () => {
 describe('전직', () => {
   it('전직 레벨마다 차수가 오른다', () => {
     expect(advancementTier(9)).toBe(0);
-    expect(ADVANCEMENT_LEVELS.map(advancementTier)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(ADVANCEMENT_LEVELS.map((level) => advancementTier(level))).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('직업을 안 고르면 레벨이 올라도 초보자로 남고 전직 가능 표시가 뜬다', () => {

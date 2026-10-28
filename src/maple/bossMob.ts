@@ -1,8 +1,10 @@
 import type { Texture } from 'pixi.js';
 import {
+  type Era,
   type MobInfo,
   type MobMeta,
   type WzValue,
+  classicMobGageUrl,
   mobAnimationUrl,
   mobFrameOriginUrl,
   mobFrameUrl,
@@ -36,43 +38,60 @@ export interface BossGaugeColors {
   background: number;
 }
 
+/** 몸통과 원점을 같이 쓰는 부위(클래식 자쿰 팔). 서 있고 맞기만 한다. 몸통이 쓰러지면 같이 흐려진다 */
+export interface BossPart {
+  stand: PlacedAnimation;
+  hit: PlacedAnimation;
+}
+
 export interface BossMob {
   animations: BossAnimations;
   gauge: BossGaugeColors;
+  parts: BossPart[];
 }
 
 /** 원작 보스 대부분이 빨간 게이지(1)에 검은 바탕(5)이다. 크림슨 발록처럼 값이 없는 보스도 이 색으로 그린다 */
 const DEFAULT_GAUGE: BossGaugeColors = { fill: 1, background: 5 };
 
 /** 기준점을 못 받으면 그림 아래 가운데를 쓴다 */
-async function frameOrigin(mobId: number, action: string, frame: number, texture: Texture): Promise<Point> {
+async function frameOrigin(mobId: number, action: string, frame: number, texture: Texture, era: Era): Promise<Point> {
   try {
-    const { value } = await fetchStoredJson<WzValue<Point>>(mobFrameOriginUrl(mobId, action, frame));
+    const { value } = await fetchStoredJson<WzValue<Point>>(mobFrameOriginUrl(mobId, action, frame, era));
     return { x: value.x, y: value.y };
   } catch {
     return { x: texture.width / 2, y: texture.height };
   }
 }
 
-async function loadPlaced(mobId: number, action: string): Promise<PlacedAnimation> {
-  const animation = await loadAnimation(mobAnimationUrl(mobId, action), (frame) => mobFrameUrl(mobId, action, frame));
-  const origins = await Promise.all(animation.frames.map((texture, frame) => frameOrigin(mobId, action, frame, texture)));
+async function loadPlaced(mobId: number, action: string, era: Era): Promise<PlacedAnimation> {
+  const animation = await loadAnimation(mobAnimationUrl(mobId, action, era), (frame) => mobFrameUrl(mobId, action, frame, era));
+  const origins = await Promise.all(animation.frames.map((texture, frame) => frameOrigin(mobId, action, frame, texture, era)));
   return { ...animation, origins };
 }
 
-export async function loadBossMob(mobId: number): Promise<BossMob> {
-  const info = await fetchStoredJson<MobInfo & MobMeta>(mobInfoUrl(mobId));
+/** 부위는 서 있기·맞기만 받는다. 쓰러지는 그림(팔마다 20장)까지 받으면 기준점 요청만 수백 개라 몸통과 같이 흐려지게 한다 */
+async function loadPart(mobId: number, era: Era): Promise<BossPart> {
+  const { framebooks } = await fetchStoredJson<MobInfo>(mobInfoUrl(mobId, era));
+  const stand = await loadPlaced(mobId, 'stand', era);
+  const hit = (framebooks.hit1 ?? 0) > 0 ? await loadPlaced(mobId, 'hit1', era) : stand;
+  return { stand, hit };
+}
+
+/** era: 몹을 받을 시대. partIds: 몸통에 겹칠 부위(BossSpec.parts) */
+export async function loadBossMob(mobId: number, era: Era = 'current', partIds: number[] = []): Promise<BossMob> {
+  const info = await fetchStoredJson<MobInfo & MobMeta>(mobInfoUrl(mobId, era));
   const { framebooks } = info;
   const has = (action: string) => (framebooks[action] ?? 0) > 0;
   const idle = has('stand') ? 'stand' : has('move') ? 'move' : 'fly';
   const moving = has('move') ? 'move' : has('fly') ? 'fly' : null;
-  const optional = (action: string | null) => (action && has(action) ? loadPlaced(mobId, action) : Promise.resolve(null));
-  const [stand, move, attack, hit, die] = await Promise.all([
-    loadPlaced(mobId, idle),
+  const optional = (action: string | null) => (action && has(action) ? loadPlaced(mobId, action, era) : Promise.resolve(null));
+  const [stand, move, attack, hit, die, parts] = await Promise.all([
+    loadPlaced(mobId, idle, era),
     optional(moving === idle ? null : moving),
     optional('attack1'),
-    loadPlaced(mobId, has('hit1') ? 'hit1' : idle),
-    loadPlaced(mobId, has('die1') ? 'die1' : idle),
+    loadPlaced(mobId, has('hit1') ? 'hit1' : idle, era),
+    loadPlaced(mobId, has('die1') ? 'die1' : idle, era),
+    Promise.all(partIds.map((partId) => loadPart(partId, era))),
   ]);
   return {
     animations: { stand, move, attack, hit, die },
@@ -80,6 +99,7 @@ export async function loadBossMob(mobId: number): Promise<BossMob> {
       fill: info.meta?.hpTagColor || DEFAULT_GAUGE.fill,
       background: info.meta?.hpTagBackgroundColor || DEFAULT_GAUGE.background,
     },
+    parts,
   };
 }
 
@@ -117,8 +137,9 @@ export async function retry<T>(load: () => Promise<T>, tries: number, waitMs: nu
 // 그림 일곱 장 중 하나만 못 받아도 게이지 전체가 단색으로 바뀐다. 팬 API 가 가끔 520 을 내서 한 장씩 다시 받는다
 const gaugePart = (url: string) => retry(() => loadTexture(url), GAUGE_TRIES, GAUGE_RETRY_MS);
 
-/** 아이콘 노드가 없는 몹은 null. 노드가 가리키는 그림을 받는다 */
-async function loadGaugeIcon(mobId: number): Promise<Texture | null> {
+/** 아이콘 노드가 없는 몹은 null. 노드가 가리키는 그림을 받는다. v83 은 링크 없이 그 자리에 그림이 있다 */
+async function loadGaugeIcon(mobId: number, era: Era): Promise<Texture | null> {
+  if (era === 'classic') return gaugePart(classicMobGageUrl(`Mob/${mobId}`)).catch(() => null);
   let target: string;
   try {
     ({ value: target } = await retry(
@@ -132,27 +153,32 @@ async function loadGaugeIcon(mobId: number): Promise<Texture | null> {
   return gaugePart(wzImageUrl(target)).catch(() => null);
 }
 
+/** 게이지 그림 주소. 지금 판은 틀 양 끝이 `_Canvas` 로 링크돼 있고 v83 은 모두 원래 자리다 */
+function gaugeUrl(node: string, outlinked: boolean, era: Era): string {
+  return era === 'classic' ? classicMobGageUrl(node) : mobGageUrl(node, outlinked);
+}
+
 /** 모든 보스가 같이 쓰는 틀과 기본 색. 첫 보스를 만났을 때 팬 API 가 느려도 틀은 이미 받아 둔 것을 쓴다 */
-export function preloadBossGauge(): Promise<unknown> {
+export function preloadBossGauge(era: Era = 'current'): Promise<unknown> {
   return Promise.all([
-    gaugePart(mobGageUrl('backgrnd', true)),
-    gaugePart(mobGageUrl('backgrnd2', true)),
-    gaugePart(mobGageUrl('backgrnd3', false)),
-    gaugePart(mobGageUrl('backgrnd4', true)),
-    gaugePart(mobGageUrl(`Gage/${DEFAULT_GAUGE.fill}/1`, false)),
-    gaugePart(mobGageUrl(`Gage/${DEFAULT_GAUGE.background}/1`, false)),
+    gaugePart(gaugeUrl('backgrnd', true, era)),
+    gaugePart(gaugeUrl('backgrnd2', true, era)),
+    gaugePart(gaugeUrl('backgrnd3', false, era)),
+    gaugePart(gaugeUrl('backgrnd4', true, era)),
+    gaugePart(gaugeUrl(`Gage/${DEFAULT_GAUGE.fill}/1`, false, era)),
+    gaugePart(gaugeUrl(`Gage/${DEFAULT_GAUGE.background}/1`, false, era)),
   ]);
 }
 
-export async function loadBossGauge(mobId: number, colors: BossGaugeColors): Promise<BossGaugeTextures> {
+export async function loadBossGauge(mobId: number, colors: BossGaugeColors, era: Era = 'current'): Promise<BossGaugeTextures> {
   const [iconFrame, left, middle, right, fill, background, icon] = await Promise.all([
-    gaugePart(mobGageUrl('backgrnd', true)),
-    gaugePart(mobGageUrl('backgrnd2', true)),
-    gaugePart(mobGageUrl('backgrnd3', false)),
-    gaugePart(mobGageUrl('backgrnd4', true)),
-    gaugePart(mobGageUrl(`Gage/${colors.fill}/1`, false)),
-    gaugePart(mobGageUrl(`Gage/${colors.background}/1`, false)),
-    loadGaugeIcon(mobId),
+    gaugePart(gaugeUrl('backgrnd', true, era)),
+    gaugePart(gaugeUrl('backgrnd2', true, era)),
+    gaugePart(gaugeUrl('backgrnd3', false, era)),
+    gaugePart(gaugeUrl('backgrnd4', true, era)),
+    gaugePart(gaugeUrl(`Gage/${colors.fill}/1`, false, era)),
+    gaugePart(gaugeUrl(`Gage/${colors.background}/1`, false, era)),
+    loadGaugeIcon(mobId, era),
   ]);
   return { iconFrame, icon, left, middle, right, fill, background };
 }

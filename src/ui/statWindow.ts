@@ -1,5 +1,5 @@
 import { JOB_CHANGE_MESO, type JobChange } from '../game/characters';
-import { ADVANCEMENT_LEVELS, tierName } from '../game/jobs';
+import { advancementLevels, tierName } from '../game/jobs';
 import { type AdvancementLog, type BossRecord, formatDay, formatMonthDay, formatTogetherTime } from '../game/records';
 import { type Era, MESO_HUD_ICON_URL, characterAnimationUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
@@ -74,16 +74,16 @@ type RowKey = 'level' | 'job' | 'exp' | 'hunts' | 'bosses' | 'meso' | 'equip' | 
 const number = (value: number) => Math.floor(value).toLocaleString();
 
 /** 「10-27 인파이터 → 건슬링어」. 이름은 지금 차수의 이름이다 */
-export function jobChangeText(change: JobChange, tier: number): string {
-  return `${formatMonthDay(change.at)} ${tierName(change.from, tier)} → ${tierName(change.to, tier)}`;
+export function jobChangeText(change: JobChange, tier: number, era: Era = 'current'): string {
+  return `${formatMonthDay(change.at)} ${tierName(change.from, tier, era)} → ${tierName(change.to, tier, era)}`;
 }
 
 export function jobChangeTitle(free: boolean): string {
   return `같은 계열 다른 직업으로 · ${free ? '한 번 무료' : `${number(JOB_CHANGE_MESO)} 메소`}`;
 }
 
-function advancementText(tier: number, log: AdvancementLog, reached: number): string {
-  if (tier > reached) return `Lv.${ADVANCEMENT_LEVELS[tier - 1]}에 전직`;
+function advancementText(tier: number, log: AdvancementLog, reached: number, era: Era = 'current'): string {
+  if (tier > reached) return `Lv.${advancementLevels(era)[tier - 1]}에 전직`;
   const at = log[tier as keyof AdvancementLog];
   if (typeof at !== 'number') return '기록 전';
   return formatDay(at);
@@ -110,7 +110,8 @@ export function summaryValues(state: StatWindowState): Record<RowKey, { text: st
       title: '눌러서 장비 창 열기. 보스 드롭·레벨 선물·장비 상점으로 모은다',
     },
     advancement: {
-      text: state.tier === 0 ? '아직 전직 전' : `${state.tier}차 · ${advancementText(state.tier, state.advancedAt, state.tier)}`,
+      text:
+        state.tier === 0 ? '아직 전직 전' : `${state.tier}차 · ${advancementText(state.tier, state.advancedAt, state.tier, state.era)}`,
       title: '눌러서 차수별 전직 날짜 보기',
     },
   };
@@ -217,7 +218,8 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
       });
       return;
     }
-    ADVANCEMENT_LEVELS.forEach((_, index) => addRow(`tier${index + 1}`, `${index + 1}차`));
+    // 클래식은 4차까지다
+    advancementLevels(state?.era).forEach((_, index) => addRow(`tier${index + 1}`, `${index + 1}차`));
     state?.jobHistory.forEach((_, index) => addRow(`change${index}`, '직업 변경'));
     const back = document.createElement('button');
     back.type = 'button';
@@ -239,13 +241,14 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
       changeJob.title = jobChangeTitle(current.freeJobChange);
       return;
     }
-    ADVANCEMENT_LEVELS.forEach((_, index) => {
-      cells.get(`tier${index + 1}`)!.textContent = advancementText(index + 1, current.advancedAt, current.tier);
+    advancementLevels(current.era).forEach((_, index) => {
+      const cell = cells.get(`tier${index + 1}`);
+      if (cell) cell.textContent = advancementText(index + 1, current.advancedAt, current.tier, current.era);
     });
     current.jobHistory.forEach((change, index) => {
       const cell = cells.get(`change${index}`);
       if (!cell) return;
-      cell.textContent = jobChangeText(change, current.tier);
+      cell.textContent = jobChangeText(change, current.tier, current.era);
       cell.title = cell.textContent;
     });
   }

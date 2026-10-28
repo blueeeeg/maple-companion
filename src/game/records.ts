@@ -1,4 +1,5 @@
-import { BOSSES, type BossSpec } from './bosses';
+import type { Era } from '../maple/api';
+import { BOSSES, type BossSpec, bossesOf } from './bosses';
 
 /** 1~6차 */
 export type AdvancementTierNumber = 1 | 2 | 3 | 4 | 5 | 6;
@@ -52,6 +53,11 @@ export function normalizeAdvancements(saved: unknown, reachedTier: number): Adva
   return log;
 }
 
+/** 지금 차수를 넘는 기록을 뺀다. 차수가 줄어든 저장(클래식 차수로 다시 센 1단계 클래식 캐릭터)에 쓴다 */
+export function keepReachedAdvancements(log: AdvancementLog, reachedTier: number): AdvancementLog {
+  return Object.fromEntries(TIERS.filter((tier) => tier <= reachedTier && tier in log).map((tier) => [tier, log[tier]]));
+}
+
 /**
  * 지금 차수까지 아직 안 적은 전직을 now 로 적는다. 적은 차수를 돌려준다.
  * 직업을 늦게 골라 한 번에 2차까지 오르면 둘 다 그 시각이다
@@ -79,9 +85,15 @@ export interface BossRecord {
   strongest: BossSpec | null;
 }
 
-/** 보스도 몬스터 기록(이름 → 잡은 수)에 같이 쌓여 왔다. 보스 이름은 마을 몬스터와 겹치지 않는다(records.test.ts) */
-export function bossRecord(monsterBook: Record<string, number>): BossRecord {
-  const defeated = BOSSES.filter((boss) => (monsterBook[boss.name] ?? 0) > 0);
+/**
+ * 보스도 몬스터 기록(이름 → 잡은 수)에 같이 쌓여 왔다. 보스 이름은 마을 몬스터와 겹치지 않는다(records.test.ts).
+ * 클래식 캐릭터는 1단계 때 지금 시대 보스와 싸웠어서 그 기록도 센다
+ */
+export function bossRecord(monsterBook: Record<string, number>, era: Era = 'current'): BossRecord {
+  const own = bossesOf(era);
+  const names = new Set(own.map((boss) => boss.name));
+  const bosses = era === 'classic' ? [...own, ...BOSSES.filter((boss) => !names.has(boss.name))] : own;
+  const defeated = bosses.filter((boss) => (monsterBook[boss.name] ?? 0) > 0);
   return {
     total: defeated.reduce((sum, boss) => sum + monsterBook[boss.name], 0),
     strongest: defeated.reduce<BossSpec | null>((best, boss) => (!best || boss.minLevel > best.minLevel ? boss : best), null),
