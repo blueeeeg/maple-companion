@@ -22,7 +22,7 @@ describe('탄 캐릭터 위치', () => {
   it('characterAction 이 없는 탈것은 앉아서 타고, 있는 탈것은 그 동작이다', () => {
     expect(HOG.stand.body).toBe('sit');
     expect(HOG.walk.body).toBe('sit');
-    expect(mountArtOf(1932392)!.walk.body).toBe('sit');
+    expect(mountArtOf(1932323)!.walk.body).toBe('sit');
     expect(mountArtOf(1932544)!.walk.body).toBe('fly');
   });
 });

@@ -446,6 +446,15 @@ describe('탈것 저장', () => {
     expect(normalizeRoster({ characters: [broken as unknown as Character] }).characters[0]).toMatchObject({ mountOwned: [], mountSelected: null });
   });
 
+  it('너무 커서 뺀 탈것을 가졌거나 타던 저장은 그 탈것만 빼고 걸어 다닌다', () => {
+    const DEMON = 1932636;
+    const NIGHTMARE = 1932025;
+    const PINK_BEAN_CAR = 1932392;
+    const saved = { ...character('a'), mountOwned: [HOG, DEMON, NIGHTMARE, PINK_BEAN_CAR, BALROG], mountSelected: NIGHTMARE };
+    const text = JSON.stringify(roster([saved]));
+    expect(parseRoster(text, null, 0).characters[0]).toMatchObject({ mountOwned: [HOG, BALROG], mountSelected: null });
+  });
+
   it('같은 캐릭터면 모은 탈것은 합치고 고른 탈것은 더 자란 쪽 것이다', () => {
     const file = roster([character('a', { activeSeconds: 100, mountOwned: [HOG], mountSelected: HOG })]);
     const local = roster([character('a', { activeSeconds: 50, mountOwned: [BALROG], mountSelected: BALROG })]);

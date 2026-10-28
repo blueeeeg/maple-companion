@@ -37,19 +37,22 @@ describe('장비 창 탭', () => {
     expect(cells.find((cell) => cell.itemId === PINK_BEAN_CHAIR)!.note).toBe('핑크빈 처치 · 낮은 확률 · 7/10');
   });
 
-  it('탈것 칸은 레벨 선물·보스 천장·고른 것을 적는다', () => {
+  it('탈것 칸은 레벨 선물·보스 천장·상점 값·고른 것을 적는다', () => {
     const cells = mountCells([HOG, BALROG], BALROG, { [PINK_BEAN]: { rare: 7 } });
     const of = (id: number) => cells.find((cell) => cell.itemId === id)!;
     expect(of(HOG)).toMatchObject({ name: '멧돼지', owned: true, selected: false, tone: 'owned', note: '보유 · 탈것' });
     expect(of(BALROG)).toMatchObject({ owned: true, selected: true, tone: 'equipped', note: '타는 탈것 · 돌아다닐 때 타요' });
     expect(of(1902001)).toMatchObject({ owned: false, tone: 'locked', note: 'Lv.100 달성 선물' });
     expect(of(PINK_BEAN_MOUNT).note).toBe('핑크빈 처치 · 낮은 확률 · 7/10');
+    expect(of(1932028).note).toBe('장비 상점 60,000 메소');
+    expect(cells).toHaveLength(28);
+    cells.filter((cell) => !cell.owned).forEach((cell) => expect(cell.note).toMatch(/달성 선물|처치|장비 상점/));
   });
 
   it('왼쪽 이름표는 의자·탈것 탭에서만 그것을 센다', () => {
     const state = { owned: [1002357], path: 'hero' as const, chairOwned: [PINK_BEAN_CHAIR], mountOwned: [HOG] };
     expect(tabCount('all', state)).toBe('컬렉션 1/87');
     expect(tabCount('chair', state)).toBe('의자 1/23');
-    expect(tabCount('mount', state)).toBe('탈것 1/9');
+    expect(tabCount('mount', state)).toBe('탈것 1/28');
   });
 });

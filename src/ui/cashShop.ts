@@ -30,6 +30,7 @@ import {
   wearEquipment,
 } from '../game/equipment';
 import { JOB_BRANCHES, type JobPath } from '../game/jobs';
+import { MOUNT_SHOP_ITEMS, isMountItem, mountOf, mountShopPrice } from '../game/mounts';
 import { type Era, MESO_HUD_ICON_URL, cashShopUiUrl, characterAnimationUrl, itemIconUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
@@ -50,6 +51,8 @@ export interface CashShopState {
   equipped: CashEquipped;
   /** 장비 상점 탭. 산 컬렉션 장비는 캐시 아이템 아래에 입힌다 */
   gear: { path: JobPath | null; owned: number[]; worn: EquipWorn };
+  /** 장비 상점 「탈것」. 탈것은 몸에 입히는 것이 아니라 미리보기에 태워 보지 않는다 */
+  mounts: { owned: number[]; selected: number | null };
 }
 
 export interface CashShopHandlers {
@@ -61,6 +64,9 @@ export interface CashShopHandlers {
   onBuyGear(itemId: number): void;
   onEquipGear(itemId: number): void;
   onUnequipGear(slot: EquipSlot): void;
+  /** 장비 상점 「탈것」의 사기·타기·내리기. 사고 나서 바로 태우는 것까지 받는 쪽이 한다 */
+  onBuyMount(mountId: number): void;
+  onSelectMount(mountId: number): void;
   onClose(): void;
 }
 
@@ -71,7 +77,7 @@ export interface CashShop {
   hide(): void;
 }
 
-type Tab = CashSlot | 'owned' | 'gear';
+type Tab = CashSlot | 'owned' | 'gear' | 'mount';
 
 /**
  * 이만큼 안에 연달아 누른 아이템은 마지막 것만 그려 받는다. 서버가 그림 하나에 1~4초씩 걸려서 앞 것까지 받으면 뒤 것이 늦어진다.
@@ -128,6 +134,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
         </button>
         <button class="shop-owned" type="button" aria-pressed="false">보유</button>
         <button class="shop-gear" type="button" aria-pressed="false" title="장비 상점 · 원작 일반 장비를 메소로 사서 장비 컬렉션에 넣어요">장비</button>
+        <button class="shop-gear shop-mount" type="button" aria-pressed="false" hidden title="장비 상점 · 탈것을 메소로 사서 장비 창 「탈것」에서 타요">탈것</button>
         <label class="shop-search"><input type="text" placeholder="이름으로 찾기" aria-label="이름으로 찾기" autocomplete="off" spellcheck="false" /></label>
       </div>
       <div class="shop-categories" role="menu" aria-label="부위" hidden></div>
@@ -154,7 +161,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
             <span class="shop-confirm-icon"></span>
             <p><strong class="shop-confirm-name"></strong><span class="shop-confirm-price"></span></p>
           </div>
-          <small>사면 바로 입어요</small>
+          <small class="shop-confirm-hint">사면 바로 입어요</small>
           <div class="shop-confirm-buttons">
             <button class="shop-confirm-ok art-button" type="button">확인</button>
             <button class="shop-confirm-cancel art-button" type="button">취소</button>
@@ -171,7 +178,8 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   const picker = pick<HTMLButtonElement>('.shop-picker');
   const pickerLabel = pick('.shop-picker-label');
   const ownedButton = pick<HTMLButtonElement>('.shop-owned');
-  const gearButton = pick<HTMLButtonElement>('.shop-gear');
+  const gearButton = pick<HTMLButtonElement>('.shop-gear:not(.shop-mount)');
+  const mountButton = pick<HTMLButtonElement>('.shop-mount');
   const categories = pick('.shop-categories');
   const mesoIcon = pick('.shop-meso-icon');
   const mesoAmount = pick('.shop-meso-amount');
@@ -197,6 +205,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   const confirmIcon = pick('.shop-confirm-icon');
   const confirmName = pick('.shop-confirm-name');
   const confirmPrice = pick('.shop-confirm-price');
+  const confirmHint = pick('.shop-confirm-hint');
   const confirmOk = pick<HTMLButtonElement>('.shop-confirm-ok');
   const confirmCancel = pick<HTMLButtonElement>('.shop-confirm-cancel');
 
@@ -277,15 +286,26 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   }
 
   const nameOf = (itemId: number) => names.get(itemId) ?? `아이템 ${itemId}`;
-  const owns = (itemId: number) =>
-    (isEquipItem(itemId) ? state?.gear.owned.includes(itemId) : state?.wardrobe.includes(itemId)) ?? false;
+  const owns = (itemId: number) => {
+    if (isMountItem(itemId)) return state?.mounts.owned.includes(itemId) ?? false;
+    return (isEquipItem(itemId) ? state?.gear.owned.includes(itemId) : state?.wardrobe.includes(itemId)) ?? false;
+  };
   const wearing = (itemId: number) => {
+    if (isMountItem(itemId)) return state?.mounts.selected === itemId;
     if (isEquipItem(itemId)) return state?.gear.worn[equipSlotOf(itemId)!] === itemId;
     const slot = cashSlotOf(itemId);
     return slot !== null && state?.equipped[slot] === itemId;
   };
   const tryingOn = (itemId: number) => Object.values(trying).includes(itemId) || Object.values(tryingGear).includes(itemId);
-  const priceOf = (itemId: number) => (isEquipItem(itemId) ? equipShopPrice(itemId) : cashPrice(itemId)) ?? 0;
+  const priceOf = (itemId: number) => {
+    if (isMountItem(itemId)) return mountShopPrice(itemId) ?? 0;
+    return (isEquipItem(itemId) ? equipShopPrice(itemId) : cashPrice(itemId)) ?? 0;
+  };
+  /** 탈것은 입는 것이 아니라 타는 것이라 「착용 중」 대신 「타는 중」이다 */
+  const detailOf = (itemId: number, status: Parameters<typeof cashDetail>[1]) => {
+    const info = cashDetail({ id: itemId, name: nameOf(itemId) }, status);
+    return isMountItem(itemId) && info.tone === 'equipped' ? { ...info, note: '타는 중' } : info;
+  };
 
   function visibleItems(): CashItem[] {
     const needle = query.trim().toLowerCase();
@@ -304,8 +324,11 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     const token = ++loadToken;
     const current = state;
     if (!current) return;
-    if (tab === 'gear') {
-      items = EQUIP_SHOP_ITEMS.map(({ id }) => ({ id, name: equipItemName(id), requiredGender: 2 }));
+    if (tab === 'gear' || tab === 'mount') {
+      items =
+        tab === 'gear'
+          ? EQUIP_SHOP_ITEMS.map(({ id }) => ({ id, name: equipItemName(id), requiredGender: 2 }))
+          : MOUNT_SHOP_ITEMS.map(({ id }) => ({ id, name: mountOf(id)!.name, requiredGender: 2 }));
       items.forEach((item) => names.set(item.id, item.name));
       loading = 'ready';
       render();
@@ -354,7 +377,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     closeCategories();
     if (next === tab && loading !== 'error') return;
     tab = next;
-    if (next !== 'owned' && next !== 'gear') lastSlot = next;
+    if (next !== 'owned' && next !== 'gear' && next !== 'mount') lastSlot = next;
     page = 0;
     loadTab();
   }
@@ -477,15 +500,12 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       detail.title = '';
       return;
     }
-    const info = cashDetail(
-      { id: shownId, name: nameOf(shownId) },
-      {
-        owned: owns(shownId),
-        equipped: wearing(shownId),
-        problem: shownId === selectedId ? problem(shownId) : null,
-        price: priceOf(shownId),
-      },
-    );
+    const info = detailOf(shownId, {
+      owned: owns(shownId),
+      equipped: wearing(shownId),
+      problem: shownId === selectedId ? problem(shownId) : null,
+      price: priceOf(shownId),
+    });
     detail.dataset.tone = info.tone;
     detailName.textContent = info.name;
     detailNote.textContent = info.note;
@@ -507,7 +527,8 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     if (owns(selectedId)) {
       buy.hidden = true;
       wear.hidden = false;
-      wear.textContent = wearing(selectedId) ? '벗기' : '입기';
+      if (isMountItem(selectedId)) wear.textContent = wearing(selectedId) ? '내리기' : '타기';
+      else wear.textContent = wearing(selectedId) ? '벗기' : '입기';
       return;
     }
     buy.hidden = false;
@@ -522,7 +543,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       button.setAttribute('aria-checked', String(active));
     });
     const shown = categoryButtons.get(lastSlot)!;
-    const onCategory = tab !== 'owned' && tab !== 'gear';
+    const onCategory = tab !== 'owned' && tab !== 'gear' && tab !== 'mount';
     // 부위 버튼은 고른 부위의 원작 탭 글자 그림을 그대로 빌려 쓴다. 보유 탭에 있으면 흰 글자(Disable)로 둔다
     const art = shown.style.getPropertyValue(onCategory ? '--on' : '--off');
     picker.classList.toggle('has-art', art !== '');
@@ -533,6 +554,10 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     ownedButton.setAttribute('aria-pressed', String(tab === 'owned'));
     gearButton.classList.toggle('is-active', tab === 'gear');
     gearButton.setAttribute('aria-pressed', String(tab === 'gear'));
+    // 「탈것」은 장비 상점 안의 칸이라 장비 상점에 들어와 있을 때만 보인다
+    mountButton.hidden = tab !== 'gear' && tab !== 'mount';
+    mountButton.classList.toggle('is-active', tab === 'mount');
+    mountButton.setAttribute('aria-pressed', String(tab === 'mount'));
   }
 
   /** 칸 하나의 표시(고름·입어 봄·보유·착용 중)와 마우스를 올렸을 때 뜨는 이름 */
@@ -543,7 +568,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     button.classList.toggle('is-trying', tryingOn(itemId));
     button.classList.toggle('is-equipped', equipped);
     button.classList.toggle('is-owned', owned && !equipped);
-    const { name, note } = cashDetail({ id: itemId, name: nameOf(itemId) }, { owned, equipped, price: priceOf(itemId) });
+    const { name, note } = detailOf(itemId, { owned, equipped, price: priceOf(itemId) });
     button.title = `${name} · ${note}`;
     button.setAttribute('aria-label', button.title);
     button.setAttribute('aria-pressed', String(itemId === selectedId));
@@ -576,7 +601,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
       if (isEquipItem(item.id)) {
         if (state && canWear(state.gear.path, item.id)) tryingGear = equipGear(tryingGear, item.id);
       }
-      else trying = equipCash(trying, item.id);
+      else if (!isMountItem(item.id)) trying = equipCash(trying, item.id);
       if (!hintSeen) {
         hintSeen = true;
         rememberTryOnHint();
@@ -614,6 +639,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     else if (loading === 'error') message = '목록을 받지 못했어요. 부위를 다시 고르면 다시 받아요';
     else if (visible.length === 0 && tab === 'owned' && !query.trim()) message = '아직 산 아이템이 없어요';
     else if (visible.length === 0 && tab === 'gear') message = query.trim() ? `‘${query.trim()}’ 장비가 없어요` : '';
+    else if (visible.length === 0 && tab === 'mount') message = query.trim() ? `‘${query.trim()}’ 탈것이 없어요` : '';
     else if (visible.length === 0) {
       message = query.trim() ? `‘${query.trim()}’ 아이템이 없어요` : '판매 중인 상품이 없어요';
       showArt = !query.trim();
@@ -657,6 +683,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
     if (selectedId === null || problem(selectedId) !== null || owns(selectedId)) return;
     confirmName.textContent = nameOf(selectedId);
     confirmPrice.textContent = `${won(priceOf(selectedId))} 메소에 살까요?`;
+    confirmHint.textContent = isMountItem(selectedId) ? '사면 바로 타요' : '사면 바로 입어요';
     const image = icons.get(selectedId);
     confirmIcon.replaceChildren(...(image ? [image.cloneNode() as HTMLImageElement] : []));
     confirm.hidden = false;
@@ -666,7 +693,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   function openCategories() {
     categories.hidden = false;
     picker.setAttribute('aria-expanded', 'true');
-    (categoryButtons.get(tab === 'owned' || tab === 'gear' ? lastSlot : tab) ?? categories.querySelector('button'))?.focus();
+    (categoryButtons.get(tab === 'owned' || tab === 'gear' || tab === 'mount' ? lastSlot : tab) ?? categories.querySelector('button'))?.focus();
   }
 
   function closeCategories() {
@@ -734,6 +761,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   });
   ownedButton.addEventListener('click', () => selectTab('owned'));
   gearButton.addEventListener('click', () => selectTab('gear'));
+  mountButton.addEventListener('click', () => selectTab('mount'));
   // 부위 목록 밖을 누르면 닫는다. 부위 버튼을 다시 누른 것은 버튼이 직접 닫는다
   screen.addEventListener('pointerdown', (event) => {
     const target = event.target as Node;
@@ -771,6 +799,10 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   buy.addEventListener('click', openConfirm);
   wear.addEventListener('click', () => {
     if (selectedId === null || !owns(selectedId)) return;
+    if (isMountItem(selectedId)) {
+      handlers.onSelectMount(selectedId);
+      return;
+    }
     if (isEquipItem(selectedId)) {
       const slot = equipSlotOf(selectedId)!;
       if (wearing(selectedId)) {
@@ -800,7 +832,8 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
   confirmOk.addEventListener('click', () => {
     confirm.hidden = true;
     if (selectedId === null || problem(selectedId) !== null) return;
-    if (isEquipItem(selectedId)) handlers.onBuyGear(selectedId);
+    if (isMountItem(selectedId)) handlers.onBuyMount(selectedId);
+    else if (isEquipItem(selectedId)) handlers.onBuyGear(selectedId);
     else handlers.onBuy(selectedId);
   });
   screen.addEventListener('keydown', (event) => {

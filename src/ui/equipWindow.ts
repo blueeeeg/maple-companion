@@ -389,7 +389,7 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
     if (!entry && isPickTab(filter)) {
       detail.dataset.tone = 'hint';
       detailName.textContent = filter === 'chair' ? '의자를 고르면 쉴 때 앉아요' : '탈것을 고르면 돌아다닐 때 타요';
-      detailNote.textContent = filter === 'chair' ? '보스를 잡으면 낮은 확률로 떨어져요' : '레벨 선물이나 보스 드롭으로 얻어요';
+      detailNote.textContent = filter === 'chair' ? '보스를 잡으면 낮은 확률로 떨어져요' : '레벨 선물·보스 드롭·장비 상점으로 얻어요';
       return;
     }
     if (!entry || !state) {

@@ -35,7 +35,7 @@ import { bossTurn, settleBossFight } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { selectChair } from './game/chairs';
-import { grantMountGifts, selectMount } from './game/mounts';
+import { buyMount, grantMountGifts, selectMount } from './game/mounts';
 import {
   awardBossDrops,
   buyEquipItem,
@@ -285,6 +285,12 @@ const cashShop = createCashShop(root, {
   onUnequipGear(slot) {
     changeWardrobe((character) => (character.equipWorn = unequipGear(character.equipWorn, slot)));
   },
+  onBuyMount(mountId) {
+    changeWardrobe((character) => buyMount(character, mountId));
+  },
+  onSelectMount(mountId) {
+    changeWardrobe((character) => (character.mountSelected = selectMount(character.mountOwned, character.mountSelected, mountId)));
+  },
   onClose() {
     screen = 'map';
     cashShop.hide();
@@ -498,6 +504,7 @@ function cashShopState(character: Character): CashShopState {
     wardrobe: character.wardrobe,
     equipped: character.cashEquipped,
     gear: { path: jobPath(character.jobLine, character.jobBranch), owned: character.equipOwned, worn: character.equipWorn },
+    mounts: { owned: character.mountOwned, selected: character.mountSelected },
   };
 }
 

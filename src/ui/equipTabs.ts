@@ -52,7 +52,7 @@ export function chairCells(owned: number[], selected: number | null, pity: Equip
   });
 }
 
-/** 탈것 탭 칸. 없는 탈것은 레벨 선물이나 보스 천장을 적는다 */
+/** 탈것 탭 칸. 없는 탈것은 레벨 선물·보스 천장·상점 값을 적는다 */
 export function mountCells(owned: number[], selected: number | null, pity: EquipPity): PickCell[] {
   return MOUNTS.map((mount) => {
     const { id: itemId, name } = mount;

@@ -704,11 +704,12 @@ export function howToGet(entry: EquipEntry, pity: EquipPity): string {
 /** 의자는 레어 천장을 같이 센다 */
 export const chairHowToGet = (chair: Chair, pity: EquipPity) => bossDropNote(chair.bossId, 'rare', pity);
 
-/** 탈것은 레벨 선물이거나 레어 천장을 같이 세는 보스 드롭이다 */
+/** 탈것 보스 드롭은 레어 천장을 같이 센다 */
 export function mountHowToGet(mount: Mount, pity: EquipPity): string {
-  if (!mount.source) return '얻는 법 미정 · 시험판';
-  if (mount.source.kind === 'level') return `Lv.${mount.source.level} 달성 선물`;
-  return bossDropNote(mount.source.bossId, 'rare', pity);
+  const { source } = mount;
+  if (source.kind === 'level') return `Lv.${source.level} 달성 선물`;
+  if (source.kind === 'shop') return `장비 상점 ${source.price.toLocaleString()} 메소`;
+  return bossDropNote(source.bossId, 'rare', pity);
 }
 
 /** 레벨에 닿은 선물 중 아직 안 받은 것을 준다. 이미 그 레벨을 넘은 캐릭터도 처음 불렀을 때 받는다 */
