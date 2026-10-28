@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { BOSSES } from '../game/bosses';
-import { TOWNS } from '../game/towns';
+import { CLASSIC_TOWN_ROUTES } from '../game/routeData.classic';
+import { TOWNS, townsFor } from '../game/towns';
 import { BGM_FOLDERS, MAP_BGM } from './bgmCatalog';
 import {
   BGM_TRACKS,
   bgmTrackKey,
   canonicalTrack,
+  classicTrack,
   filterTracks,
   findTrack,
   isTrackPath,
   knownMapTrack,
   legacyMapKeyId,
   trackLabel,
+  trackSource,
 } from './bgmTracks';
 
 /** Rust bgm_cache.rs valid_key 와 같은 규칙 */
@@ -108,5 +111,38 @@ describe('찾기', () => {
 
   it('빈 검색어는 전부', () => {
     expect(find('  ')).toHaveLength(BGM_TRACKS.length);
+  });
+});
+
+describe('클래식 곡', () => {
+  it('경로 앞에 시대를 붙이고 GMS 83 이름으로 남긴다', () => {
+    const track = classicTrack('Bgm00/FloralLife');
+    expect(trackSource(track)).toEqual({ era: 'classic', path: 'Bgm00/FloralLife' });
+    expect(trackSource('Bgm00/FloralLife')).toEqual({ era: 'current', path: 'Bgm00/FloralLife' });
+    expect(bgmTrackKey(track)).toBe('GMS-83-Bgm00-FloralLife');
+    expect(bgmTrackKey(classicTrack("Bgm04/Shinin'Harbor"))).toBe('GMS-83-Bgm04-Shinin-27Harbor');
+    // 설정에 저장하는 곡(한 곡 반복·즐겨찾기)은 지금 판 곡 목록에서만 고른다
+    expect(isTrackPath(track)).toBe(false);
+  });
+
+  it('클래식 마을·사냥터 맵은 모두 클래식 곡을 알고 Rust 가 받는 이름이다', () => {
+    const mapIds = [
+      ...townsFor('classic').map((town) => town.mapId),
+      ...Object.values(CLASSIC_TOWN_ROUTES).flatMap((fields) => fields.map((field) => field.mapId)),
+    ];
+    mapIds.forEach((mapId) => {
+      const track = knownMapTrack(mapId, 'classic');
+      expect(track, String(mapId)).not.toBeNull();
+      expect(trackSource(track!).era).toBe('classic');
+      expect(bgmTrackKey(track!)).toMatch(RUST_KEY);
+    });
+  });
+
+  it('같은 맵 ID 라도 시대마다 따로 찾고, 클래식 곡에는 클래식 맵 이름이 붙는다', () => {
+    const sleepywood = townsFor('classic').find((town) => town.id === 'sleepywood')!;
+    expect(knownMapTrack(sleepywood.mapId)).toBeNull();
+    expect(knownMapTrack(sleepywood.mapId, 'classic')).not.toBeNull();
+    expect(trackLabel(knownMapTrack(100000000, 'classic')!)).toMatch(/^헤네시스 · /);
+    expect(trackLabel(classicTrack('Bgm99/Nothing'))).toBe('Nothing');
   });
 });

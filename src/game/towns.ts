@@ -1,3 +1,7 @@
+import type { Era } from '../maple/api';
+// scripts/curate-routes.ts 가 Node 로 바로 불러 쓰므로 확장자까지 적는다
+import { CLASSIC_TOWNS } from './classicTowns.ts';
+
 export interface MonsterSpec {
   /** 메이플 몹 ID */
   id: number;
@@ -13,6 +17,8 @@ export interface Town {
   /** 맵 렌더에는 하늘 배경이 빠져 있어서 뒤에 까는 색 */
   sky: [top: number, bottom: number];
   monsters: MonsterSpec[];
+  /** 맵·몹을 받을 시대. 없으면 지금 시대다. 클래식 마을은 같은 맵 ID 라도 지형이 다르다 */
+  era?: Era;
 }
 
 // 맵·몹 ID 는 KMS 389 기준으로 API 에서 이름을 대조해 확인한 값이다
@@ -175,14 +181,31 @@ export const TOWNS: Town[] = [
   },
 ];
 
-export function unlockedTowns(level: number): Town[] {
-  return TOWNS.filter((town) => town.minLevel <= level);
+/** 그 시대 마을 목록. 같은 마을은 시대가 달라도 id 가 같다 */
+export function townsFor(era: Era = 'current'): Town[] {
+  return era === 'classic' ? CLASSIC_TOWNS : TOWNS;
 }
 
-/** 보상 기준 마을: 레벨에 맞는 가장 높은 마을. 표시 중인 마을과 상관없이 메소 보상에 쓴다 */
-export function rewardTown(level: number): Town {
+/** 어느 시대든 있는 마을 id. 설정의 「머물기」 마을은 캐릭터 시대와 상관없이 하나만 저장한다 */
+export const ALL_TOWN_IDS: ReadonlySet<string> = new Set([...TOWNS, ...CLASSIC_TOWNS].map((town) => town.id));
+
+export const townEra = (town: Pick<Town, 'era'>): Era => town.era ?? 'current';
+
+export function unlockedTowns(level: number, era: Era = 'current'): Town[] {
+  return townsFor(era).filter((town) => town.minLevel <= level);
+}
+
+/**
+ * 보상 기준 마을: 레벨에 맞는 가장 높은 마을. 표시 중인 마을과 상관없이 메소 보상에 쓴다.
+ * 보상은 시대와 상관없이 지금 시대 마을로 정한다. 클래식은 비운 사이 잡은 몹 이름만 그 시대 마을 몹으로 바꾼다
+ */
+export function rewardTown(level: number, era: Era = 'current'): Town {
   const towns = unlockedTowns(level);
-  return towns[towns.length - 1] ?? TOWNS[0];
+  const reward = towns[towns.length - 1] ?? TOWNS[0];
+  if (era === 'current') return reward;
+  const eraTowns = unlockedTowns(level, era);
+  const shown = eraTowns[eraTowns.length - 1] ?? townsFor(era)[0];
+  return { ...reward, monsters: shown.monsters };
 }
 
 function shuffleArray<T>(arr: T[], random: () => number): T[] {
@@ -203,8 +226,9 @@ export function drawFromTownBag(
   lastTownId: string | null,
   level: number,
   random = Math.random,
+  era: Era = 'current',
 ): { town: Town; bag: string[]; lastTownId: string } | null {
-  const eligible = unlockedTowns(level);
+  const eligible = unlockedTowns(level, era);
   if (eligible.length === 0) return null;
   const eligibleIds = new Set(eligible.map((t) => t.id));
   let remaining = bag.filter((id) => eligibleIds.has(id));
@@ -216,13 +240,13 @@ export function drawFromTownBag(
     }
   }
   const id = remaining[0];
-  const town = TOWNS.find((t) => t.id === id)!;
+  const town = eligible.find((t) => t.id === id)!;
   return { town, bag: remaining.slice(1), lastTownId: id };
 }
 
 /** 초기 배치·캐릭터 전환 등 가방을 쓰지 않는 단발 선택. 열린 마을 전체에서 현재 마을 외를 고른다 */
-export function pickNextTown(level: number, currentId: string | null, random = Math.random): Town {
-  const candidates = unlockedTowns(level);
+export function pickNextTown(level: number, currentId: string | null, random = Math.random, era: Era = 'current'): Town {
+  const candidates = unlockedTowns(level, era);
   const others = candidates.filter((town) => town.id !== currentId);
   const pool = others.length > 0 ? others : candidates;
   return pool[Math.floor(random() * pool.length)];

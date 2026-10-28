@@ -11,7 +11,7 @@ import {
   howToGet,
 } from '../game/equipment';
 import type { JobPath } from '../game/jobs';
-import { cashShopUiUrl, characterAnimationUrl, itemIconUrl, wzImageUrl } from '../maple/api';
+import { type Era, cashShopUiUrl, characterAnimationUrl, itemIconUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 import {
@@ -29,6 +29,8 @@ import { BUTTON_SKINS, dressMapleButton } from './mapleButton';
 
 export interface EquipWindowState {
   path: JobPath | null;
+  /** 캐릭터 그림을 그릴 시대 */
+  era?: Era;
   owned: number[];
   worn: EquipWorn;
   cash: CashEquipped;
@@ -421,7 +423,7 @@ export function createEquipWindow(root: HTMLElement, handlers: EquipWindowHandle
   }
 
   function renderLook(current: EquipWindowState) {
-    const url = characterAnimationUrl(current.look, current.standAction);
+    const url = characterAnimationUrl(current.look, current.standAction, current.era);
     if (url === lookUrl) return;
     lookUrl = url;
     const place = (src: string) => {

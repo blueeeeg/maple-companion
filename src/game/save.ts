@@ -43,6 +43,8 @@ export function normalizeRoster(parsed: Partial<Roster>): Roster {
       ...normalizeEquipData(character),
       ...normalizeChairData(character),
       ...normalizeMountData(character),
+      // 시대가 생기기 전 캐릭터는 모두 지금 시대다
+      era: character.era === 'classic' ? 'classic' : 'current',
     };
     const { huntSkillId } = character;
     const raw = character as Partial<Character>;
@@ -173,6 +175,8 @@ export function mergeRosters(file: Roster | null, local: Roster): Roster {
     // 전직 날짜·갈래를 바꾼 기록은 한쪽에만 적혀 있을 수 있어 합친다
     return {
       ...winner,
+      // 시대는 만들 때 정해 바뀌지 않는다. 지금 시대는 칸이 없을 때 채우는 값이라 양쪽이 다르면 클래식 쪽을 따른다
+      era: fromFile.era === 'classic' || fromLocal.era === 'classic' ? 'classic' : 'current',
       jobBranch: branchSide.jobBranch,
       freeJobChange: branchSide.freeJobChange,
       // 갈래를 다른 쪽에서 가져오면 고른 사냥 스킬이 그 갈래 것이 아닐 수 있다

@@ -1,3 +1,4 @@
+import type { Era } from '../maple/api';
 import { type Appearance, DEFAULT_APPEARANCE } from './appearance';
 import { type CashEquipped, composeLook } from './cashShop';
 import { type EquipPity, type EquipWorn, wearEquipment } from './equipment';
@@ -28,6 +29,8 @@ export interface Character {
   id: string;
   name: string;
   appearance: Appearance;
+  /** 만들 때 고른 시대. 마을·사냥터·몹·BGM·캐릭터 그림을 그 시대 데이터로 받는다. 만든 뒤에는 바꾸지 않는다 */
+  era: Era;
   /** 이 캐릭터로 플레이하는 동안 쌓인 활동 시간. 레벨과 사냥 횟수가 여기서 나온다 */
   activeSeconds: number;
   jobLine: JobLineId | null;
@@ -122,11 +125,12 @@ export function emptyRoster(): Roster {
   return { version: 2, characters: [], selectedId: null, muted: false };
 }
 
-export function createCharacter(id: string, name: string, appearance: Appearance): Character {
+export function createCharacter(id: string, name: string, appearance: Appearance, era: Era = 'current'): Character {
   return {
     id,
     name: name.trim(),
     appearance: { ...appearance },
+    era,
     activeSeconds: 0,
     jobLine: null,
     jobBranch: null,
@@ -275,6 +279,7 @@ export function characterXp(character: Character): number {
 export interface CharacterSummary {
   id: string;
   name: string;
+  era: Era;
   level: number;
   jobTitle: string;
   look: number[];
@@ -305,5 +310,13 @@ export function reachedTier(character: Pick<Character, 'activeSeconds' | 'killXp
 export function summarizeCharacter(character: Character): CharacterSummary {
   const { level } = levelInfo(characterXp(character));
   const job = characterJob(character, level);
-  return { id: character.id, name: character.name, level, jobTitle: job.title, look: job.look, standAction: job.standAction };
+  return {
+    id: character.id,
+    name: character.name,
+    era: character.era,
+    level,
+    jobTitle: job.title,
+    look: job.look,
+    standAction: job.standAction,
+  };
 }

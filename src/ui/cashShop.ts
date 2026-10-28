@@ -30,7 +30,7 @@ import {
   wearEquipment,
 } from '../game/equipment';
 import { JOB_BRANCHES, type JobPath } from '../game/jobs';
-import { MESO_HUD_ICON_URL, cashShopUiUrl, characterAnimationUrl, itemIconUrl } from '../maple/api';
+import { type Era, MESO_HUD_ICON_URL, cashShopUiUrl, characterAnimationUrl, itemIconUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 import { loadCashItems, loadCashWeaponTypes, warmCashItems } from './cashCatalog';
@@ -39,6 +39,8 @@ import { BUTTON_SKINS, dressMapleButton } from './mapleButton';
 
 export interface CashShopState {
   gender: Gender;
+  /** 미리보기 캐릭터를 그릴 시대 */
+  era?: Era;
   /** 캐시 아이템을 입히기 전의 직업·차수 장비 모습 */
   jobLook: number[];
   /** 무기에 그림이 있는 서기 동작(창은 stand2) */
@@ -437,7 +439,7 @@ export function createCashShop(root: HTMLElement, handlers: CashShopHandlers): C
    * 맵 캐릭터와 같은 움직이는 GIF 주소라 지금 모습은 맵이 받아 둔 것을 그대로 쓴다
    */
   function renderPreview() {
-    const url = characterAnimationUrl(previewLook(), state?.standAction ?? 'stand1');
+    const url = characterAnimationUrl(previewLook(), state?.standAction ?? 'stand1', state?.era);
     if (preview.dataset.want === url) return;
     preview.dataset.want = url;
     window.clearTimeout(previewTimer);

@@ -1,12 +1,12 @@
 import { type Appearance, DEFAULT_APPEARANCE, FACES, GENDERS, type Gender, HAIRS, SKINS, withGender } from '../game/appearance';
 import { type CharacterSummary, MAX_CHARACTERS, NAME_MAX_LENGTH, NAME_MIN_LENGTH, nameError } from '../game/characters';
 import { describeJob } from '../game/jobs';
-import { characterAnimationUrl, loginBackUrl, loginUiUrl, wzImageUrl } from '../maple/api';
+import { type Era, characterAnimationUrl, loginBackUrl, loginUiUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry, loadedImage } from './art';
 
 export interface CharacterSelectHandlers {
   onStart(id: string): void;
-  onCreate(name: string, appearance: Appearance): void;
+  onCreate(name: string, appearance: Appearance, era: Era): void;
   onDelete(id: string): void;
 }
 
@@ -21,6 +21,10 @@ type AppearancePart = keyof Appearance;
 const PARTS: AppearancePart[] = ['gender', 'hair', 'face', 'skin'];
 const PART_LABELS: Record<AppearancePart, string> = { gender: '성별', hair: '헤어', face: '얼굴', skin: '스킨' };
 const GENDER_NAMES: Record<Gender, string> = { male: '남자', female: '여자' };
+const ERA_HINTS: Record<Era, string> = {
+  current: '지금 메이플 마을·몬스터·BGM 으로 자라요',
+  classic: '빅뱅 전(v83) 마을·몬스터·BGM 으로 자라요. 만든 뒤에는 못 바꿔요',
+};
 
 /** 얼굴·헤어는 성별마다 고를 수 있는 목록이 다르다 */
 function partOptions(part: AppearancePart, gender: Gender): readonly (number | Gender)[] {
@@ -108,7 +112,7 @@ const levelGlyphUrl = (glyph: string) => loginUiUrl(`CharSelect/lv/${glyph}`);
 const pageDigitUrl = (digit: string) => loginUiUrl(`CharSelect/pageNew/number/${digit}`);
 const PAGE_DIGITS = [...new Set([...Array.from({ length: PAGE_COUNT }, (_, index) => twoDigits(index + 1)), twoDigits(PAGE_COUNT)].join(''))];
 
-const standUrl = (look: number[], action = 'stand1') => characterAnimationUrl(look, action);
+const standUrl = (look: number[], era: Era, action = 'stand1') => characterAnimationUrl(look, action, era);
 
 /** 발 위치를 원점으로 프레임마다 원작 origin 에 맞춰 옮겨 그린다. 돌려준 함수로 멈춘다 */
 function playFrames(element: HTMLElement, frames: Frame[], delay: number, offset = { x: 0, y: 0 }): () => void {
@@ -167,6 +171,11 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
         <form class="create" data-tauri-drag-region hidden>
           <div class="create-preview" data-tauri-drag-region><img alt="" crossorigin="anonymous" hidden /></div>
           <p class="create-error" aria-live="polite"></p>
+          <div class="create-era" role="radiogroup" aria-label="시대">
+            <button class="create-era-option" type="button" role="radio" data-era="current">현재 메이플</button>
+            <button class="create-era-option" type="button" role="radio" data-era="classic">클래식 (빅뱅 이전)</button>
+            <p class="create-era-hint"></p>
+          </div>
           <div class="create-fields">
             <span class="create-band is-header"></span>
             <span class="create-band is-paper"></span>
@@ -213,6 +222,8 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
   const nameInput = pick<HTMLInputElement>('.create-name');
   const parts = pick('.create-parts');
   const error = pick('.create-error');
+  const eraOptions = [...root.querySelectorAll<HTMLButtonElement>('.create-era-option')];
+  const eraHint = pick('.create-era-hint');
   const submitCreate = pick<HTMLButtonElement>('.create-submit');
   const cancelCreate = pick<HTMLButtonElement>('.create-cancel');
   const confirm = pick('.select-confirm');
@@ -225,6 +236,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
   let highlightId: string | null = null;
   let page = 0;
   let draft: Appearance = { ...DEFAULT_APPEARANCE };
+  let draftEra: Era = 'current';
   let stopEffects: (() => void)[] = [];
   const partIndexes = new Map<AppearancePart, HTMLElement>();
   const partRows = new Map<AppearancePart, HTMLElement>();
@@ -237,8 +249,8 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
     stopEffects = [];
   }
 
-  function addSprite(feet: HTMLElement, look: number[], standAction: string) {
-    const url = standUrl(look, standAction);
+  function addSprite(feet: HTMLElement, look: number[], era: Era, standAction: string) {
+    const url = standUrl(look, era, standAction);
     loadWithRetry(url).then(
       () => {
         if (!feet.isConnected) return;
@@ -291,9 +303,15 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
           feet.append(burst, glow);
           stopEffects.push(playFrames(burst, BURST_FRAMES, BURST_DELAY, BURST_OFFSET), playFrames(glow, GLOW_FRAMES, GLOW_DELAY));
         }
-        addSprite(feet, character.look, character.standAction);
+        addSprite(feet, character.look, character.era, character.standAction);
         name.textContent = character.name;
-        slot.title = `${character.name} · Lv.${character.level} ${character.jobTitle}`;
+        if (character.era === 'classic') {
+          const badge = document.createElement('span');
+          badge.className = 'select-era';
+          badge.textContent = '클래식';
+          slot.appendChild(badge);
+        }
+        slot.title = `${character.name} · Lv.${character.level} ${character.jobTitle}${character.era === 'classic' ? ' · 클래식' : ''}`;
         slot.addEventListener('click', () => {
           highlightId = character.id;
           render();
@@ -353,7 +371,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
 
   /** 새 모습을 다 받은 뒤에 바꿔 끼운다. 받는 동안과 실패했을 때는 앞 모습을 그대로 두고, 처음이면 비워 둔다 */
   function renderDraft() {
-    const url = standUrl(describeJob(1, null, draft).look);
+    const url = standUrl(describeJob(1, null, draft).look, draftEra);
     preview.dataset.want = url;
     loadWithRetry(url).then(
       (src) => {
@@ -374,7 +392,20 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
       label.textContent =
         part === 'gender' ? GENDER_NAMES[draft.gender] : `${options.indexOf(draft[part]) + 1} / ${options.length}`;
     });
+    eraOptions.forEach((option) => {
+      const chosen = option.dataset.era === draftEra;
+      option.classList.toggle('is-chosen', chosen);
+      option.setAttribute('aria-checked', String(chosen));
+    });
+    eraHint.textContent = ERA_HINTS[draftEra];
   }
+
+  eraOptions.forEach((option) =>
+    option.addEventListener('click', () => {
+      draftEra = option.dataset.era === 'classic' ? 'classic' : 'current';
+      renderDraft();
+    }),
+  );
 
   function dressUp() {
     applyArt(screen, { back: loginBackUrl(1), leaves: loginBackUrl(2) }, 'has-back-art');
@@ -450,6 +481,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
   function openCreate() {
     if (characters.length >= MAX_CHARACTERS) return;
     draft = { ...DEFAULT_APPEARANCE };
+    draftEra = 'current';
     nameInput.value = '';
     error.textContent = '';
     renderDraft();
@@ -475,7 +507,7 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
       return;
     }
     setCreating(false);
-    handlers.onCreate(nameInput.value.trim(), draft);
+    handlers.onCreate(nameInput.value.trim(), draft, draftEra);
   });
 
   start.addEventListener('click', () => {

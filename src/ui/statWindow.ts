@@ -1,12 +1,14 @@
 import { JOB_CHANGE_MESO, type JobChange } from '../game/characters';
 import { ADVANCEMENT_LEVELS, tierName } from '../game/jobs';
 import { type AdvancementLog, type BossRecord, formatDay, formatMonthDay, formatTogetherTime } from '../game/records';
-import { MESO_HUD_ICON_URL, characterAnimationUrl, wzImageUrl } from '../maple/api';
+import { type Era, MESO_HUD_ICON_URL, characterAnimationUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadedImage } from './art';
 import { PRIORITY, loadImageAsset, readyImage } from './cashAssets';
 
 export interface StatWindowState {
   name: string;
+  /** 캐릭터 그림을 그릴 시대 */
+  era?: Era;
   level: number;
   /** 차수 없는 이름(캡틴). 차수는 「전직」 줄에 있고, 「바꾸기」 버튼과 한 줄에 들어가야 한다 */
   jobName: string;
@@ -249,7 +251,7 @@ export function createStatWindow(root: HTMLElement, handlers: StatWindowHandlers
   }
 
   function renderLook(current: StatWindowState) {
-    const url = characterAnimationUrl(current.look, current.standAction);
+    const url = characterAnimationUrl(current.look, current.standAction, current.era);
     if (url === lookUrl) return;
     lookUrl = url;
     const place = (src: string) => {

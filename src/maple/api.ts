@@ -1,47 +1,68 @@
 // 메이플 리소스는 앱에 넣지 않고 팬 API(maplestory.io)에서 실행 중에 받아 온다
+import { CLASSIC_ITEM_IDS } from './classicItems';
 import type { LadderRope } from './navigation';
-const REGION = 'KMS';
-const VERSION = '389';
-const BASE = `https://maplestory.io/api/${REGION}/${VERSION}`;
-/** 받은 리소스를 기기에 남길 때 붙이는 버전 표시. 버전이 바뀌면 남긴 것을 새로 받는다 */
-export const DATA_KEY = `${REGION}-${VERSION}`;
 
-export const mapInfoUrl = (mapId: number) => `${BASE}/map/${mapId}`;
+/** 캐릭터마다 만들 때 고르는 시대. 맵·몹·BGM·캐릭터 그림을 그 시대 데이터에서 받는다 */
+export type Era = 'current' | 'classic';
+export const ERAS: readonly Era[] = ['current', 'classic'];
+
+export interface DataSource {
+  region: string;
+  version: string;
+}
+
+// 클래식은 빅뱅(v93) 전 데이터가 온전히 남은 마지막 판이다. 에반·듀얼블레이드가 들어오기 전이다
+export const DATA_SOURCES: Record<Era, DataSource> = {
+  current: { region: 'KMS', version: '389' },
+  classic: { region: 'GMS', version: '83' },
+};
+
+const apiBase = (era: Era) => `https://maplestory.io/api/${DATA_SOURCES[era].region}/${DATA_SOURCES[era].version}`;
+const wzBase = (era: Era) => `https://maplestory.io/api/wz/${DATA_SOURCES[era].region}/${DATA_SOURCES[era].version}`;
+const BASE = apiBase('current');
+/** 그 시대 리소스를 기기에 남길 때 붙이는 버전 표시(`KMS-389`·`GMS-83`). 버전이 바뀌면 남긴 것을 새로 받는다 */
+export const dataKey = (era: Era) => `${DATA_SOURCES[era].region}-${DATA_SOURCES[era].version}`;
+export const DATA_KEY = dataKey('current');
+
+const wzMapPath = (mapId: number) => {
+  const padded = String(mapId).padStart(9, '0');
+  return `Map/Map/Map${padded[0]}/${padded}.img`;
+};
+
+export const mapInfoUrl = (mapId: number, era: Era = 'current') => `${apiBase(era)}/map/${mapId}`;
 /** 하늘 배경은 빠지고 타일·오브젝트만 그려진다 */
-export const mapRenderUrl = (mapId: number) => `${BASE}/map/${mapId}/render/0`;
+export const mapRenderUrl = (mapId: number, era: Era = 'current') => `${apiBase(era)}/map/${mapId}/render/0`;
 /**
  * 레이어 하나만 그린 이미지. 레이어 번호는 맵 레이어 × 2 에 타일이면 1 을 더한 값이다(오브젝트 → 타일 순).
  * 원점을 안 주면 그 레이어 그림의 테두리로 잘려 와서 전체 렌더와 위치를 맞출 수 없다. 원점 위쪽·왼쪽으로 삐져나간 그림은 빠진다
  */
-export const mapLayerRenderUrl = (mapId: number, layer: number, minX: number, minY: number) =>
-  `${BASE}/map/${mapId}/render/layer/${layer}/0?minX=${minX}&minY=${minY}`;
+export const mapLayerRenderUrl = (mapId: number, layer: number, minX: number, minY: number, era: Era = 'current') =>
+  `${apiBase(era)}/map/${mapId}/render/layer/${layer}/0?minX=${minX}&minY=${minY}`;
 /** 원작 BGM 한 곡. path 는 `Bgm00/FloralLife` 처럼 Sound.wz 의 폴더/이름이다. 이름에 빈칸·따옴표가 있는 곡이 있다 */
-export const musicUrl = (path: string) => `${BASE}/music/${path.split('/').map(encodeURIComponent).join('/')}`;
+export const musicUrl = (path: string, era: Era = 'current') =>
+  `${apiBase(era)}/music/${path.split('/').map(encodeURIComponent).join('/')}`;
 /** 맵에 걸린 BGM 경로(WZ `info/bgm`, 값이 `Bgm00/FloralLife`). 곡을 받지 않고 어느 곡인지만 본다 */
-export function mapBgmNodeUrl(mapId: number): string {
-  const padded = String(mapId).padStart(9, '0');
-  return `https://maplestory.io/api/wz/${REGION}/${VERSION}/Map/Map/Map${padded[0]}/${padded}.img/info/bgm`;
-}
+export const mapBgmNodeUrl = (mapId: number, era: Era = 'current') => `${wzBase(era)}/${wzMapPath(mapId)}/info/bgm`;
 /**
  * 맵의 사다리·로프 WZ 노드(JSON). path 가 비면 자식 이름 목록이고, `1/page` 처럼 주면 그 값이다.
  * 맵 정보 ladderRopes 는 이 자식 목록 순서(1, 10, 11, 2 …)대로 들어 있다
  */
-export function mapLadderRopeNodeUrl(mapId: number, path = ''): string {
-  const padded = String(mapId).padStart(9, '0');
-  return `https://maplestory.io/api/wz/${REGION}/${VERSION}/Map/Map/Map${padded[0]}/${padded}.img/ladderRope${path ? `/${path}` : ''}`;
-}
-export const mobInfoUrl = (mobId: number) => `${BASE}/mob/${mobId}`;
-export const mobFrameUrl = (mobId: number, action: string, frame: number) =>
-  `${BASE}/mob/${mobId}/render/${action}/${frame}`;
+export const mapLadderRopeNodeUrl = (mapId: number, path = '', era: Era = 'current') =>
+  `${wzBase(era)}/${wzMapPath(mapId)}/ladderRope${path ? `/${path}` : ''}`;
+export const mobInfoUrl = (mobId: number, era: Era = 'current') => `${apiBase(era)}/mob/${mobId}`;
+export const mobFrameUrl = (mobId: number, action: string, frame: number, era: Era = 'current') =>
+  `${apiBase(era)}/mob/${mobId}/render/${action}/${frame}`;
 /** 애니메이션 GIF. 프레임 수와 원작 딜레이를 읽는 데만 쓴다 */
-export const mobAnimationUrl = (mobId: number, action: string) => `${BASE}/mob/${mobId}/render/${action}`;
+export const mobAnimationUrl = (mobId: number, action: string, era: Era = 'current') =>
+  `${apiBase(era)}/mob/${mobId}/render/${action}`;
 export const skillUrl = (skillId: number) => `${BASE}/job/skill/${skillId}`;
 
 /**
  * WZ 캔버스 하나를 PNG 로 받는다. UI 캔버스 대부분은 `_outlink` 로 `_Canvas` 아래 실제 그림을 가리키고,
  * 원래 경로로 받으면 1×1 빈 그림이 온다. 그래서 `_outlink` 를 따라간 경로를 넘겨야 한다
  */
-export const wzImageUrl = (path: string) => `https://maplestory.io/api/wz/img/${REGION}/${VERSION}/${path}`;
+export const wzImageUrl = (path: string, era: Era = 'current') =>
+  `https://maplestory.io/api/wz/img/${DATA_SOURCES[era].region}/${DATA_SOURCES[era].version}/${path}`;
 /** 로그인 UI(캐릭터 선택·생성 버튼 등). node 는 `CharSelect/BtSelect/normal/0` 처럼 Login.img 아래 경로 */
 export const loginUiUrl = (node: string) => wzImageUrl(`UI/_Canvas/Login.img/${node}`);
 /** 로그인 화면 배경(1024×768). 1 이 캐릭터 선택의 나무 선반, 2 는 그 위에 겹치는 가장자리 잎 */
@@ -62,20 +83,31 @@ export function mesoDropIconUrl(amount: number): string {
   return `${BASE}/item/${itemId}/icon`;
 }
 
-function characterItems(itemIds: number[]): string {
-  return encodeURIComponent(itemIds.map((itemId) => JSON.stringify({ itemId, region: REGION, version: VERSION })).join(','));
+/**
+ * 아이템마다 받을 판을 따로 적을 수 있다. 클래식은 v83 에 있는 아이템만 v83 으로 그리고 나머지(캐시 아이템·새 장비)는
+ * 지금 판으로 그린다. v83 에 없는 아이템을 v83 으로 적으면 오류 없이 빠진 채 그려진다
+ */
+export function characterItemSource(itemId: number, era: Era = 'current'): DataSource {
+  return era === 'classic' && CLASSIC_ITEM_IDS.has(itemId) ? DATA_SOURCES.classic : DATA_SOURCES.current;
+}
+
+function characterItems(itemIds: number[], era: Era): string {
+  return encodeURIComponent(
+    itemIds.map((itemId) => JSON.stringify({ itemId, ...characterItemSource(itemId, era) })).join(','),
+  );
 }
 
 /** 이 모습의 동작·프레임 주소는 모두 이 아래에 있다 */
-export const characterArtBase = (itemIds: number[]) => `https://maplestory.io/api/character/${characterItems(itemIds)}`;
+export const characterArtBase = (itemIds: number[], era: Era = 'current') =>
+  `https://maplestory.io/api/character/${characterItems(itemIds, era)}`;
 
 /** 발이 이미지 정중앙에 오게 그려 받아서 프레임마다 크기가 달라도 발 위치가 흔들리지 않는다 */
-export function characterFrameUrl(itemIds: number[], action: string, frame: number): string {
-  return `${characterArtBase(itemIds)}/${action}/${frame}?resize=1&renderMode=FeetCenter`;
+export function characterFrameUrl(itemIds: number[], action: string, frame: number, era: Era = 'current'): string {
+  return `${characterArtBase(itemIds, era)}/${action}/${frame}?resize=1&renderMode=FeetCenter`;
 }
 
-export function characterAnimationUrl(itemIds: number[], action: string): string {
-  return `${characterArtBase(itemIds)}/${action}/animated?resize=1&renderMode=FeetCenter`;
+export function characterAnimationUrl(itemIds: number[], action: string, era: Era = 'current'): string {
+  return `${characterArtBase(itemIds, era)}/${action}/animated?resize=1&renderMode=FeetCenter`;
 }
 
 /**
@@ -175,7 +207,7 @@ export const cashItemListUrl = (subCategory: string) =>
   `${BASE}/item?subCategoryFilter=${encodeURIComponent(subCategory)}&cashFilter=true&count=20000`;
 export const itemIconUrl = (itemId: number) => `${BASE}/item/${itemId}/icon`;
 /** WZ 노드 값·자식 목록(JSON). path 는 `Character/Weapon/01702000.img` 처럼 WZ 파일 아래 경로 */
-export const wzNodeUrl = (path: string) => `https://maplestory.io/api/wz/${REGION}/${VERSION}/${path}`;
+export const wzNodeUrl = (path: string) => `${wzBase('current')}/${path}`;
 /** 캐시 무기 외형의 WZ 노드. 자식 이름이 그림이 들어 있는 무기 종류 번호(30 한손검, 45 활…)다 */
 export const cashWeaponNodeUrl = (itemId: number) => wzNodeUrl(`Character/Weapon/0${itemId}.img`);
 /** 캐시샵 UI. node 는 `CSList/BtBuy/normal/0` 처럼 CashShop.img 아래 경로 */

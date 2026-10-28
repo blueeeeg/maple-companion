@@ -11,8 +11,8 @@ import {
   hourlyXp,
 } from '../game/settings';
 import { townFields } from '../game/routes';
-import { TOWNS } from '../game/towns';
-import { wzImageUrl } from '../maple/api';
+import { townsFor } from '../game/towns';
+import { type Era, wzImageUrl } from '../maple/api';
 import { applyArt } from './art';
 import { hasFinalConsonant } from './npcDialog';
 
@@ -24,6 +24,8 @@ export interface SettingsScreenState {
   towns: { id: string; name: string }[];
   /** 지금 서 있는 마을. 「머물기」를 처음 누르면 이 마을부터 보여 준다 */
   currentTownId?: string | null;
+  /** 지금 캐릭터의 시대. 머물 마을 이름·사냥터를 그 시대 목록에서 찾는다 */
+  era?: Era;
 }
 
 export interface SettingsHandlers {
@@ -148,6 +150,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   let draft: Settings | null = null;
   let muted = false;
   let towns: SettingsScreenState['towns'] = [];
+  let era: Era = 'current';
   let currentTownId: string | null = null;
   // 문자열이 아니라 읽는 함수로 둬야 올려 둔 채 값을 바꿀 때 안내도 따라 바뀐다
   let hoveredHint: (() => string) | null = null;
@@ -252,7 +255,12 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     const id = current().pinnedTownId;
     if (id === null) return null;
     const open = towns.some((town) => town.id === id);
-    return { name: TOWNS.find((town) => town.id === id)?.name ?? id, open, hasFields: townFields({ id }).length > 0 };
+    return {
+      // 다른 시대 캐릭터가 고른, 이 시대에 없는 마을이어도 이름은 보여 준다
+      name: [...townsFor(era), ...townsFor(era === 'classic' ? 'current' : 'classic')].find((town) => town.id === id)?.name ?? id,
+      open,
+      hasFields: townFields({ id, era }).length > 0,
+    };
   };
   const currentTownHint = () => townHint(current().townRotateMinutes, stayTown());
   const townControl = row('마을', currentTownHint);
@@ -392,6 +400,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
       draft = { ...state.settings };
       muted = state.muted;
       towns = state.towns;
+      era = state.era ?? 'current';
       currentTownId = state.currentTownId ?? null;
       lastStayTownId = null;
       hoveredHint = null;

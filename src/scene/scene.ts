@@ -4,7 +4,7 @@ import type { JobView } from '../game/jobs';
 import type { RoutePortal } from '../game/routes';
 import type { MonsterSpec, Town } from '../game/towns';
 import {
-  DATA_KEY,
+  type Era,
   type Foothold,
   type MapInfo,
   type MapMob,
@@ -71,6 +71,7 @@ import {
   spawnPoints,
   stepPatrol,
 } from './fieldMobs';
+import { readCalibration, storeCalibration } from './calibrationStore';
 import { chairLoopDelayMs, frameTopLeft, layerAnchor, layerOrder, seatFacing, seatedBodyOffset, seatedLook } from './chairPlacement';
 import { FULL_FPS, IDLE_FPS, targetFps } from './framePolicy';
 import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } from './camera';
@@ -129,11 +130,6 @@ const FONT = '-apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif'
 /** 원작 이름표 글자(12px)를 VIEW_SCALE 로 줄이면 8px 아래라 한글이 뭉개진다. 읽히는 가장 작은 크기로 둔다(화면 px) */
 const NAME_TAG_FONT_SIZE = 10;
 const NAME_TAG_ALPHA = 0.6;
-// 보정값은 그 버전의 맵 렌더로 잰 것이라 버전마다 따로 둔다
-const CALIBRATION_KEY = `maple-companion:calibration:${DATA_KEY}:`;
-/** 버전 표시 없이 남긴 예전 보정값. 모두 KMS 389 렌더로 잰 것이다 */
-const LEGACY_CALIBRATION_KEY = 'maple-companion:calibration:';
-const LEGACY_CALIBRATION_DATA_KEY = 'KMS-389';
 const BANNER_Y = 58;
 /** 보스전에는 위쪽에 HP 게이지가 있어서 그 아래에 띄운다 */
 const BOSS_BANNER_Y = 88;
@@ -205,7 +201,8 @@ export interface Scene {
   readonly inEncounter: boolean;
   /** 맵을 다 받아 와야 끝난다. 실패하면 이전 마을을 그대로 둔다 */
   setTown(town: Town): Promise<void>;
-  setJob(job: JobView): void;
+  /** era: 캐릭터 그림을 받을 시대 */
+  setJob(job: JobView, era?: Era): void;
   /** hits: 이 몬스터를 잡는 데 드는 스킬 사용 횟수 */
   startEncounter(monster: MonsterSpec, hits: number): void;
   /**
@@ -314,6 +311,8 @@ interface Stage {
   /** 맵 월드 좌표. 직접 조작이 이 발판 위를 움직인다 */
   footholds: Foothold[];
   mobs: MapMob[];
+  /** 맵을 받은 시대. 앞 레이어·포털 그림·직접 조작 몹도 같은 시대에서 받는다 */
+  era: Era;
 }
 
 type Behavior =
@@ -328,35 +327,17 @@ interface Effect {
   loopDelayMs?: number;
 }
 
-function readCalibration(mapId: number): Calibration | null {
-  try {
-    const text =
-      localStorage.getItem(CALIBRATION_KEY + mapId) ??
-      (DATA_KEY === LEGACY_CALIBRATION_DATA_KEY ? localStorage.getItem(LEGACY_CALIBRATION_KEY + mapId) : null);
-    return text ? (JSON.parse(text) as Calibration) : null;
-  } catch {
-    return null;
-  }
-}
-
-function storeCalibration(mapId: number, calibration: Calibration): void {
-  try {
-    localStorage.setItem(CALIBRATION_KEY + mapId, JSON.stringify(calibration));
-  } catch {
-    // 다음 실행에서 다시 계산한다
-  }
-}
-
 function mobAction(framebooks: Record<string, number>): string {
   if (framebooks.move) return 'move';
   if (framebooks.fly) return 'fly';
   return 'stand';
 }
 
-async function loadMobAnimations(spec: MonsterSpec): Promise<MobAnimations> {
-  const { framebooks } = await fetchStoredJson<MobInfo>(mobInfoUrl(spec.id));
+async function loadMobAnimations(spec: MonsterSpec, era: Era): Promise<MobAnimations> {
+  const { framebooks } = await fetchStoredJson<MobInfo>(mobInfoUrl(spec.id, era));
   const idle = mobAction(framebooks);
-  const load = (action: string) => loadAnimation(mobAnimationUrl(spec.id, action), (frame) => mobFrameUrl(spec.id, action, frame));
+  const load = (action: string) =>
+    loadAnimation(mobAnimationUrl(spec.id, action, era), (frame) => mobFrameUrl(spec.id, action, frame, era));
   const [move, hit, die] = await Promise.all([
     load(idle),
     load(framebooks.hit1 ? 'hit1' : idle),
@@ -371,15 +352,17 @@ interface FieldMobArt {
   stand: Animation;
 }
 
-const fieldMobArts = new Map<number, Promise<FieldMobArt>>();
+const fieldMobArts = new Map<string, Promise<FieldMobArt>>();
 
-/** 맵 몬스터는 서 있다가 걷기도 해서 stand 도 받는다. 같은 몬스터는 한 번만 받는다 */
-function loadFieldMobArt(mobId: number): Promise<FieldMobArt> {
-  let pending = fieldMobArts.get(mobId);
+/** 맵 몬스터는 서 있다가 걷기도 해서 stand 도 받는다. 같은 몬스터는 한 번만 받는다. 맵과 같은 시대 몹으로 받는다 */
+function loadFieldMobArt(mobId: number, era: Era): Promise<FieldMobArt> {
+  const key = `${era}|${mobId}`;
+  let pending = fieldMobArts.get(key);
   if (!pending) {
-    pending = fetchStoredJson<MobInfo>(mobInfoUrl(mobId)).then(async ({ name, framebooks }) => {
+    pending = fetchStoredJson<MobInfo>(mobInfoUrl(mobId, era)).then(async ({ name, framebooks }) => {
       const idle = mobAction(framebooks);
-      const load = (action: string) => loadAnimation(mobAnimationUrl(mobId, action), (frame) => mobFrameUrl(mobId, action, frame));
+      const load = (action: string) =>
+        loadAnimation(mobAnimationUrl(mobId, action, era), (frame) => mobFrameUrl(mobId, action, frame, era));
       const [move, stand, hit, die] = await Promise.all([
         load(idle),
         framebooks.stand && idle !== 'stand' ? load('stand') : null,
@@ -388,8 +371,8 @@ function loadFieldMobArt(mobId: number): Promise<FieldMobArt> {
       ]);
       return { name, animations: { move, hit, die }, stand: stand ?? move };
     });
-    pending.catch(() => fieldMobArts.delete(mobId));
-    fieldMobArts.set(mobId, pending);
+    pending.catch(() => fieldMobArts.delete(key));
+    fieldMobArts.set(key, pending);
   }
   return pending;
 }
@@ -398,23 +381,25 @@ function loadFieldMobArt(mobId: number): Promise<FieldMobArt> {
  * 애니메이션 GIF 는 서버가 그리는 데 오래 걸리고 5xx 로 자주 실패한다(같은 때 프레임 PNG 는 1초 안에 온다).
  * 그러면 첫 프레임 한 장으로 대신한다. still 이면 나중에 다시 받는다
  */
-async function loadHeroAction(look: number[], action: string): Promise<{ animation: Animation; still: boolean }> {
+async function loadHeroAction(look: number[], action: string, era: Era): Promise<{ animation: Animation; still: boolean }> {
   try {
-    const animation = await loadAnimation(characterAnimationUrl(look, action), (frame) => characterFrameUrl(look, action, frame));
+    const animation = await loadAnimation(characterAnimationUrl(look, action, era), (frame) =>
+      characterFrameUrl(look, action, frame, era),
+    );
     return { animation, still: false };
   } catch (error) {
     console.warn(`[scene] 캐릭터 ${action} 애니메이션을 못 받아 정지 그림으로 대신한다`, error);
-    const frame = await loadTexture(characterFrameUrl(look, action, 0));
+    const frame = await loadTexture(characterFrameUrl(look, action, 0, era));
     return { animation: { frames: [frame], delays: [STILL_FRAME_MS] }, still: true };
   }
 }
 
-async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnimations; still: boolean }> {
-  keepArt('look', [characterArtBase(job.look)]);
+async function loadHeroAnimations(job: JobView, era: Era): Promise<{ animations: HeroAnimations; still: boolean }> {
+  keepArt('look', [characterArtBase(job.look, era)]);
   const [stand, walk, attack] = await Promise.all(
-    [job.standAction, job.walkAction, job.attackAction].map((action) => loadHeroAction(job.look, action)),
+    [job.standAction, job.walkAction, job.attackAction].map((action) => loadHeroAction(job.look, action, era)),
   );
-  storeHeroActions(job.look, [job.standAction, job.walkAction, job.attackAction]);
+  storeHeroActions(job.look, [job.standAction, job.walkAction, job.attackAction], era);
   return {
     animations: { stand: stand.animation, walk: walk.animation, attack: attack.animation },
     still: stand.still || walk.still || attack.still,
@@ -422,13 +407,13 @@ async function loadHeroAnimations(job: JobView): Promise<{ animations: HeroAnima
 }
 
 /** 의자 동작(sitAction)을 캐릭터 API 가 못 그리면 앉기로 대신한다 */
-async function loadSitAnimation(look: number[], action: string): Promise<Animation> {
-  keepArt('chairLook', [characterArtBase(look)]);
+async function loadSitAnimation(look: number[], action: string, era: Era): Promise<Animation> {
+  keepArt('chairLook', [characterArtBase(look, era)]);
   try {
-    return (await loadHeroAction(look, action)).animation;
+    return (await loadHeroAction(look, action, era)).animation;
   } catch (error) {
     if (action === 'sit') throw error;
-    return (await loadHeroAction(look, 'sit')).animation;
+    return (await loadHeroAction(look, 'sit', era)).animation;
   }
 }
 
@@ -439,15 +424,16 @@ const STORE_HERO_ACTIONS_DELAY_MS = 5000;
 let storedHeroLook = '';
 
 /** 지금 모습의 동작을 기기에만 하나씩 받아 둔다. 실패한 동작은 넘어가고 모습이 바뀌면 그만둔다 */
-function storeHeroActions(look: number[], jobActions: string[]): void {
-  const key = `${look.join(',')}|${jobActions.join(',')}`;
+function storeHeroActions(look: number[], jobActions: string[], era: Era): void {
+  const key = `${era}|${look.join(',')}|${jobActions.join(',')}`;
   if (key === storedHeroLook) return;
   storedHeroLook = key;
   [...new Set([...jobActions, ...STORED_HERO_ACTIONS])].reduce<Promise<unknown>>(
     (previous, action) =>
       previous.then(() => {
         if (storedHeroLook !== key) return;
-        return storeAnimation(characterAnimationUrl(look, action), (frame) => characterFrameUrl(look, action, frame)).catch(() => {});
+        const gifUrl = characterAnimationUrl(look, action, era);
+        return storeAnimation(gifUrl, (frame) => characterFrameUrl(look, action, frame, era)).catch(() => {});
       }),
     new Promise((resolve) => setTimeout(resolve, STORE_HERO_ACTIONS_DELAY_MS)),
   );
@@ -459,7 +445,13 @@ const totalMs = (animation: Animation) => animation.delays.reduce((sum, delay) =
  * 바닥 발판 레이어의 타일을 어림한 원점으로 받아 전체 렌더에 겹쳐 보정을 정확히 맞춘다. 타일이 없거나 위 레이어에 많이
  * 가려 못 맞추면 같은 레이어의 오브젝트로 한 번 더 해 본다(리스항구). 못 받거나 못 맞추면 null
  */
-function exactCalibration(mapId: number, groundLayer: number, rough: Calibration, base: Pixels): Promise<Calibration | null> {
+function exactCalibration(
+  mapId: number,
+  groundLayer: number,
+  rough: Calibration,
+  base: Pixels,
+  era: Era,
+): Promise<Calibration | null> {
   const tiles = groundLayer * 2 + 1;
   const variants = [[tiles], [tiles - 1], [tiles - 1, tiles]];
   return exactCalibrationFrom(
@@ -467,7 +459,7 @@ function exactCalibration(mapId: number, groundLayer: number, rough: Calibration
     base,
     variants.length,
     async (variant, minX, minY) => {
-      const stack = await loadLayerStack(variants[variant].map((layer) => mapLayerRenderUrl(mapId, layer, minX, minY)));
+      const stack = await loadLayerStack(variants[variant].map((layer) => mapLayerRenderUrl(mapId, layer, minX, minY, era)));
       if (!stack) return null;
       stack.texture.destroy(true);
       return stack.pixels;
@@ -477,12 +469,12 @@ function exactCalibration(mapId: number, groundLayer: number, rough: Calibration
 }
 
 /** layer 에 선 캐릭터를 가리는 레이어들을 한 장으로 겹친다. 원점이 같아 어느 layer 로 받아도 전체 렌더 위 위치가 같다 */
-function loadFrontStack(mapId: number, layer: number, calibration: Calibration, ladders: LadderRope[]) {
+function loadFrontStack(mapId: number, layer: number, calibration: Calibration, ladders: LadderRope[], era: Era) {
   const minX = Math.round(-calibration.dx) - FRONT_SEARCH;
   const minY = Math.round(-calibration.dy) - FRONT_SEARCH;
   const layers = frontRenderLayers(layer);
   return loadLayerStack(
-    layers.map((each) => mapLayerRenderUrl(mapId, each, minX, minY)),
+    layers.map((each) => mapLayerRenderUrl(mapId, each, minX, minY, era)),
     ladderRopeMasks(ladders, layers, { x: minX, y: minY }),
   );
 }
@@ -490,13 +482,13 @@ function loadFrontStack(mapId: number, layer: number, calibration: Calibration, 
 /**
  * 사다리·로프마다 WZ page 를 붙인다. 맵 정보에는 page 가 없다. 자식 수가 맞지 않거나 못 받은 것은 page 없이 둔다
  */
-async function loadLadderPages(mapId: number, ladders: LadderRope[]): Promise<LadderRope[]> {
+async function loadLadderPages(mapId: number, ladders: LadderRope[], era: Era): Promise<LadderRope[]> {
   if (ladders.length === 0) return ladders;
-  const { children } = await fetchStoredJson<{ children: string[] }>(mapLadderRopeNodeUrl(mapId));
+  const { children } = await fetchStoredJson<{ children: string[] }>(mapLadderRopeNodeUrl(mapId, '', era));
   if (children.length !== ladders.length) return ladders;
   const pages = await Promise.all(
     children.map((name) =>
-      fetchStoredJson<WzValue<number>>(mapLadderRopeNodeUrl(mapId, `${name}/page`)).then(
+      fetchStoredJson<WzValue<number>>(mapLadderRopeNodeUrl(mapId, `${name}/page`, era)).then(
         ({ value }) => value,
         () => undefined,
       ),
@@ -515,8 +507,9 @@ async function loadFront(
   calibration: Calibration,
   ladders: LadderRope[],
   base: Pixels,
+  era: Era,
 ): Promise<{ texture: Texture; x: number; y: number } | null> {
-  const stack = await loadFrontStack(mapId, groundLayer, calibration, ladders);
+  const stack = await loadFrontStack(mapId, groundLayer, calibration, ladders, era);
   if (!stack) return null;
   const at = alignOverlay(base, stack.pixels, { x: -FRONT_SEARCH, y: -FRONT_SEARCH }, FRONT_SEARCH);
   if (!at) {
@@ -604,6 +597,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let heroClockMs = 0;
   /** 지금 캐릭터 모습. 스킬창에서 쓴 스킬의 동작 그림을 같은 모습으로 받는다 */
   let heroLook: number[] = [];
+  /** 캐릭터 그림을 받을 시대 */
+  let heroEra: Era = 'current';
+  /** 모습과 시대를 합친 이름. 같은 아이템이라도 시대가 다르면 다른 그림이다 */
+  const heroLookId = () => `${heroEra}|${heroLook.join(',')}`;
   /** 스킬창에서 쓴 스킬의 동작. 끝나면 원래 동작으로 돌아간다 */
   let castPose: { animation: Animation; clockMs: number } | null = null;
   const castMotions = new Map<string, Promise<Animation | null>>();
@@ -1061,16 +1058,18 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
    * 스킬 동작 그림. 스킬 데이터의 동작(alert2 등)을 먼저, 그 동작을 캐릭터 API 가 못 그리면 원작 전투 대기 동작 alert 로 대신한다.
    * 둘 다 못 받으면 동작 없이 이펙트만 쓴다
    */
-  const motionKey = (actions: string[]) => `${heroLook.join(',')}|${actions[0] ?? ''}`;
+  const motionKey = (actions: string[]) => `${heroLookId()}|${actions[0] ?? ''}`;
 
   function castMotion(actions: string[]): Promise<Animation | null> {
     const look = heroLook;
+    const era = heroEra;
     const key = motionKey(actions);
     let pending = castMotions.get(key);
     if (!pending) {
       pending = [...actions.slice(0, 1), 'alert']
         .reduce<Promise<Animation | null>>(
-          (previous, action) => previous.then((found) => found ?? loadHeroAction(look, action).then(({ animation }) => animation, () => null)),
+          (previous, action) =>
+            previous.then((found) => found ?? loadHeroAction(look, action, era).then(({ animation }) => animation, () => null)),
           Promise.resolve(null),
         )
         .then((animation) => {
@@ -1171,11 +1170,11 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       return;
     }
     const look = seatedLook(heroLook, art);
-    const key = `${art.id}|${look.join(',')}`;
+    const key = `${art.id}|${heroEra}|${look.join(',')}`;
     if (key === chairKey && performance.now() < chairRetryAt) return;
     chairKey = key;
     chairRetryAt = Infinity;
-    Promise.all([loadChairLayers(art), loadSitAnimation(look, art.sitAction ?? 'sit')]).then(
+    Promise.all([loadChairLayers(art), loadSitAnimation(look, art.sitAction ?? 'sit', heroEra)]).then(
       ([layers, sit]) => {
         if (chairKey === key) placeChair(art, layers, sit);
       },
@@ -1196,13 +1195,15 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       return;
     }
     const look = riderLook(heroLook, art);
-    const key = `${art.id}|${look.join(',')}`;
+    const era = heroEra;
+    const key = `${art.id}|${era}|${look.join(',')}`;
     if (key === mountKey && performance.now() < mountRetryAt) return;
     mountKey = key;
     mountRetryAt = Infinity;
-    keepArt('mountLook', [characterArtBase(look)]);
+    // 탈것 그림은 시대와 상관없이 KMS 389 TamingMob 이다. 탄 몸만 캐릭터 시대 그림으로 받아 끼운다
+    keepArt('mountLook', [characterArtBase(look, era)]);
     const loadPose = async (motion: MountMotion): Promise<MountPose> => {
-      const [rider, layers] = await Promise.all([loadHeroAction(look, motion.body), loadMountFrames(motion)]);
+      const [rider, layers] = await Promise.all([loadHeroAction(look, motion.body, era), loadMountFrames(motion)]);
       return {
         motion,
         rider: rider.animation.frames,
@@ -1428,7 +1429,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     if (!upperFronts.has(layer)) {
       upperFronts.set(layer, null);
       const load = townLoads;
-      loadFrontStack(stage.mapId, layer, stage.calibration, stage.ladders).then(
+      loadFrontStack(stage.mapId, layer, stage.calibration, stage.ladders, stage.era).then(
         (stack) => {
           if (load === townLoads) upperFronts.set(layer, stack?.texture ?? null);
           else stack?.texture.destroy(true);
@@ -1451,26 +1452,29 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   /** 맵 정보·전체 렌더를 받아 발판을 이미지 좌표로 맞춘다. 화면은 아직 안 바꾼다 */
-  async function prepareStage(mapId: number, label: string): Promise<Stage> {
+  async function prepareStage(mapId: number, label: string, era: Era): Promise<Stage> {
     // 옮겨 가는 동안과 보스 맵에 가 있는 동안 지금 마을도 지우지 않는다
-    keepArt('map', [mapInfoUrl(mapId), ...(home ? [mapInfoUrl(home.stage.mapId)] : [])]);
-    const [info, image] = await Promise.all([fetchStoredJson<MapInfo>(mapInfoUrl(mapId)), loadMapImage(mapRenderUrl(mapId))]);
+    keepArt('map', [mapInfoUrl(mapId, era), ...(home ? [mapInfoUrl(home.stage.mapId, home.stage.era)] : [])]);
+    const [info, image] = await Promise.all([
+      fetchStoredJson<MapInfo>(mapInfoUrl(mapId, era)),
+      loadMapImage(mapRenderUrl(mapId, era)),
+    ]);
     const footholds = Object.values(info.footholds);
-    const ladders = loadLadderPages(mapId, info.ladderRopes ?? []).catch(() => info.ladderRopes ?? []);
+    const ladders = loadLadderPages(mapId, info.ladderRopes ?? [], era).catch(() => info.ladderRopes ?? []);
     const worldGround = mainGround(footholds);
     if (!worldGround) {
       image.texture.destroy(true);
       throw new Error(`${label}: 걸을 바닥을 못 찾음`);
     }
-    let calibration = readCalibration(mapId);
+    let calibration = readCalibration(mapId, era);
     if (!calibration?.exact) {
       const rough = calibration ?? calibrateFootholds(image.alpha, footholds);
       const exact = await Promise.race([
-        exactCalibration(mapId, worldGround.layer, rough, image.pixels).catch(() => null),
+        exactCalibration(mapId, worldGround.layer, rough, image.pixels, era).catch(() => null),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), EXACT_CALIBRATION_WAIT_MS)),
       ]);
       calibration = exact ?? rough;
-      storeCalibration(mapId, calibration);
+      storeCalibration(mapId, calibration, era);
     }
     const { dx, dy } = calibration;
     const paged = await Promise.race([
@@ -1485,7 +1489,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     }
     return {
       mapId,
-      name: info.name || label,
+      era,
+      // v83 맵 정보 이름은 영문이라 클래식은 큐레이션한 한글 이름을 띄운다
+      name: era === 'classic' ? label : info.name || label,
       image,
       calibration,
       nav,
@@ -1512,7 +1518,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     setFront(null);
     const load = ++townLoads;
     // 앞 레이어는 서버가 그리는 데 오래 걸려서 마을을 먼저 보여 주고 받는 대로 덮는다. 전체 렌더에도 같은 그림이 있어 늦게 붙어도 티가 안 난다
-    loadFront(stage.mapId, stage.groundLayer, stage.calibration, stage.ladders, stage.image.pixels)
+    loadFront(stage.mapId, stage.groundLayer, stage.calibration, stage.ladders, stage.image.pixels, stage.era)
       .then((front) => {
         if (load === townLoads) setFront(front);
         else front?.texture.destroy(true);
@@ -1536,7 +1542,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     const load = ++portalLoads;
     const wanted = routePortals.get(stage.mapId) ?? [];
     if (wanted.length === 0) return;
-    loadPortalFrames().then(
+    loadPortalFrames(stage.era).then(
       (frames) => {
         if (load === portalLoads) placedPortals = wanted.map((portal) => addPortal(frames, stage, portal));
       },
@@ -1615,11 +1621,13 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   let navAnimationsLoading = '';
   /** 점프·사다리·로프 동작. 못 받으면 서기·걷기 그림으로 오르내린다 */
   async function loadNavAnimations(): Promise<void> {
-    const look = heroLook.join(',');
+    const look = heroLookId();
     if (navAnimations?.look === look || navAnimationsLoading === look || heroLook.length === 0) return;
     navAnimationsLoading = look;
     try {
-      const [jump, ladder, rope] = await Promise.all(['jump', 'ladder', 'rope'].map((action) => loadHeroAction(heroLook, action)));
+      const [jump, ladder, rope] = await Promise.all(
+        ['jump', 'ladder', 'rope'].map((action) => loadHeroAction(heroLook, action, heroEra)),
+      );
       navAnimations = { look, animations: { jump: jump.animation, ladder: ladder.animation, rope: rope.animation } };
     } finally {
       if (navAnimationsLoading === look) navAnimationsLoading = '';
@@ -1637,7 +1645,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     showFront(motion.stage, pose.layer);
     // 점프는 탄 채 서기 그림으로 뛴다. 점프마다 내렸다 타면 발판을 건너는 동안 계속 깜박인다
     riding = rideNow(pose.action === 'ladder' || pose.action === 'rope');
-    const animations = navAnimations?.look === heroLook.join(',') ? navAnimations.animations : null;
+    const animations = navAnimations?.look === heroLookId() ? navAnimations.animations : null;
     if (pose.action === 'walk' || pose.action === 'stand' || riding || !animations) {
       setHeroAction(pose.action === 'stand' || (pose.action === 'jump' && riding) ? 'stand' : 'walk');
       updateHeroSprite(dtMs);
@@ -1747,11 +1755,11 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const NO_KEYS = { left: false, right: false, up: false, down: false, jump: false, attack: false };
 
   function loadProne(): void {
-    const look = heroLook.join(',');
+    const look = heroLookId();
     if (proneAnimation?.look === look || heroLook.length === 0) return;
     const loading = { look, animation: null as Animation | null };
     proneAnimation = loading;
-    loadHeroAction(heroLook, 'prone').then(
+    loadHeroAction(heroLook, 'prone', heroEra).then(
       ({ animation }) => (loading.animation = animation),
       () => {
         // 엎드린 그림이 없으면 서 있는 그림으로 둔다
@@ -1839,7 +1847,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     const platform = state.platforms[slot];
     if (!platform || state.loading.has(slot)) return;
     state.loading.add(slot);
-    loadFieldMobArt(point.id)
+    loadFieldMobArt(point.id, state.stage.era)
       .then((art) => {
         if (manual !== state || !state.table.alive(slot) || state.mobs.some((mob) => mob.field?.slot === slot)) return;
         const sprite = new Sprite(art.stand.frames[0]);
@@ -1902,7 +1910,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       updateHeroSprite(dtMs);
       return;
     }
-    const look = heroLook.join(',');
+    const look = heroLookId();
     const climbing = pose.action === 'ladder' || pose.action === 'rope';
     const animation =
       pose.action === 'prone'
@@ -2165,7 +2173,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       return encounter !== null || encounterLoading || bossBusy || manualReturning;
     },
     async setTown(town) {
-      const stage = await prepareStage(town.mapId, town.name);
+      const stage = await prepareStage(town.mapId, town.name, town.era ?? 'current');
       if (ground) await fadeTo(1);
       home = { stage, town };
       enterStage(stage, town);
@@ -2176,15 +2184,16 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       await fadeTo(0);
       showBanner(stage.name);
     },
-    setJob(job) {
+    setJob(job, era = 'current') {
       heroTier = job.tier;
       heroLook = job.look;
+      heroEra = era;
       loadChair();
       loadMount();
       // 스킬창에서 스킬을 누르는 순간 바로 움직이게 공용 동작(alert)을 모습이 바뀔 때마다 받아 둔다
       void castMotion([]);
       fallbackRange = job.fallbackRange;
-      const key = `${job.look.join(',')}|${job.standAction}|${job.walkAction}|${job.attackAction}|${job.skillId}`;
+      const key = `${heroLookId()}|${job.standAction}|${job.walkAction}|${job.attackAction}|${job.skillId}`;
       if (key === lookKey && performance.now() < lookRetryAt) return;
       lookKey = key;
       lookRetryAt = Infinity;
@@ -2201,7 +2210,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       // 직업을 바꿔 스킬이 달라졌으면 앞 직업 스킬의 사거리·이펙트로 싸우지 않게 새 스킬을 받을 때까지 비워 둔다
       if (skill && skill.id !== job.skillId && skill.id !== autoSkillId) skill = null;
       // 스킬(수 MB)을 기다리지 않고 캐릭터는 받는 대로 먼저 바꾼다. 못 받은 것은 이전 것을 그대로 쓰다가 잠시 뒤 다시 받는다
-      void applyEachLoaded(loadHeroAnimations(job), skillPromise, {
+      void applyEachLoaded(loadHeroAnimations(job, era), skillPromise, {
         hero(loaded) {
           if (lookKey !== key) return;
           heroAnimations = loaded.animations;
@@ -2222,7 +2231,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     startEncounter(spec, hits) {
       if (encounter || encounterLoading || bossBusy || !ground || manualControl) return;
       encounterLoading = true;
-      loadMobAnimations(spec)
+      // 마을·사냥터 몹은 그 맵과 같은 시대 몹이다
+      loadMobAnimations(spec, home?.stage.era ?? 'current')
         .then((animations) => {
           if (!ground || manualControl) return;
           const sprite = new Sprite(animations.move.frames[0]);
@@ -2251,7 +2261,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 보스와 싸울 수 없음');
       bossBusy = true;
       try {
-        const stagePromise = prepareStage(boss.mapId, boss.name);
+        // 보스는 클래식 캐릭터도 지금 시대 맵·몹으로 싸운다
+        const stagePromise = prepareStage(boss.mapId, boss.name, 'current');
         const mob = await loadBossMob(boss.id).catch((error: unknown) => {
           stagePromise.then((stage) => stage.image.texture.destroy(true)).catch(() => {});
           throw error;
@@ -2397,7 +2408,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       const from = home;
       // 직접 조작이면 캐릭터가 이미 포털 앞에 있어서 걸어가지 않고, 나와서도 바닥으로 내려가지 않는다
       const handDriven = manual !== null;
-      const stage = await prepareStage(mapId, label);
+      const stage = await prepareStage(mapId, label, from.stage.era);
       void loadNavAnimations().catch(() => {});
       traveling = true;
       try {

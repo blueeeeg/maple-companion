@@ -1,5 +1,6 @@
 import './styles.css';
-import { bgmPlayback, createBgm, likelyBgmMaps, shouldPlayBgm } from './audio/bgm';
+import { type BgmMap, bgmPlayback, createBgm, likelyBgmMaps, shouldPlayBgm } from './audio/bgm';
+import { trackSource } from './audio/bgmTracks';
 import {
   type Character,
   JOB_CHANGE_MESO,
@@ -63,7 +64,7 @@ import {
 } from './game/settings';
 import { fieldMoveDue, fieldMoves, hopAt, pickFieldMove, routePortals, townFields } from './game/routes';
 import { type RouteField, isPassage } from './game/routeCuration';
-import { type MonsterSpec, type Town, drawFromTownBag, pickNextTown, rewardTown, unlockedTowns } from './game/towns';
+import { type MonsterSpec, type Town, drawFromTownBag, pickNextTown, rewardTown, townEra, unlockedTowns } from './game/towns';
 import { updateNotice } from './game/updates';
 import { TRAY_ICON_URL } from './maple/api';
 import type { Point } from './maple/ground';
@@ -169,6 +170,9 @@ let offeredFreeChange = '';
 const sentAlerts = new Set<string>();
 
 const isShown = () => panelVisible && document.visibilityState === 'visible';
+/** 마을·사냥터 맵의 BGM 을 고를 때 쓰는 맵. 클래식 마을 둘레 맵은 같은 ID 라도 클래식 곡이다 */
+const bgmMapOf = (mapId: number, owner: Town): BgmMap =>
+  townEra(owner) === 'current' ? mapId : { mapId, era: townEra(owner) };
 const summaries = () => roster.characters.map(summarizeCharacter);
 
 const hud = createHud(root, {
@@ -227,10 +231,10 @@ const characterSelect = createCharacterSelect(root, {
     syncRunning();
     void tick();
   },
-  onCreate(name, appearance) {
+  onCreate(name, appearance, era) {
     const takenNames = roster.characters.map((character) => character.name);
     if (roster.characters.length >= MAX_CHARACTERS || nameError(name, takenNames)) return;
-    const character = createCharacter(newCharacterId(), name, appearance);
+    const character = createCharacter(newCharacterId(), name, appearance, era);
     roster.characters.push(character);
     writeRoster(roster);
     characterSelect.show(summaries(), character.id);
@@ -329,7 +333,9 @@ const musicWindow = createMusicWindow(root, {
   },
   onMode(mode) {
     // 고른 곡 없이 「한 곡 반복」 을 누르면 지금 곡을 반복한다
-    const track = mode === 'repeat' ? (settings.bgmTrack ?? bgm.nowPlaying().track) : settings.bgmTrack;
+    // 클래식 맵 곡은 저장할 수 있는 곡 목록에 없어서 같은 경로의 지금 판 곡을 반복한다
+    const playing = bgm.nowPlaying().track;
+    const track = mode === 'repeat' ? (settings.bgmTrack ?? (playing && trackSource(playing).path)) : settings.bgmTrack;
     if (mode === 'repeat' && !track) return;
     applyMusic({ bgmMode: mode, bgmTrack: track });
   },
@@ -434,8 +440,9 @@ function openSettings(): void {
   settingsScreen.show({
     settings,
     muted: roster.muted,
-    towns: unlockedTowns(level).map(({ id, name }) => ({ id, name })),
+    towns: unlockedTowns(level, character.era).map(({ id, name }) => ({ id, name })),
     currentTownId: town?.id ?? null,
+    era: character.era,
   });
 }
 
@@ -484,6 +491,7 @@ function cashShopState(character: Character): CashShopState {
   const job = describeJob(level, jobPath(character.jobLine, character.jobBranch), character.appearance);
   return {
     gender: character.appearance.gender,
+    era: character.era,
     jobLook: job.look,
     standAction: job.standAction,
     meso: character.meso,
@@ -523,6 +531,7 @@ function statState(character: Character): StatWindowState {
     freeJobChange: character.freeJobChange,
     collection: collectionProgress(character.equipOwned, jobPath(character.jobLine, character.jobBranch)),
     look: job.look,
+    era: character.era,
     standAction: job.standAction,
   };
 }
@@ -540,6 +549,7 @@ function equipState(character: Character): EquipWindowState {
     mountOwned: character.mountOwned,
     mountSelected: character.mountSelected,
     look: job.look,
+    era: character.era,
     standAction: job.standAction,
   };
 }
@@ -762,8 +772,11 @@ function handleFieldKill(monster: MonsterSpec): number {
   const character = selectedCharacter(roster);
   if (!character || !town) return 0;
   const { level } = levelInfo(characterXp(character));
-  const reward = settleManualKill(character, huntPace(settings), rewardTown(level));
-  character.monsterBook[monster.name] = (character.monsterBook[monster.name] ?? 0) + 1;
+  const reward = settleManualKill(character, huntPace(settings), rewardTown(level, character.era));
+  // v83 몹 정보 이름은 영문이라 마을·사냥터 몹 목록에 있는 한글 이름으로 기록한다
+  const known = [...town.monsters, ...townFields(town).flatMap((each) => each.monsters)].find((each) => each.id === monster.id);
+  const name = known?.name ?? monster.name;
+  character.monsterBook[name] = (character.monsterBook[name] ?? 0) + 1;
   if (reward) {
     character.killXp += reward.xp;
     character.meso += reward.meso;
@@ -789,7 +802,7 @@ function enterPortal(exit: Point): void {
         field = hop.field;
         arrivedAt = Date.now();
         huntsHere = 0;
-        if (field) bgm.setMap(field.mapId);
+        if (field) bgm.setMap(bgmMapOf(field.mapId, current));
         else bgm.setTown(current);
       },
       () => hud.notify(`${label} 맵을 불러오지 못했어요`),
@@ -851,7 +864,7 @@ function fightBoss(boss: BossSpec, fight: BossFight): void {
       onDefeat: () => handleBossKill(boss, fight),
       onReturn: () => {
         // 사냥터에서 부른 보스는 그 사냥터로 돌아온다
-        if (field) bgm.setMap(field.mapId);
+        if (field && town) bgm.setMap(bgmMapOf(field.mapId, town));
         else if (town) bgm.setTown(town);
       },
     })
@@ -896,7 +909,7 @@ function moveTo(next: Town): void {
       skippedFields.clear();
       bgm.setTown(next);
       scene.setRoutePortals(routePortals(next, townFields(next)));
-      warmMaps(townFields(next).map((each) => each.mapId));
+      warmMaps(townFields(next).map((each) => each.mapId), townEra(next));
     })
     .catch(() => hud.notify(`${next.name} 맵을 불러오지 못했어요`))
     .finally(() => (townLoading = false));
@@ -920,7 +933,7 @@ function travelField(current: Town): void {
             () => {
               field = hop.field;
               arrivedAt = Date.now();
-              if (field) bgm.setMap(field.mapId);
+              if (field) bgm.setMap(bgmMapOf(field.mapId, current));
               else bgm.setTown(current);
             },
             (error: unknown) => {
@@ -985,11 +998,11 @@ function handleLevelUp(character: Character, from: number, to: number): void {
     alertUser({ kind: 'advancement', ...who, tier: job.tier, jobTitle: job.title });
   }
 
-  const opened = unlockedTowns(to).filter((candidate) => candidate.minLevel > from);
+  const opened = unlockedTowns(to, character.era).filter((candidate) => candidate.minLevel > from);
   if (opened.length > 0) {
     hud.notify(`새 마을: ${opened.map((candidate) => candidate.name).join(', ')}`);
     // 열린 마을에 머물기로 했으면 새 마을로도 옮기지 않는다
-    if (isShown() && !scene.inEncounter && pinnedTown(settings, to) === null && !settings.manualControl) {
+    if (isShown() && !scene.inEncounter && pinnedTown(settings, to, character.era) === null && !settings.manualControl) {
       moveTo(opened[opened.length - 1]);
     }
   }
@@ -999,7 +1012,7 @@ function settleMissedHunts(character: Character, count: number, level: number, p
   if (!town || count <= 0) return;
   // 밀린 차례 중 보스 차례는 보스로 정산한다. 레벨에 맞는 보스가 없으면 보통 몬스터로 친다
   // 메소 보상은 표시 마을이 아닌 레벨 기준 최고 마을로 계산한다
-  const result = resolveHunts(character, pace, level, rewardTown(level), count, Math.random, character.reservedBossId);
+  const result = resolveHunts(character, pace, level, rewardTown(level, character.era), count, Math.random, character.reservedBossId);
   if (result.reservationUsed) character.reservedBossId = null;
   character.killXp += result.xp;
   character.meso += result.meso;
@@ -1041,7 +1054,11 @@ async function tick(): Promise<void> {
   const info = levelInfo(characterXp(character));
   // 마을이 열리거나 캐릭터를 바꾸면 목록이 바뀐다. 같은 목록이면 bgm 이 무시한다
   // 지금 마을의 사냥터는 몇 분 안에 들어가서 먼저 받는다
-  bgm.prefetch([...(town ? townFields(town).map((each) => each.mapId) : []), ...likelyBgmMaps(info.level, character.townBag)]);
+  const here = town;
+  bgm.prefetch([
+    ...(here ? townFields(here).map((each) => bgmMapOf(each.mapId, here)) : []),
+    ...likelyBgmMaps(info.level, character.townBag, character.era),
+  ]);
 
   const job = characterJob(character, info.level);
   // 전직 날짜는 화면과 상관없이 그 차수가 된 틱에 적는다. 직업을 늦게 골랐으면 고른 틱이 그 날이다
@@ -1085,7 +1102,7 @@ async function tick(): Promise<void> {
     openJobChange();
   }
 
-  scene.setJob(job);
+  scene.setJob(job, character.era);
   scene.setChair(character.chairSelected);
   scene.setMount(character.mountSelected);
   scene.setName(character.name);
@@ -1117,14 +1134,14 @@ async function tick(): Promise<void> {
   });
   renderManualHint(character);
 
-  const pinned = pinnedTown(settings, info.level);
+  const pinned = pinnedTown(settings, info.level, character.era);
   if (!town) {
-    moveTo(pinned ?? pickNextTown(info.level, null));
+    moveTo(pinned ?? pickNextTown(info.level, null, Math.random, character.era));
     return;
   }
-  // 다른 캐릭터로 바꿔 들어오면 아직 레벨이 모자란 마을에 서 있을 수 있다
-  if (town.minLevel > info.level && !scene.inEncounter) {
-    moveTo(pinned ?? pickNextTown(info.level, town.id));
+  // 다른 캐릭터로 바꿔 들어오면 아직 레벨이 모자란 마을이나 다른 시대 마을에 서 있을 수 있다
+  if ((town.minLevel > info.level || townEra(town) !== character.era) && !scene.inEncounter) {
+    moveTo(pinned ?? pickNextTown(info.level, town.id, Math.random, character.era));
     return;
   }
   // 창이 안 보이는 동안은 정산을 미뤘다가 다시 보일 때 한 번에 알려준다
@@ -1137,7 +1154,7 @@ async function tick(): Promise<void> {
     if (pinned) {
       if (pinned.id !== town.id && Date.now() - townChangedAt > PINNED_TOWN_RETRY_MS) moveTo(pinned);
     } else if (Date.now() - townChangedAt > townRotateMs(settings)) {
-      const drawn = drawFromTownBag(character.townBag, character.lastTownId, info.level);
+      const drawn = drawFromTownBag(character.townBag, character.lastTownId, info.level, Math.random, character.era);
       if (drawn) {
         character.townBag = drawn.bag;
         character.lastTownId = drawn.lastTownId;

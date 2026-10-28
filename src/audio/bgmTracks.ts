@@ -1,8 +1,10 @@
 import { BOSSES } from '../game/bosses';
 import { TOWN_ROUTES } from '../game/routeData';
-import { TOWNS } from '../game/towns';
-import { DATA_KEY } from '../maple/api';
+import { CLASSIC_TOWN_ROUTES } from '../game/routeData.classic';
+import { TOWNS, townsFor } from '../game/towns';
+import { DATA_KEY, type Era, dataKey } from '../maple/api';
 import { BGM_FOLDERS, MAP_BGM } from './bgmCatalog';
+import { CLASSIC_MAP_BGM } from './bgmCatalog.classic';
 
 export interface BgmTrack {
   /** `Bgm00/FloralLife` */
@@ -34,6 +36,32 @@ function knownMapNames(): Map<string, string[]> {
   return names;
 }
 
+/** 클래식 맵 곡은 경로 앞에 시대를 붙인다. 같은 경로라도 GMS 83 에서 따로 받고 따로 남긴다 */
+const CLASSIC_PREFIX = 'classic:';
+export const classicTrack = (path: string) => `${CLASSIC_PREFIX}${path}`;
+
+/** 곡이 어느 시대 Sound.wz 의 어느 경로인지 */
+export function trackSource(track: string): { era: Era; path: string } {
+  return track.startsWith(CLASSIC_PREFIX)
+    ? { era: 'classic', path: track.slice(CLASSIC_PREFIX.length) }
+    : { era: 'current', path: track };
+}
+
+function classicMapNames(): Map<string, string[]> {
+  const names = new Map<string, string[]>();
+  const add = (mapId: number, name: string) => {
+    const path = CLASSIC_MAP_BGM[mapId];
+    if (!path) return;
+    const list = names.get(path) ?? [];
+    if (!list.includes(name)) list.push(name);
+    names.set(path, list);
+  };
+  townsFor('classic').forEach((town) => add(town.mapId, town.name));
+  Object.values(CLASSIC_TOWN_ROUTES).forEach((fields) => fields.forEach((field) => add(field.mapId, field.name)));
+  return names;
+}
+const classicNames = classicMapNames();
+
 export const BGM_TRACKS: BgmTrack[] = (() => {
   const names = knownMapNames();
   return BGM_FOLDERS.flatMap(([folder, tracks]) =>
@@ -50,10 +78,20 @@ export const findTrack = (path: string): BgmTrack | undefined => byPath.get(path
 export const canonicalTrack = (path: string): string => byLowerPath.get(path.toLowerCase()) ?? path;
 
 /** 앱이 아는 맵이면 그 곡. 모르는 맵은 null 이고 bgm.ts 가 WZ 에서 읽는다 */
-export const knownMapTrack = (mapId: number): string | null => MAP_BGM[mapId] ?? null;
+export function knownMapTrack(mapId: number, era: Era = 'current'): string | null {
+  if (era === 'current') return MAP_BGM[mapId] ?? null;
+  const path = CLASSIC_MAP_BGM[mapId];
+  return path ? classicTrack(path) : null;
+}
 
 /** 「헤네시스 · FloralLife」. 아는 맵이 없는 곡은 이름만 */
 export function trackLabel(path: string): string {
+  const source = trackSource(path);
+  if (source.era === 'classic') {
+    const name = source.path.slice(source.path.indexOf('/') + 1);
+    const maps = classicNames.get(source.path) ?? [];
+    return maps.length > 0 ? `${maps[0]} · ${name}` : name;
+  }
   const track = byPath.get(path);
   const name = track?.name ?? path.slice(path.indexOf('/') + 1);
   return track && track.maps.length > 0 ? `${track.maps[0]} · ${name}` : name;
@@ -75,9 +113,11 @@ export function filterTracks(tracks: BgmTrack[], query: string, filter: BgmFilte
 
 /**
  * 받은 곡을 기기에 남기는 파일 이름. `KMS-389-Bgm00-FloralLife` 처럼 곡 경로로 짓는다. 여러 맵이 같은 곡을 쓰면 한 파일이다.
+ * 클래식 곡은 `GMS-83-Bgm00-FloralLife` 다.
  * 이름의 빈칸·따옴표 등은 `-` 뒤 UTF-8 바이트 16진수로 바꿔서 Rust 가 받는 글자(영문·숫자·`-`·`_`)만 남기고, 서로 다른 곡이 같은 이름이 되지 않게 한다
  */
-export function bgmTrackKey(path: string): string {
+export function bgmTrackKey(track: string): string {
+  const { era, path } = trackSource(track);
   const slash = path.indexOf('/');
   const name = [...new TextEncoder().encode(path.slice(slash + 1))]
     .map((byte) => {
@@ -85,7 +125,7 @@ export function bgmTrackKey(path: string): string {
       return /\w/.test(char) ? char : `-${byte.toString(16).toUpperCase().padStart(2, '0')}`;
     })
     .join('');
-  return `${DATA_KEY}-${path.slice(0, slash)}-${name}`;
+  return `${dataKey(era)}-${path.slice(0, slash)}-${name}`;
 }
 
 /** 예전 판이 맵 번호로 남긴 파일 이름(`KMS-389-100000000`). 이 이름이면 그 맵 번호 */

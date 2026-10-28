@@ -2,7 +2,8 @@ import { isTrackPath } from '../audio/bgmTracks';
 import { BOSS_EVERY_ENCOUNTERS, BOSS_MESO_MULTIPLIER, BOSS_XP_MULTIPLIER, type HuntPace } from './bosses';
 import { ENCOUNTER_EVERY_ACTIVE_SECONDS, KILL_XP } from './encounters';
 import { XP_PER_ACTIVE_SECOND } from './progression';
-import { TOWNS, type Town, unlockedTowns } from './towns';
+import type { Era } from '../maple/api';
+import { ALL_TOWN_IDS, type Town, townsFor, unlockedTowns } from './towns';
 
 // 설정은 캐릭터마다가 아니라 앱 전체에 하나다. 소리 끄기만 예전부터 캐릭터 목록(Roster.muted)에 있어서 그대로 둔다
 const STORAGE_KEY = 'maple-companion:settings';
@@ -81,7 +82,7 @@ function optional<T>(options: readonly T[], value: unknown, fallback: T | null):
  * 지금 캐릭터에게 가장 최근에 열린 마을에 머무는 것으로 옮긴다. 고정한 마을이 있었으면 그 마을이 먼저다
  */
 function legacyPinnedTownId(saved: Record<string, unknown>, level: number): string | null {
-  if (TOWNS.some((town) => town.id === saved.pinnedTownId)) return saved.pinnedTownId as string;
+  if (typeof saved.pinnedTownId === 'string' && ALL_TOWN_IDS.has(saved.pinnedTownId)) return saved.pinnedTownId;
   if (saved.townRotate !== false) return null;
   const towns = unlockedTowns(level);
   return towns[towns.length - 1]?.id ?? null;
@@ -161,9 +162,9 @@ export function townRotateMs(settings: Settings): number {
   return settings.townRotateMinutes * 60 * 1000;
 }
 
-/** 머물기로 한 마을이 이 레벨에 열려 있으면 그 마을. 아니면 null(돈다) */
-export function pinnedTown(settings: Settings, level: number): Town | null {
-  return TOWNS.find((town) => town.id === settings.pinnedTownId && town.minLevel <= level) ?? null;
+/** 머물기로 한 마을이 이 레벨·시대에 열려 있으면 그 마을. 아니면 null(돈다). 그 시대에 없는 마을이면 돈다 */
+export function pinnedTown(settings: Settings, level: number, era: Era = 'current'): Town | null {
+  return townsFor(era).find((town) => town.id === settings.pinnedTownId && town.minLevel <= level) ?? null;
 }
 
 export function levelUpScale(settings: Settings): number {

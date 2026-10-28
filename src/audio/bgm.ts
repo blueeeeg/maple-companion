@@ -1,10 +1,10 @@
 import { BOSSES } from '../game/bosses';
 import type { Settings } from '../game/settings';
-import { type Town, unlockedTowns } from '../game/towns';
-import { mapBgmNodeUrl, musicUrl } from '../maple/api';
+import { type Town, townEra, unlockedTowns } from '../game/towns';
+import { type Era, mapBgmNodeUrl, musicUrl } from '../maple/api';
 import { type BgmCache, type BgmCacheEntry, createBgmCache } from '../platform/bgmCache';
 import { loadStoredJson } from '../ui/cashAssets';
-import { bgmTrackKey, canonicalTrack, knownMapTrack, legacyMapKeyId } from './bgmTracks';
+import { bgmTrackKey, canonicalTrack, classicTrack, knownMapTrack, legacyMapKeyId, trackSource } from './bgmTracks';
 
 /** 창이 숨겨져도 BGM 은 이어진다. 끄는 것은 음소거(음량 0 포함)와 지도 밖 화면뿐이다. BGM 고르기 창은 들어 보며 고르니 튼다 */
 export function shouldPlayBgm(input: {
@@ -36,13 +36,22 @@ const MAP_TRACK_TIMEOUT_MS = 30 * 1000;
 /** BGM 미리 받기에서 앞에 둘 마을 수 */
 const BGM_TOWN_PREFETCH = 4;
 
+/** BGM 을 고를 맵. 숫자만 주면 지금 시대 맵이다. 클래식 맵은 같은 ID 라도 곡이 다를 수 있다 */
+export type BgmMap = number | { mapId: number; era: Era };
+
+const mapRef = (map: BgmMap): { mapId: number; era: Era } => (typeof map === 'number' ? { mapId: map, era: 'current' } : map);
+const mapKey = (map: BgmMap) => {
+  const { mapId, era } = mapRef(map);
+  return era === 'current' ? String(mapId) : `${era}:${mapId}`;
+};
+
 /**
  * 이 레벨에서 곧 들어갈 만한 맵.
  * townBag 가 있으면 그 순서대로 앞 마을, 없으면 가장 최근에 열린 마을 순.
- * 이어서 잡을 수 있는 보스(센 것부터), 나머지 열린 마을 순서다
+ * 이어서 잡을 수 있는 보스(센 것부터), 나머지 열린 마을 순서다. 보스는 시대와 상관없이 지금 시대 맵에서 싸운다
  */
-export function likelyBgmMaps(level: number, townBag: readonly string[] = []): number[] {
-  const allTowns = unlockedTowns(level);
+export function likelyBgmMaps(level: number, townBag: readonly string[] = [], era: Era = 'current'): BgmMap[] {
+  const allTowns = unlockedTowns(level, era);
   const townById = new Map(allTowns.map((t) => [t.id, t]));
   const bagTowns = townBag.filter((id) => townById.has(id)).map((id) => townById.get(id)!);
   const priority = bagTowns.length > 0
@@ -51,8 +60,15 @@ export function likelyBgmMaps(level: number, townBag: readonly string[] = []): n
   const priorityIds = new Set(priority.map((t) => t.id));
   const rest = allTowns.filter((t) => !priorityIds.has(t.id));
   const bosses = BOSSES.filter((boss) => boss.minLevel <= level).sort((a, b) => b.minLevel - a.minLevel);
-  const ordered = [...priority, ...bosses, ...rest];
-  return [...new Set(ordered.map((map) => map.mapId))];
+  const townMap = (town: Town): BgmMap => (era === 'current' ? town.mapId : { mapId: town.mapId, era });
+  const ordered = [...priority.map(townMap), ...bosses.map((boss) => boss.mapId), ...rest.map(townMap)];
+  const seen = new Set<string>();
+  return ordered.filter((map) => {
+    const key = mapKey(map);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export type BgmPlayback = { kind: 'map' } | { kind: 'repeat'; track: string } | { kind: 'shuffle'; favorites: string[] };
@@ -94,13 +110,13 @@ export interface BgmNowPlaying {
 export interface Bgm {
   setTown(town: Town): void;
   /** 마을이 아닌 맵(보스 맵 등)의 BGM. 마을로 돌아가면 setTown 을 다시 부른다. 맵 따라가기가 아니면 맵만 기억해 둔다 */
-  setMap(mapId: number): void;
+  setMap(map: BgmMap): void;
   setPlayback(playback: BgmPlayback): void;
   setEnabled(enabled: boolean): void;
   /** 0~1 */
   setVolume(volume: number): void;
   /** 맵 따라가기일 때 이 맵들의 곡을 앞에서부터 미리 받아 둔다. 같은 목록을 다시 넘기면 아무것도 안 한다 */
-  prefetch(mapIds: number[]): void;
+  prefetch(maps: BgmMap[]): void;
   nowPlaying(): BgmNowPlaying;
   /** 지금 곡이나 받는 상태가 바뀌면 부른다 */
   onChange(listener: () => void): void;
@@ -110,14 +126,19 @@ export interface BgmDeps {
   cache: BgmCache;
   download(track: string): Promise<Blob>;
   /** 앱이 모르는 맵의 곡 경로 */
-  mapTrack(mapId: number): Promise<string>;
+  mapTrack(mapId: number, era: Era): Promise<string>;
   toUrl(track: Blob): string;
   revokeUrl(url: string): void;
   random(): number;
 }
 
+const trackUrl = (track: string) => {
+  const { era, path } = trackSource(track);
+  return musicUrl(path, era);
+};
+
 async function downloadBgm(path: string): Promise<Blob> {
-  const response = await fetch(musicUrl(path), { signal: AbortSignal.timeout(BGM_DOWNLOAD_TIMEOUT_MS) });
+  const response = await fetch(trackUrl(path), { signal: AbortSignal.timeout(BGM_DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`${response.status} ${response.url}`);
   const track = await response.blob();
   // 오류 페이지를 곡으로 남기면 다음 실행부터 계속 못 튼다
@@ -126,8 +147,12 @@ async function downloadBgm(path: string): Promise<Blob> {
 }
 
 /** 맵 → 곡은 바뀌지 않아서 한 번 알아낸 것은 기기(IndexedDB)에 남긴다 */
-const fetchMapTrack = (mapId: number) =>
-  loadStoredJson<{ value: string }, string>(mapBgmNodeUrl(mapId), (raw) => canonicalTrack(raw.value), MAP_TRACK_TIMEOUT_MS);
+const fetchMapTrack = (mapId: number, era: Era) =>
+  loadStoredJson<{ value: string }, string>(
+    mapBgmNodeUrl(mapId, era),
+    (raw) => (era === 'classic' ? classicTrack(raw.value) : canonicalTrack(raw.value)),
+    MAP_TRACK_TIMEOUT_MS,
+  );
 
 const defaultDeps = (): BgmDeps => ({
   cache: createBgmCache(),
@@ -155,7 +180,7 @@ export function createBgm(
   let enabled = false;
   let playback: BgmPlayback = { kind: 'map' };
   /** 지금 캐릭터가 있는 맵. 다른 방식에서 맵 따라가기로 돌아오면 이 맵 곡을 튼다 */
-  let currentMap: number | null = null;
+  let currentMap: BgmMap | null = null;
   /** 즐겨찾기 무작위에서 지금 곡 다음에 틀 곡. 이 곡만 미리 받는다 */
   let shuffleNext: string | null = null;
   /** 틀어야 할 곡 */
@@ -173,10 +198,10 @@ export function createBgm(
   const downloads = new Map<string, Promise<Blob>>();
   /** 기기에 남은 것을 확인한 곡 */
   const cached = new Set<string>();
-  /** WZ 에서 알아낸, 앱이 모르는 맵의 곡 */
-  const mapTracks = new Map<number, string>();
-  const mapLookups = new Map<number, Promise<string>>();
-  let prefetchMaps: number[] = [];
+  /** WZ 에서 알아낸, 앱이 모르는 맵의 곡. 맵은 mapKey 로 센다 */
+  const mapTracks = new Map<string, string>();
+  const mapLookups = new Map<string, Promise<string>>();
+  let prefetchMaps: BgmMap[] = [];
   let prefetchList: string[] = [];
   let prefetchTimer: ReturnType<typeof setTimeout> | null = null;
   let prefetching = false;
@@ -224,7 +249,7 @@ export function createBgm(
     playing = path;
     streaming = true;
     streamBroken = false;
-    setSource(musicUrl(path));
+    setSource(trackUrl(path));
     apply();
     notify();
   }
@@ -419,21 +444,23 @@ export function createBgm(
   }
 
   /** 맵 곡을 알면 바로, 모르면 WZ 에서 알아내기 시작하고 null */
-  function mapTrack(mapId: number): string | null {
-    const known = knownMapTrack(mapId) ?? mapTracks.get(mapId);
+  function mapTrack(map: BgmMap): string | null {
+    const { mapId, era } = mapRef(map);
+    const key = mapKey(map);
+    const known = knownMapTrack(mapId, era) ?? mapTracks.get(key);
     if (known) return known;
-    if (!mapLookups.has(mapId)) {
-      const lookup = deps.mapTrack(mapId);
-      mapLookups.set(mapId, lookup);
+    if (!mapLookups.has(key)) {
+      const lookup = deps.mapTrack(mapId, era);
+      mapLookups.set(key, lookup);
       lookup.then(
         (path) => {
-          mapTracks.set(mapId, path);
+          mapTracks.set(key, path);
           if (playback.kind !== 'map') return;
-          if (mapId === currentMap) follow();
-          if (prefetchMaps.includes(mapId)) updatePrefetch();
+          if (currentMap !== null && mapKey(currentMap) === key) follow();
+          if (prefetchMaps.some((each) => mapKey(each) === key)) updatePrefetch();
         },
         // 다음에 이 맵 곡을 찾을 때 다시 알아낸다
-        () => mapLookups.delete(mapId),
+        () => mapLookups.delete(key),
       );
     }
     return null;
@@ -468,18 +495,18 @@ export function createBgm(
     if (mapRetryTimer !== null) clearTimeout(mapRetryTimer);
     mapRetryTimer = null;
     if (currentMap === null || playback.kind !== 'map') return;
-    const mapId = currentMap;
-    const path = mapTrack(mapId);
+    const map = currentMap;
+    const path = mapTrack(map);
     if (path !== null) return want(path);
     // 곡을 알아내지 못했으면 잠시 뒤 다시 알아낸다. 그 사이 다른 맵으로 옮기면 setMap 이 이 타이머를 지운다
-    mapLookups.get(mapId)?.catch(() => {
-      if (currentMap === mapId && mapRetryTimer === null) mapRetryTimer = setTimeout(follow, BGM_RETRY_MS);
+    mapLookups.get(mapKey(map))?.catch(() => {
+      if (currentMap === map && mapRetryTimer === null) mapRetryTimer = setTimeout(follow, BGM_RETRY_MS);
     });
   }
 
-  function setMap(mapId: number) {
-    if (mapId === currentMap) return;
-    currentMap = mapId;
+  function setMap(map: BgmMap) {
+    if (currentMap !== null && mapKey(map) === mapKey(currentMap)) return;
+    currentMap = map;
     follow();
   }
 
@@ -524,7 +551,7 @@ export function createBgm(
 
   return {
     setTown(town) {
-      setMap(town.mapId);
+      setMap(townEra(town) === 'current' ? town.mapId : { mapId: town.mapId, era: townEra(town) });
     },
     setMap,
     setPlayback,
@@ -535,9 +562,9 @@ export function createBgm(
     setVolume(volume) {
       audio.volume = Math.min(1, Math.max(0, volume));
     },
-    prefetch(mapIds) {
-      if (mapIds.join() === prefetchMaps.join()) return;
-      prefetchMaps = mapIds;
+    prefetch(maps) {
+      if (maps.map(mapKey).join() === prefetchMaps.map(mapKey).join()) return;
+      prefetchMaps = maps;
       updatePrefetch();
     },
     nowPlaying: () => ({ track: wanted, loading: wanted !== null && (playing !== wanted || streaming) }),
