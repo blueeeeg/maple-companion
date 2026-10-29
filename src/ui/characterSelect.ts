@@ -3,6 +3,7 @@ import { type CharacterSummary, MAX_CHARACTERS, NAME_MAX_LENGTH, NAME_MIN_LENGTH
 import { describeJob } from '../game/jobs';
 import { type Era, characterAnimationUrl, loginBackUrl, loginUiUrl, wzImageUrl } from '../maple/api';
 import { applyArt, loadWithRetry, loadedImage } from './art';
+import { eraPlateArt, eraThumbArt } from './eraArt';
 
 export interface CharacterSelectHandlers {
   onStart(id: string): void;
@@ -21,10 +22,13 @@ type AppearancePart = keyof Appearance;
 const PARTS: AppearancePart[] = ['gender', 'hair', 'face', 'skin'];
 const PART_LABELS: Record<AppearancePart, string> = { gender: '성별', hair: '헤어', face: '얼굴', skin: '스킨' };
 const GENDER_NAMES: Record<Gender, string> = { male: '남자', female: '여자' };
+const ERA_LABELS: Record<Era, string> = { current: '지금 메이플', classic: '옛날 메이플' };
 const ERA_HINTS: Record<Era, string> = {
-  current: '지금 메이플 마을·몬스터·BGM 으로 자라요',
-  classic: '빅뱅 전(v83) 마을·몬스터·BGM 으로 자라요. 만든 뒤에는 못 바꿔요',
+  current: '요즘 마을·몬스터·전직으로 자라요',
+  classic: '2008년쯤 마을·몬스터·전직으로 자라요',
 };
+
+const eraOf = (option: HTMLElement): Era => (option.dataset.era === 'classic' ? 'classic' : 'current');
 
 /** 얼굴·헤어는 성별마다 고를 수 있는 목록이 다르다 */
 function partOptions(part: AppearancePart, gender: Gender): readonly (number | Gender)[] {
@@ -171,10 +175,17 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
         <form class="create" data-tauri-drag-region hidden>
           <div class="create-preview" data-tauri-drag-region><img alt="" crossorigin="anonymous" hidden /></div>
           <p class="create-error" aria-live="polite"></p>
-          <div class="create-era" role="radiogroup" aria-label="시대">
-            <button class="create-era-option" type="button" role="radio" data-era="current">현재 메이플</button>
-            <button class="create-era-option" type="button" role="radio" data-era="classic">클래식 (빅뱅 이전)</button>
-            <p class="create-era-hint"></p>
+          <div class="create-era" role="radiogroup" aria-label="시대" aria-describedby="create-era-hint">
+            <button class="create-era-option" type="button" role="radio" data-era="current" aria-label="${ERA_LABELS.current}">
+              <span class="create-era-thumb"></span>
+              <span class="create-era-label">${ERA_LABELS.current}</span>
+            </button>
+            <button class="create-era-option" type="button" role="radio" data-era="classic" aria-label="${ERA_LABELS.classic} (빅뱅 전)">
+              <span class="create-era-thumb"></span>
+              <span class="create-era-label">${ERA_LABELS.classic}</span>
+              <span class="era-tag create-era-tag" aria-hidden="true">빅뱅 전</span>
+            </button>
+            <p class="create-era-hint" id="create-era-hint"><span class="create-era-what"></span><span>만든 뒤에는 못 바꿔요</span></p>
           </div>
           <div class="create-fields">
             <span class="create-band is-header"></span>
@@ -223,7 +234,8 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
   const parts = pick('.create-parts');
   const error = pick('.create-error');
   const eraOptions = [...root.querySelectorAll<HTMLButtonElement>('.create-era-option')];
-  const eraHint = pick('.create-era-hint');
+  const eraGroup = pick('.create-era');
+  const eraHint = pick('.create-era-what');
   const submitCreate = pick<HTMLButtonElement>('.create-submit');
   const cancelCreate = pick<HTMLButtonElement>('.create-cancel');
   const confirm = pick('.select-confirm');
@@ -307,11 +319,11 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
         name.textContent = character.name;
         if (character.era === 'classic') {
           const badge = document.createElement('span');
-          badge.className = 'select-era';
-          badge.textContent = '클래식';
+          badge.className = 'era-tag select-era';
+          badge.textContent = ERA_LABELS.classic;
           slot.appendChild(badge);
         }
-        slot.title = `${character.name} · Lv.${character.level} ${character.jobTitle}${character.era === 'classic' ? ' · 클래식' : ''}`;
+        slot.title = `${character.name} · Lv.${character.level} ${character.jobTitle}${character.era === 'classic' ? ` · ${ERA_LABELS.classic}` : ''}`;
         slot.addEventListener('click', () => {
           highlightId = character.id;
           render();
@@ -396,16 +408,26 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
       const chosen = option.dataset.era === draftEra;
       option.classList.toggle('is-chosen', chosen);
       option.setAttribute('aria-checked', String(chosen));
+      // 라디오 묶음은 고른 것 하나만 Tab 으로 들어가고 화살표로 옮긴다
+      option.tabIndex = chosen ? 0 : -1;
     });
     eraHint.textContent = ERA_HINTS[draftEra];
   }
 
-  eraOptions.forEach((option) =>
-    option.addEventListener('click', () => {
-      draftEra = option.dataset.era === 'classic' ? 'classic' : 'current';
-      renderDraft();
-    }),
-  );
+  const chooseEra = (option: HTMLButtonElement) => {
+    draftEra = eraOf(option);
+    renderDraft();
+  };
+  eraOptions.forEach((option) => option.addEventListener('click', () => chooseEra(option)));
+  eraGroup.addEventListener('keydown', (event) => {
+    const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const index = eraOptions.findIndex((option) => option.dataset.era === draftEra);
+    const next = eraOptions[(index + step + eraOptions.length) % eraOptions.length];
+    chooseEra(next);
+    next.focus();
+  });
 
   function dressUp() {
     applyArt(screen, { back: loginBackUrl(1), leaves: loginBackUrl(2) }, 'has-back-art');
@@ -442,6 +464,14 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
     applyArt(create, buttonArt('CharSelect/BtNew'));
     applyArt(remove, buttonArt('CharSelect/BtDelete'));
     applyArt(form, { board: loginUiUrl('NewChar/charSet'), field: loginUiUrl('CustomizeChar/000/charName') });
+    // 시대 표시(카드의 「빅뱅 전」·선택 화면의 「옛날 메이플」)는 카드 판과 같은 나무판 그림을 바탕으로 쓴다
+    eraPlateArt().then(
+      (plate) => {
+        applyArt(screen, { 'era-wood': plate }, 'has-era-art');
+        eraOptions.forEach((option) => applyArt(option, { plate }));
+      },
+      () => {},
+    );
     applyArt(submitCreate, buttonArt('NewChar/BtYes'));
     applyArt(cancelCreate, buttonArt('NewChar/BtNo'));
     partRows.forEach((row, part) => applyArt(row, { row: loginUiUrl(PART_ROWS[part]) }));
@@ -478,8 +508,19 @@ export function createCharacterSelect(root: HTMLElement, handlers: CharacterSele
     screen.classList.toggle('is-creating', open);
   }
 
+  // 맵 렌더는 하나에 3MB 라 선택 화면만 볼 때는 받지 않고, 만들기를 열 때 받아 판과 따로 끼운다
+  function dressEraThumbs() {
+    eraOptions.forEach((option) =>
+      eraThumbArt(eraOf(option)).then(
+        (thumb) => applyArt(option.querySelector<HTMLElement>('.create-era-thumb')!, { thumb }),
+        () => {},
+      ),
+    );
+  }
+
   function openCreate() {
     if (characters.length >= MAX_CHARACTERS) return;
+    dressEraThumbs();
     draft = { ...DEFAULT_APPEARANCE };
     draftEra = 'current';
     nameInput.value = '';

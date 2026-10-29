@@ -189,6 +189,31 @@ export function cropArt(url: string, version: string, draw: (image: HTMLImageEle
 }
 
 /**
+ * 맵 렌더처럼 큰 그림에서 조금만 떼어 쓸 때. loadWithRetry 는 푼 그림을 계속 붙잡아 두는데 맵 렌더 하나를 풀면 40MB 가 넘어서,
+ * 원본은 기기(artStore)에만 남기고 뗀 결과(data URL)만 남긴다
+ */
+export function cropLargeArt(url: string, version: string, timeoutMs: number, draw: (image: HTMLImageElement) => string): Promise<string> {
+  const once = () =>
+    artStore.fetch(
+      url,
+      async (response) => {
+        if (!response.ok) throw new ArtStatusError(response.status, url);
+        const src = URL.createObjectURL(await response.blob());
+        try {
+          const image = new Image();
+          image.src = src;
+          await image.decode();
+          return draw(image);
+        } finally {
+          URL.revokeObjectURL(src);
+        }
+      },
+      timeoutMs,
+    );
+  return cachedCrop(`${version}:${url}`, () => keepTrying(once, { isFinal: isMissing }).promise);
+}
+
+/**
  * 원작 그림을 다 받은 뒤에만 CSS 변수(--이름)로 걸고 className 을 붙인다. 그 전까지는
  * 그림 없는 기본 모양으로 남아서 깨진 그림이 보이지 않는다
  */
