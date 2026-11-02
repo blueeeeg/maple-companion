@@ -28,9 +28,11 @@ export interface ChatMessage {
   text: string;
   /** ISO 시각 */
   createdAt: string;
+  /** 보낸 쪽이 정한 값. 먼저 띄운 글과 서버에서 돌아온 글을 짝짓는다. 옛 글엔 없다 */
+  clientId?: string;
 }
 
-export type NewChatMessage = Pick<ChatMessage, 'name' | 'era' | 'mapId' | 'text'>;
+export type NewChatMessage = Pick<ChatMessage, 'name' | 'era' | 'mapId' | 'text'> & { clientId: string };
 
 export type LinkStatus = 'connecting' | 'online' | 'offline';
 

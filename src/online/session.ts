@@ -35,7 +35,11 @@ export interface OnlineHost {
 
 export interface OnlineView {
   status(status: OnlineStatus, count: number): void;
+  /** 서버가 확정한 글. 먼저 띄운 내 글이면 clientId 가 같은 줄을 확정으로 바꿔야 한다 */
   message(message: ChatMessage, mine: boolean): void;
+  /** 서버 답을 기다리는 내 글. 보내자마자 띄운다 */
+  pending(message: ChatMessage): void;
+  failed(clientId: string, reason: string): void;
   /** 방 비밀번호를 묻는다. 「나중에」면 null. failed 는 앞 시도가 틀렸는지 */
   askPassword(failed: JoinResult | null): Promise<string | null>;
 }
@@ -128,6 +132,14 @@ export interface OnlineSession {
   readonly status: OnlineStatus;
 }
 
+function failReason(error: unknown): string {
+  if (error instanceof OnlineError) {
+    if (error.code === 'rate') return '못 보냄 · 너무 빨라요';
+    if (error.code === 'denied') return '못 보냄 · 멤버가 아니에요';
+  }
+  return '못 보냄 · 연결 문제';
+}
+
 export function createOnlineSession(
   transport: OnlineTransport,
   host: OnlineHost,
@@ -143,6 +155,8 @@ export function createOnlineSession(
   const throttle = createThrottle();
   /** 내가 보낸 글은 보내자마자 띄우고 방 채널로 다시 오는 것은 버린다. 지난 글을 받을 때도 겹치지 않게 한다 */
   const seen = new Set<string>();
+  /** 먼저 띄웠고 서버 글이 아직 안 온 내 글. 말풍선도 이미 띄웠다 */
+  const echoed = new Set<string>();
 
   function setStatus(next: OnlineStatus): void {
     status = next;
@@ -292,6 +306,7 @@ export function createOnlineSession(
     seen.add(message.id);
     const mine = message.userId === userId;
     view.message(message, mine);
+    if (message.clientId && echoed.delete(message.clientId)) return;
     if (!live) return;
     // 같은 맵에 서 있는 사람(나 포함)이 한 말만 말풍선으로 띄운다
     const pose = host.scene.heroPose();
@@ -312,15 +327,31 @@ export function createOnlineSession(
     const wait = throttle.wait(now());
     if (wait > 0) return `조금 천천히 · ${Math.ceil(wait / 1000)}초 뒤에 보낼 수 있어요`;
     throttle.record(now());
-    try {
-      const message = await transport.sendChat({ name: self.name, era: self.era, mapId: host.scene.heroPose()?.mapId ?? 0, text });
-      receive(message, true);
-      return null;
-    } catch (error) {
-      if (error instanceof OnlineError && error.code === 'rate') return '너무 빨라요. 10초에 5개까지 보낼 수 있어요';
-      console.warn('[online] 채팅을 보내지 못했다', error);
-      return '보내지 못했어요';
-    }
+    // 서버 왕복(약 1초)을 안 기다리고 내 줄과 말풍선을 먼저 띄운다
+    const clientId = crypto.randomUUID();
+    const mapId = host.scene.heroPose()?.mapId ?? 0;
+    echoed.add(clientId);
+    view.pending({
+      id: `local:${clientId}`,
+      userId: userId ?? '',
+      name: self.name,
+      era: self.era,
+      mapId,
+      text,
+      createdAt: new Date().toISOString(),
+      clientId,
+    });
+    host.scene.showBalloon(null, text);
+    // 입력창이 왕복을 기다리지 않게 서버 답은 기다리지 않고 돌려준다. 못 보낸 글은 줄에 까닭이 남고 자동으로 다시 보내지 않는다
+    transport.sendChat({ name: self.name, era: self.era, mapId, text, clientId }).then(
+      (saved) => receive(saved, true),
+      (error) => {
+        echoed.delete(clientId);
+        view.failed(clientId, failReason(error));
+        if (!(error instanceof OnlineError)) console.warn('[online] 채팅을 보내지 못했다', error);
+      },
+    );
+    return null;
   }
 
   async function recent(): Promise<{ message: ChatMessage; mine: boolean }[]> {

@@ -22,7 +22,7 @@ async function pickTransport(): Promise<OnlineTransport | null> {
   // 개발 서버에서 서버 없이 두 창을 잇는다. 배포 빌드에는 들어가지 않는다
   if (import.meta.env.DEV && import.meta.env.VITE_ONLINE_FAKE === '1') {
     const { browserBus, createBusTransport } = await import('./fakeTransport');
-    return createBusTransport(browserBus(), { password: 'maple' });
+    return createBusTransport(browserBus(), { password: 'maple', latencyMs: Number(import.meta.env.VITE_ONLINE_FAKE_LATENCY) || 0 });
   }
   // 필요한 두 값만 넘겨 다른 VITE_ 값이 번들에 같이 박히지 않게 한다
   const config = onlineConfig({
@@ -51,6 +51,8 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
   const session = createOnlineSession(transport, host, {
     status: (status, count) => indicator.set(status, count),
     message: (message, mine) => chat.add(message, mine),
+    pending: (message) => chat.pending(message),
+    failed: (clientId, reason) => chat.fail(clientId, reason),
     askPassword: (failed) => prompt.ask(failed),
   });
   onIndicator = () => (session.status === 'locked' ? void session.unlock() : chat.toggle());

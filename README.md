@@ -555,7 +555,8 @@ src/
     presence.ts      내 자리를 바뀐 것만 1초에 5번까지 보내기, 겉모습·맵이 바뀌면 presence 다시 알리기
     throttle.ts      채팅 보내기 간격(10초 4개·1초 1개), 120자 검사
     config.ts        빌드 때 넣은 Supabase 주소·anon 키 읽기(비었거나 service_role 키면 끈다)
-    chatWindow.ts    채팅창(지난 24시간 글, Enter 보내기·Esc 닫기)
+    chatWindow.ts    채팅창(지난 24시간 글, Enter 보내기·Esc 닫기, 보낸 글은 먼저 흐리게 띄우고 서버 글이 오면 확정)
+    chatLog.ts       채팅창 글 목록. 먼저 띄운 내 글을 clientId 로 서버 글과 한 줄로 맞추고 실패를 표시
     passwordPrompt.ts  방 비밀번호 창(원작 범용 버튼)
     statusIndicator.ts HUD 의 점과 「접속 N명」
     online.css       위 화면들의 스타일
@@ -649,7 +650,7 @@ scripts/
   release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다
 supabase/
   README.md          온라인 특수판 서버 준비 순서(프로젝트·익명 로그인·SQL·방 비밀번호·pg_cron·.env.local·빌드·확인)
-  migrations/        테이블(room_secret·members·join_attempts·chat_messages)·RLS·RPC·채팅 트리거(10초 5개·실시간 내보내기)·실시간 정책, pg_cron 으로 채팅 24시간 지우기
+  migrations/        테이블(room_secret·members·join_attempts·chat_messages)·RLS·RPC·채팅 트리거(10초 5개·실시간 내보내기), chat_messages.client_id(먼저 띄운 글과 서버 글 짝짓기)·실시간 정책, pg_cron 으로 채팅 24시간 지우기
 src-tauri/tauri.online.conf.json  온라인 특수판 덮어쓰기 설정(이름·식별자·빌드 명령·업데이트 파일 끄기)
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)

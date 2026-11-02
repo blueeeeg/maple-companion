@@ -106,6 +106,18 @@
   color: #ffe08a;
 }
 
+.online-chat-line.is-pending {
+  opacity: 0.55;
+}
+
+.online-chat-line.is-failed {
+  opacity: 0.8;
+}
+
+.online-chat-fail {
+  color: #ff9a8a;
+}
+
 .online-chat-form {
   margin: 2px 4px 4px;
 }

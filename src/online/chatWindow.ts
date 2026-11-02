@@ -1,3 +1,4 @@
+import { createChatLog } from './chatLog';
 import { CHAT_MAX_LENGTH } from './throttle';
 import type { ChatMessage } from './transport';
 
@@ -15,7 +16,10 @@ export interface ChatWindow {
   toggle(): void;
   open(): void;
   close(): void;
+  /** 서버가 확정한 글. 먼저 띄운 내 글이 있으면 그 줄이 확정으로 바뀐다 */
   add(message: ChatMessage, mine: boolean): void;
+  pending(message: ChatMessage): void;
+  fail(clientId: string, reason: string): void;
   readonly isOpen: boolean;
 }
 
@@ -48,7 +52,7 @@ export function createChatWindow(root: HTMLElement, handlers: ChatWindowHandlers
   const form = panel.querySelector<HTMLFormElement>('.online-chat-form')!;
   const input = panel.querySelector<HTMLInputElement>('.online-chat-input')!;
   const error = panel.querySelector<HTMLElement>('.online-chat-error')!;
-  const messages: { message: ChatMessage; mine: boolean }[] = [];
+  const chatLog = createChatLog(LOG_LIMIT);
   let loaded = false;
   let sending = false;
   let errorTimer = 0;
@@ -62,18 +66,22 @@ export function createChatWindow(root: HTMLElement, handlers: ChatWindowHandlers
 
   /** 지난 글과 새 글이 섞여 와도 보낸 시각 순으로 그린다. 남의 글은 textContent 로만 넣는다 */
   function render(): void {
-    messages.sort((a, b) => a.message.createdAt.localeCompare(b.message.createdAt));
-    messages.splice(0, Math.max(0, messages.length - LOG_LIMIT));
     const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
     log.replaceChildren(
-      ...messages.map(({ message, mine }) => {
+      ...chatLog.lines.map(({ message, mine, state, reason }) => {
         const line = document.createElement('li');
-        line.className = mine ? 'online-chat-line is-mine' : 'online-chat-line';
+        line.className = `online-chat-line${mine ? ' is-mine' : ''}${state === 'sent' ? '' : ` is-${state}`}`;
         line.title = timeOf(message.createdAt);
         const name = document.createElement('span');
         name.className = 'online-chat-name';
         name.textContent = message.name;
         line.append(name, ` : ${message.text}`);
+        if (reason) {
+          const note = document.createElement('span');
+          note.className = 'online-chat-fail';
+          note.textContent = ` (${reason})`;
+          line.append(note);
+        }
         return line;
       }),
     );
@@ -88,7 +96,7 @@ export function createChatWindow(root: HTMLElement, handlers: ChatWindowHandlers
     loaded = true;
     handlers.onFirstOpen().then(
       (history) => {
-        messages.push(...history);
+        history.forEach(({ message, mine }) => chatLog.add(message, mine));
         render();
       },
       () => {
@@ -132,7 +140,15 @@ export function createChatWindow(root: HTMLElement, handlers: ChatWindowHandlers
     open,
     close,
     add(message, mine) {
-      messages.push({ message, mine });
+      chatLog.add(message, mine);
+      render();
+    },
+    pending(message) {
+      chatLog.pending(message);
+      render();
+    },
+    fail(clientId, reason) {
+      chatLog.fail(clientId, reason);
       render();
     },
     get isOpen() {

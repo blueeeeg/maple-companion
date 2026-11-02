@@ -63,6 +63,8 @@ export interface FakeOptions {
   member?: boolean;
   /** 서버 rate limit 흉내. 10초에 이만큼 */
   rateLimit?: number;
+  /** 서버 왕복 흉내(ms). 먼저 띄우기가 왕복을 안 기다리는지 눈으로 볼 때 쓴다 */
+  latencyMs?: number;
 }
 
 export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransport {
@@ -156,7 +158,7 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
         },
       };
     },
-    async sendChat({ name, era, mapId, text }) {
+    async sendChat({ name, era, mapId, text, clientId }) {
       requireMember();
       const now = Date.now();
       while (sentAt.length > 0 && now - sentAt[0] >= 10_000) sentAt.shift();
@@ -165,6 +167,7 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
       if (!trimmed || Array.from(trimmed).length > CHAT_MAX_LENGTH) throw new OnlineError('failed');
       sentAt.push(now);
       nextId += 1;
+      if (options.latencyMs) await new Promise((resolve) => setTimeout(resolve, options.latencyMs));
       const message: ChatMessage = {
         id: `${userId}-${nextId}`,
         userId,
@@ -173,6 +176,7 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
         mapId,
         text: trimmed,
         createdAt: new Date(now).toISOString(),
+        clientId,
       };
       history.push(message);
       // 서버처럼 보낸 사람에게도 방 채널로 다시 온다

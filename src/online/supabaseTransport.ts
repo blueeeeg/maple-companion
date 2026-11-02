@@ -11,9 +11,10 @@ interface ChatRow {
   map_id: number;
   text: string;
   created_at: string;
+  client_id?: string | null;
 }
 
-const CHAT_COLUMNS = 'id, user_id, name, era, map_id, text, created_at';
+const CHAT_COLUMNS = 'id, user_id, name, era, map_id, text, created_at, client_id';
 
 const fromRow = (row: ChatRow): ChatMessage => ({
   id: String(row.id),
@@ -23,6 +24,7 @@ const fromRow = (row: ChatRow): ChatMessage => ({
   mapId: row.map_id,
   text: row.text,
   createdAt: row.created_at,
+  clientId: row.client_id ?? undefined,
 });
 
 /** 같은 사람이 탭을 여러 개 열면 presence 에 여러 개가 남는다. 마지막 것만 쓴다 */
@@ -42,6 +44,7 @@ export function createSupabaseTransport(config: OnlineConfig): OnlineTransport {
 
   const fail = (error: { message: string }): never => {
     if (error.message.includes('rate_limited')) throw new OnlineError('rate', error.message);
+    if (error.message.includes('not_member') || error.message.includes('row-level security')) throw new OnlineError('denied', error.message);
     if (error.message.includes('too_many_attempts')) throw new OnlineError('limited', error.message);
     throw new OnlineError('failed', error.message);
   };
@@ -74,7 +77,8 @@ export function createSupabaseTransport(config: OnlineConfig): OnlineTransport {
     async join(password) {
       const { data, error } = await client.rpc('join_room', { password });
       if (error) {
-        if (error.message.includes('too_many_attempts')) return 'limited';
+        if (error.message.includes('not_member') || error.message.includes('row-level security')) throw new OnlineError('denied', error.message);
+    if (error.message.includes('too_many_attempts')) return 'limited';
         fail(error);
       }
       return data === true ? 'ok' : 'wrong';
@@ -125,10 +129,10 @@ export function createSupabaseTransport(config: OnlineConfig): OnlineTransport {
         leave: () => void client.removeChannel(channel),
       };
     },
-    async sendChat({ name, era, mapId, text }) {
+    async sendChat({ name, era, mapId, text, clientId }) {
       const { data, error } = await client
         .from('chat_messages')
-        .insert({ name, era, map_id: mapId, text })
+        .insert({ name, era, map_id: mapId, text, client_id: clientId })
         .select(CHAT_COLUMNS)
         .single();
       if (error) fail(error);

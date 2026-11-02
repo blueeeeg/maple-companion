@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { type ChatLine, createChatLog } from './chatLog';
 import type { ActorLook, ActorPose } from '../scene/scene';
 import { createBusTransport, createMemoryBus } from './fakeTransport';
 import { type OnlineHost, type OnlineStatus, type SelfLook, cleanPeer, createOnlineSession, mapTopic } from './session';
@@ -13,7 +14,7 @@ interface Client {
   host: OnlineHost & { active: boolean; pose: ActorPose; me: SelfLook };
   actors: Map<string, { look: ActorLook; pose: ActorPose }>;
   balloons: { id: string | null; text: string }[];
-  log: { message: ChatMessage; mine: boolean }[];
+  log: ChatLine[];
   statuses: [OnlineStatus, number][];
   asked: (JoinResult | null)[];
   session: ReturnType<typeof createOnlineSession>;
@@ -23,7 +24,8 @@ interface Client {
 function client(transport: OnlineTransport, name: string, answers: (string | null)[] = [PASSWORD]): Client {
   const actors = new Map<string, { look: ActorLook; pose: ActorPose }>();
   const balloons: Client['balloons'] = [];
-  const log: Client['log'] = [];
+  const chatLog = createChatLog(100);
+  const log = chatLog.lines;
   const statuses: Client['statuses'] = [];
   const asked: Client['asked'] = [];
   const clock = { now: 0 };
@@ -49,7 +51,9 @@ function client(transport: OnlineTransport, name: string, answers: (string | nul
     host,
     {
       status: (status, count) => statuses.push([status, count]),
-      message: (message, mine) => log.push({ message, mine }),
+      message: (message, mine) => chatLog.add(message, mine),
+      pending: (message) => chatLog.pending(message),
+      failed: (clientId, reason) => chatLog.fail(clientId, reason),
       askPassword: async (failed) => {
         asked.push(failed);
         return answers.shift() ?? null;
@@ -203,6 +207,60 @@ describe('채팅', () => {
     // 채팅창을 처음 열 때 받는 지난 글에 이미 띄운 글은 빠진다
     expect(await b.session.recent()).toEqual([]);
     expect(b.log).toHaveLength(1);
+  });
+
+  it('엔터 직후 서버 답을 기다리지 않고 내 줄과 말풍선이 뜬다', async () => {
+    const bus = createMemoryBus();
+    const slow = createBusTransport(bus.connect(), { password: PASSWORD, userId: 'a', latencyMs: 20 });
+    const a = client(slow, '단풍이');
+    await a.session.connect();
+    await flush();
+    const sending = a.session.send('안녕');
+    expect(a.log.map((line) => [line.message.text, line.state])).toEqual([['안녕', 'pending']]);
+    expect(a.balloons).toEqual([{ id: null, text: '안녕' }]);
+    await sending;
+    expect(a.log[0].state).toBe('pending');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(a.log.map((line) => [line.message.text, line.state])).toEqual([['안녕', 'sent']]);
+    expect(a.log[0].message.id).not.toMatch(/^local:/);
+    expect(a.balloons).toHaveLength(1);
+  });
+
+  it('방 채널 글이 먼저 와도 줄과 말풍선이 겹치지 않는다', async () => {
+    const bus = createMemoryBus();
+    const real = createBusTransport(bus.connect(), { password: PASSWORD, userId: 'a' });
+    let deliver = (_: ChatMessage) => {};
+    const transport: OnlineTransport = {
+      ...real,
+      openRoom(handlers) {
+        deliver = handlers.onMessage;
+        return real.openRoom(handlers);
+      },
+      sendChat: async (message) => {
+        const saved = await real.sendChat(message);
+        // 서버는 방 채널로 먼저 내보내고 insert 응답은 늦게 온다
+        deliver(saved);
+        return saved;
+      },
+    };
+    const a = client(transport, '단풍이');
+    await a.session.connect();
+    await flush();
+    await a.session.send('안녕');
+    await flush();
+    expect(a.log.map((line) => [line.message.text, line.state])).toEqual([['안녕', 'sent']]);
+    expect(a.balloons).toHaveLength(1);
+  });
+
+  it('서버가 거절하면 줄을 못 보냄으로 표시하고 다시 보내지 않는다', async () => {
+    const bus = createMemoryBus();
+    const a = client(createBusTransport(bus.connect(), { password: PASSWORD, userId: 'a', rateLimit: 0 }), '단풍이');
+    await a.session.connect();
+    await flush();
+    expect(await a.session.send('안녕')).toBeNull();
+    await flush();
+    expect(a.log.map((line) => [line.message.text, line.state, line.reason])).toEqual([['안녕', 'failed', '못 보냄 · 너무 빨라요']]);
+    expect(a.log).toHaveLength(1);
   });
 
   it('연결 전에는 보내지 않는다', async () => {
