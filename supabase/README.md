@@ -136,6 +136,24 @@ cp .env.example .env.local
 
 ## 8. 온라인 특수판 빌드
 
+`v*` 태그를 푸시하면 릴리스 CI 가 보통 판과 함께 온라인 특수판을 빌드해 같은 릴리스에 올린다. CI 는 아래 「GitHub Secrets 넣기」의 두 시크릿으로 주소와 키를 넣는다. 둘 중 하나라도 없으면 온라인 특수판만 건너뛴다.
+
+### GitHub Secrets 넣기
+
+저장소 시크릿 `VITE_SUPABASE_URL`·`VITE_SUPABASE_ANON_KEY` 에 7절의 두 값을 넣는다. 방 주인이 `.env.local` 이 있는 폴더(저장소 루트)에서 한 번 실행한다.
+값은 파이프로 `gh secret set` 의 표준 입력에 넘겨서 화면·셸 기록에 남지 않는다. `.env.local` 의 값은 따옴표 없이 적어 둔다.
+
+```bash
+GH_TOKEN="$(gh auth token --hostname github.com --user blueeeeg)" sh -c 'grep "^VITE_SUPABASE_URL=" .env.local | cut -d= -f2- | gh secret set VITE_SUPABASE_URL -R blueeeeg/maple-companion'
+GH_TOKEN="$(gh auth token --hostname github.com --user blueeeeg)" sh -c 'grep "^VITE_SUPABASE_ANON_KEY=" .env.local | cut -d= -f2- | gh secret set VITE_SUPABASE_ANON_KEY -R blueeeeg/maple-companion'
+gh secret list -R blueeeeg/maple-companion   # 이름과 넣은 때만 보인다
+```
+
+- anon 키만 넣는다. service_role·secret 키를 넣으면 앱이 알아보고 온라인 기능을 끈다
+- 서버 주소나 키를 바꾸면 같은 명령을 다시 실행하고 다음 태그부터 반영된다. 이미 설치한 앱은 업데이트를 받아야 새 값을 쓴다
+
+### 손으로 빌드하기
+
 온라인 특수판 빌드 전에 `src-tauri/icons-release/tray-icon.png` 를 둔다. 번들 리소스라 파일이 없으면 빌드가 멈춘다. 이 폴더는 gitignore 라 커밋되지 않는다.
 
 ```bash
@@ -146,7 +164,7 @@ pnpm tauri build --config src-tauri/tauri.online.conf.json
 
 결과물은 `src-tauri/target/release/bundle/` (유니버설이면 `target/universal-apple-darwin/release/bundle/`) 아래 `Maple Companion Online` 이다.
 보통 판과 이름·식별자(`com.maplecompanion.online`)가 달라 같이 깔아도 캐릭터·설정·캐시가 섞이지 않는다.
-공개 릴리스에 올리지 않고 친구들에게 직접 건넨다.
+손으로 만든 빌드는 업데이트 파일을 만들지 않는다. 친구들에게는 릴리스의 「Maple Companion Online」 파일을 받게 한다.
 
 ## 9. 되는지 확인하기
 

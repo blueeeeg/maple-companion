@@ -11,5 +11,10 @@
     "resources": {
       "icons-release/tray-icon.png": "tray-icon.png"
     }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/blueeeeg/maple-companion/releases/latest/download/latest-online.json"]
+    }
   }
 }

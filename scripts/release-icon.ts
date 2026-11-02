@@ -1,4 +1,4 @@
-// 릴리스 빌드에만 넣는 앱 아이콘(버섯집)으로 Tauri 아이콘 세트를 만든다. CI(release.yml)가 부른다.
+// 릴리스 빌드에만 넣는 앱 아이콘(버섯집)으로 Tauri 아이콘 세트와 온라인 특수판 트레이 아이콘을 만든다. CI(release.yml)가 부른다.
 // node --experimental-strip-types scripts/release-icon.ts [그림 PNG]
 // 그림은 이 순서로 고른다: 인자로 준 PNG 파일(로컬 확인용) → 환경 변수 RELEASE_ICON_PNG_BASE64(PNG 파일의 base64,
 // CI 는 저장소 시크릿으로 넘긴다) → SOURCE_URL 에서 받기
@@ -17,6 +17,9 @@ const OUT_DIR = join(ROOT, 'src-tauri', 'icons-release');
 /** tauri build --config 로 넘길 파일. bundle.icon 배열을 통째로 바꾼다. 경로는 tauri.conf.json 폴더 기준이다 */
 const CONFIG_FILE = join(OUT_DIR, 'release-icon.conf.json');
 const BUNDLE_ICONS = ['32x32.png', '128x128.png', '128x128@2x.png', 'icon.icns', 'icon.ico'];
+/** 온라인 특수판이 번들 리소스로 넣는 트레이 아이콘(tauri.online.conf.json). 원본이 사용자의 custom-tray-icon.png 라
+ * 크기를 바꾸지 않는다. 36px 캔버스 가운데에 두는 것은 tray_icon.rs 가 한다 */
+const TRAY_FILE = join(OUT_DIR, 'tray-icon.png');
 /** src-tauri/src/app_icon.rs 의 MAC_CANVAS·MAC_CONTENT 와 같다. macOS 아이콘 격자(1024 중 824)다 */
 const CANVAS = 1024;
 const CONTENT = 824;
@@ -196,10 +199,12 @@ export async function loadSource(base64 = process.env.RELEASE_ICON_PNG_BASE64): 
 
 async function main(localSource?: string): Promise<void> {
   const source = localSource ? await readFile(localSource) : await loadSource();
-  const canvas = buildCanvas(decodePng(source), CANVAS, CONTENT);
+  const decoded = decodePng(source);
+  const canvas = buildCanvas(decoded, CANVAS, CONTENT);
   if (!canvas) throw new Error('아이콘으로 쓸 그림이 아니다');
   await rm(OUT_DIR, { recursive: true, force: true });
   await mkdir(OUT_DIR, { recursive: true });
+  await writeFile(TRAY_FILE, encodePng(decoded));
   const sourcePng = join(OUT_DIR, 'source-1024.png');
   await writeFile(sourcePng, encodePng(canvas));
   // pnpm 을 거치지 않고 CLI 를 바로 부른다. Windows 에서 pnpm.cmd 는 셸 없이 못 띄운다

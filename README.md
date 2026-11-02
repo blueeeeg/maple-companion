@@ -475,9 +475,13 @@ OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(
 
 ## 온라인 특수판
 
-친구 몇 명이 같은 맵에서 서로의 캐릭터를 보고 채팅하고 보스를 같이 잡는 따로 빌드한 판이다. 공개 릴리스에는 없고, 방 주인이 직접 빌드해서 친구들에게 건넨다.
+친구 몇 명이 같은 맵에서 서로의 캐릭터를 보고 채팅하고 보스를 같이 잡는 따로 빌드한 판이다.
 
-- **보통 판과 따로다.** 이름은 「Maple Companion Online」, 식별자는 `com.maplecompanion.online` 이라 같이 깔아도 캐릭터·설정·캐시가 섞이지 않는다. 보통 판 빌드에는 온라인 코드가 들어가지 않는다(빌드 플래그 `VITE_ONLINE` 이 없으면 온라인 모듈을 import 하지 않는다). 보통 판에 남는 것은 장면의 「밖에서 HP 를 넣는 보스전」과 보스 도전 창의 빈 버튼 자리 같은 훅뿐이고 채널·채팅·초대 코드는 없다. 앱 안 업데이트도 묻지 않는다. 공개 릴리스로 업데이트하면 보통 판으로 덮이기 때문이다
+- **받기.** 보통 판과 같은 [Releases](https://github.com/blueeeeg/maple-companion/releases) 에 올라간다. 이름이 「Maple Companion Online」인 파일(`Maple.Companion.Online_…` 의 `.dmg`·`-setup.exe`·`.msi`)을 받는다. 설치 방법과 첫 실행 경고는 위 「설치」와 같다. macOS 에서 경고를 지우는 명령은 앱 경로만 `"/Applications/Maple Companion Online.app"` 으로 바꾼다
+- **방 비밀번호는 방 주인에게 받는다.** 받아도 비밀번호가 없으면 같은 맵 친구·채팅·같이 도전이 열리지 않는다
+- **업데이트는 보통 판처럼 트레이 메뉴 「업데이트」로 한다.** 온라인 판은 `latest-online.json`, 보통 판은 `latest.json` 을 따로 봐서 서로의 빌드로 업데이트되지 않는다
+
+- **보통 판과 따로다.** 이름은 「Maple Companion Online」, 식별자는 `com.maplecompanion.online` 이라 같이 깔아도 캐릭터·설정·캐시가 섞이지 않는다. 보통 판 빌드에는 온라인 코드가 들어가지 않는다(빌드 플래그 `VITE_ONLINE` 이 없으면 온라인 모듈을 import 하지 않는다). 보통 판에 남는 것은 장면의 「밖에서 HP 를 넣는 보스전」과 보스 도전 창의 빈 버튼 자리 같은 훅뿐이고 채널·채팅·초대 코드는 없다
 - **로그인 화면이 없다.** 켤 때 Supabase 익명 계정을 몰래 만든다. 처음 한 번 방 비밀번호를 넣으면 서버가 그 계정을 멤버로 기억해서 다음부터는 묻지 않는다. 「나중에」로 닫았으면 HUD 의 「입장하기」를 눌러 다시 넣는다
 - **같은 맵의 친구가 보인다.** 같은 시대·같은 맵에 있는 멤버가 이름표와 함께 내 캐릭터 뒤에 걸어 다닌다. 겉모습(장비·캐시)·서기·걷기·점프·사다리·로프·앉기 동작을 따라 하고, 탈것은 타지 않은 모습으로 보인다. 사냥·보상·마을 이동에는 끼어들지 않는다
 - **채팅.** 원작처럼 채팅창이 따로 없다. 새 글이 오면 EXP 바 위에 마지막 3줄이 바탕 없이 테두리 글자로 떴다가 8초 뒤 흐려져 사라진다. 같은 맵에 있는 사람이 한 말은 머리 위에 원작 말풍선으로도 뜬다
@@ -502,14 +506,14 @@ OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(
 
 ```bash
 cp .env.example .env.local     # VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 를 채운다
-cp <트레이 PNG> src-tauri/icons-release/tray-icon.png   # 온라인 특수판 빌드 전에 둔다(없으면 빌드가 멈춘다)
+cp <트레이 PNG> src-tauri/icons-release/tray-icon.png   # 손으로 빌드할 때 둔다(없으면 빌드가 멈춘다)
 pnpm tauri build --config src-tauri/tauri.online.conf.json   # 온라인 특수판 앱
 pnpm dev:online                # 브라우저로 온라인 특수판 화면만 (http://localhost:1420)
 pnpm build:online              # 프론트만 온라인 특수판으로 빌드(vite build --mode online)
 ```
 
-- `src-tauri/tauri.online.conf.json` 은 `tauri.conf.json` 위에 덮는 설정이다. 이름·식별자를 바꾸고, 빌드 명령을 `build:online`(`vite build --mode online` → `VITE_ONLINE=1`)으로 바꾸고, 업데이트 파일을 만들지 않는다
-- 트레이 아이콘은 `src-tauri/icons-release/tray-icon.png` 를 번들 리소스로 넣는다. 이 폴더는 gitignore 라 저장소에 올라가지 않고, 온라인 특수판 설정에만 `bundle.resources` 가 있어 보통 판에는 안 들어간다. 우선순위는 앱 데이터의 `custom-tray-icon.png` → 번들 아이콘 → 단풍잎 기본이다. 번들 아이콘이 있으면 단풍잎을 받아 오지 않는다
+- `src-tauri/tauri.online.conf.json` 은 `tauri.conf.json` 위에 덮는 설정이다. 이름·식별자를 바꾸고, 빌드 명령을 `build:online`(`vite build --mode online` → `VITE_ONLINE=1`)으로 바꾸고, 업데이트 주소를 `latest-online.json` 으로 바꾼다. 손으로 빌드할 때는 업데이트 파일을 만들지 않는다(CI 만 켠다)
+- 트레이 아이콘은 `src-tauri/icons-release/tray-icon.png` 를 번들 리소스로 넣는다. 릴리스 CI 는 `RELEASE_ICON_PNG_BASE64` 그림으로 이 파일도 만든다(`scripts/release-icon.ts`). 시크릿이 없으면 리소스를 뺀 설정으로 빌드해 단풍잎 기본을 쓴다. 이 폴더는 gitignore 라 저장소에 올라가지 않고, 온라인 특수판 설정에만 `bundle.resources` 가 있어 보통 판에는 안 들어간다. 우선순위는 앱 데이터의 `custom-tray-icon.png` → 번들 아이콘 → 단풍잎 기본이다. 번들 아이콘이 있으면 단풍잎을 받아 오지 않는다
 - 비밀 값은 저장소에 없다. Supabase 주소와 anon 키는 빌드할 때 `.env.local` 에서 읽어 앱 번들에 들어간다(anon 키는 원래 공개해도 되는 키이고 권한은 서버 RLS 가 막는다). service_role 키는 앱 어디에도 쓰지 않고, 잘못 넣으면 앱이 알아보고 온라인 기능을 끈다. 방 비밀번호는 Supabase SQL Editor 에서만 정하고 서버에는 bcrypt 해시로만 남는다
 - Tauri CSP 는 보통 판과 같이 꺼져 있다(`app.security.csp: null`). 막는 것이 없어 Supabase https·wss 주소도 따로 열 필요가 없다
 
@@ -538,6 +542,16 @@ pnpm tauri build               # Windows 에서 실행하면 -setup.exe·.msi (s
 ```
 
 배포는 `v*` 태그를 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 돈다. `release` 잡이 릴리스를 먼저 만들고, 그 뒤 `macos` 잡(macos-latest)이 유니버설 앱 `.dmg`·`.zip`·`.app.tar.gz` 를, `windows` 잡(windows-latest)이 `-setup.exe`(NSIS)·`.msi` 를 같은 릴리스에 올린다. 두 잡이 릴리스를 각자 만들지 않아서 둘이 생기거나 서로 부딪치지 않는다. Actions 화면에서 「Run workflow」로 수동 실행하면 Windows 빌드만 돌고, 설치 파일은 릴리스가 아니라 그 실행의 Artifacts(`maple-companion-windows`)에 올라간다. macOS 서명은 ad-hoc(`bundle.macOS.signingIdentity: "-"`)이고 공증은 하지 않는다. Windows 는 서명하지 않는다. 버전은 `package.json`·`src-tauri/tauri.conf.json`·`src-tauri/Cargo.toml` 세 곳을 같이 올린다.
+
+### 온라인 특수판 릴리스
+
+같은 태그에서 `online-macos`·`online-windows` 잡이 온라인 특수판을 빌드해 같은 릴리스에 올린다.
+
+- Supabase 주소·anon 키는 저장소 시크릿 `VITE_SUPABASE_URL`·`VITE_SUPABASE_ANON_KEY` 에서 빌드 단계에만 넘긴다. 둘 중 하나라도 없으면 `release` 잡이 경고를 남기고 온라인 잡을 건너뛴다. 보통 판 릴리스는 그대로 나간다. 넣는 방법은 [supabase/README.md](supabase/README.md) 「GitHub Secrets 넣기」
+- 설정은 `tauri.online.conf.json` 에 CI 값(업데이트 파일 만들기, 버섯집 번들 아이콘, 트레이 그림이 없으면 리소스 빼기)을 얹어 `src-tauri/tauri.online.ci.conf.json` 으로 만들어 넘긴다
+- 자산 이름은 productName 이 달라 `Maple.Companion.Online_…` 로 올라가 보통 판(`Maple.Companion_…`)과 겹치지 않는다
+- 온라인 잡은 tauri-action 의 `latest.json` 을 끈다(`includeUpdaterJson: false`). 두 잡이 끝나면 `online-manifest` 잡이 릴리스의 `Maple.Companion.Online_*.sig` 를 받아 `latest-online.json` 을 만들어 올린다(`scripts/updater-manifest.ts`). 모양과 플랫폼 키는 `latest.json` 과 같다. 한쪽 빌드가 실패하면 성공한 플랫폼만 들어간다
+- 온라인 시크릿 없이 낸 릴리스에는 `latest-online.json` 이 없어서, 온라인 판은 그 릴리스가 최신인 동안 업데이트를 찾지 못하고 다음에 다시 묻는다
 
 ### 업데이트 서명
 
@@ -666,7 +680,8 @@ scripts/
   curate-classic-cash.ts    캐시샵 부위마다 GMS 83·KMS 389 캐시 아이템 목록을 견줘 src/maple/classicCashItems.ts 를 쓴다
   mapleio.ts         스크립트가 같이 쓰는 maplestory.io 요청(캐시·다시 받기·없는 노드 500 처리)·시대 인자
   curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다. --era classic 이면 클래식 마을·사냥터·보스 맵 곡만 bgmCatalog.classic.ts 로 쓴다
-  release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다
+  release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다. 온라인 특수판 트레이 그림(tray-icon.png)도 같은 그림으로 둔다
+  updater-manifest.ts 릴리스에 올라간 온라인 특수판 .sig 로 latest-online.json 을 만든다(release.yml online-manifest 잡)
 supabase/
   README.md          온라인 특수판 서버 준비 순서(프로젝트·익명 로그인·SQL·방 비밀번호·pg_cron·.env.local·빌드·확인)
   migrations/        테이블(room_secret·members·join_attempts·chat_messages)·RLS·RPC·채팅 트리거(10초 5개·실시간 내보내기), chat_messages.client_id(먼저 띄운 글과 서버 글 짝짓기)·실시간 정책, pg_cron 으로 채팅 24시간 지우기, 같이 도전 채널(room:events·boss:*) 실시간 정책

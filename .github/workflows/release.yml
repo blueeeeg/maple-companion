@@ -16,11 +16,29 @@ jobs:
   release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      online: ${{ steps.online.outputs.enabled }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
+      # 온라인 특수판은 Supabase 주소·anon 키 시크릿이 둘 다 있을 때만 빌드한다. 값은 이 잡에 넘기지 않고 있는지만 본다
+      - name: Online secrets
+        id: online
+        env:
+          HAS_URL: ${{ secrets.VITE_SUPABASE_URL != '' }}
+          HAS_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' }}
+        run: |
+          if [ "$HAS_URL" = true ] && [ "$HAS_KEY" = true ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Online edition::VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 시크릿이 없어 온라인 특수판은 빌드하지 않는다"
+          fi
+
       - name: Create release
+        env:
+          ONLINE: ${{ steps.online.outputs.enabled }}
         run: |
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             echo "release $GITHUB_REF_NAME already exists"
@@ -48,6 +66,14 @@ jobs:
 
           캐릭터·맵·소리는 실행 중에 maplestory.io 에서 받아 오므로 인터넷이 필요하다.
           EOF
+          if [ "$ONLINE" = true ]; then
+            cat >> notes.md <<'EOF'
+
+          ### Maple Companion Online
+
+          친구용 온라인 특수판 · 참여 코드가 있어야 접속
+          EOF
+          fi
           gh release create "$GITHUB_REF_NAME" --verify-tag --title "Maple Companion $GITHUB_REF_NAME" --notes-file notes.md
 
   macos:
@@ -186,3 +212,178 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
           if-no-files-found: error
+
+  # 친구용 온라인 특수판. 이름(Maple Companion Online)이 달라 자산 이름이 보통 판과 겹치지 않는다.
+  # 업데이트 목록은 latest.json 에 섞지 않고 online-manifest 잡이 latest-online.json 으로 따로 올린다
+  online-macos:
+    needs: release
+    if: needs.release.outputs.online == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      # 버섯집 앱 아이콘. 넥슨 그림이라 저장소에 넣지 않고 빌드할 때만 번들 아이콘으로 쓴다(scripts/release-icon.ts).
+      # 그림이 없어도 기본 아이콘으로 빌드를 이어 간다. 그 빌드는 MAPLE_BUNDLED_ICON 이 없어 앱이 실행 중에 붙인다(app_icon.rs)
+      - name: Release icon
+        shell: bash
+        env:
+          RELEASE_ICON_PNG_BASE64: ${{ secrets.RELEASE_ICON_PNG_BASE64 }}
+        run: |
+          if node --experimental-strip-types scripts/release-icon.ts && [ -f src-tauri/icons-release/release-icon.conf.json ]; then
+            echo "MAPLE_BUNDLED_ICON=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=Release icon::버섯집 아이콘을 만들지 못해 기본 아이콘으로 빌드한다"
+          fi
+
+      # tauri.online.conf.json 에 CI 에서만 쓸 값을 얹어 설정 하나로 넘긴다. 업데이트 파일을 만들고, 버섯집 아이콘이 있으면
+      # 번들 아이콘으로 쓴다. 트레이 그림이 없으면 번들 리소스를 빼야 빌드가 멈추지 않는다(앱은 단풍잎을 받아 쓴다)
+      - name: Online config
+        shell: bash
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const read = (path) => JSON.parse(fs.readFileSync(path, "utf8"));
+          const config = read("src-tauri/tauri.online.conf.json");
+          config.bundle.createUpdaterArtifacts = true;
+          if (!fs.existsSync("src-tauri/icons-release/tray-icon.png")) {
+            delete config.bundle.resources;
+            console.log("::warning title=Online tray icon::트레이 그림이 없어 번들 트레이 아이콘 없이 빌드한다");
+          }
+          if (fs.existsSync("src-tauri/icons-release/release-icon.conf.json")) {
+            config.bundle.icon = read("src-tauri/icons-release/release-icon.conf.json").bundle.icon;
+          }
+          fs.writeFileSync("src-tauri/tauri.online.ci.conf.json", JSON.stringify(config, null, 2));
+          '
+
+      # Supabase 주소·anon 키는 이 단계에만 넘긴다. Vite 가 빌드할 때 앱 번들에 넣는다
+      - name: Build and upload to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
+          args: --target universal-apple-darwin --config src-tauri/tauri.online.ci.conf.json
+
+  online-windows:
+    needs: release
+    if: needs.release.outputs.online == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: pnpm install --frozen-lockfile
+
+      # 버섯집 앱 아이콘. 넥슨 그림이라 저장소에 넣지 않고 빌드할 때만 번들 아이콘으로 쓴다(scripts/release-icon.ts).
+      # 그림이 없어도 기본 아이콘으로 빌드를 이어 간다. 그 빌드는 MAPLE_BUNDLED_ICON 이 없어 앱이 실행 중에 붙인다(app_icon.rs)
+      - name: Release icon
+        shell: bash
+        env:
+          RELEASE_ICON_PNG_BASE64: ${{ secrets.RELEASE_ICON_PNG_BASE64 }}
+        run: |
+          if node --experimental-strip-types scripts/release-icon.ts && [ -f src-tauri/icons-release/release-icon.conf.json ]; then
+            echo "MAPLE_BUNDLED_ICON=1" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=Release icon::버섯집 아이콘을 만들지 못해 기본 아이콘으로 빌드한다"
+          fi
+
+      # tauri.online.conf.json 에 CI 에서만 쓸 값을 얹어 설정 하나로 넘긴다. 업데이트 파일을 만들고, 버섯집 아이콘이 있으면
+      # 번들 아이콘으로 쓴다. 트레이 그림이 없으면 번들 리소스를 빼야 빌드가 멈추지 않는다(앱은 단풍잎을 받아 쓴다)
+      - name: Online config
+        shell: bash
+        run: |
+          node -e '
+          const fs = require("node:fs");
+          const read = (path) => JSON.parse(fs.readFileSync(path, "utf8"));
+          const config = read("src-tauri/tauri.online.conf.json");
+          config.bundle.createUpdaterArtifacts = true;
+          if (!fs.existsSync("src-tauri/icons-release/tray-icon.png")) {
+            delete config.bundle.resources;
+            console.log("::warning title=Online tray icon::트레이 그림이 없어 번들 트레이 아이콘 없이 빌드한다");
+          }
+          if (fs.existsSync("src-tauri/icons-release/release-icon.conf.json")) {
+            config.bundle.icon = read("src-tauri/icons-release/release-icon.conf.json").bundle.icon;
+          }
+          fs.writeFileSync("src-tauri/tauri.online.ci.conf.json", JSON.stringify(config, null, 2));
+          '
+
+      # Supabase 주소·anon 키는 이 단계에만 넘긴다. Vite 가 빌드할 때 앱 번들에 넣는다
+      - name: Build and upload to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
+          args: --config src-tauri/tauri.online.ci.conf.json
+
+  # 온라인 판 업데이트 목록. 두 빌드가 올린 .sig 를 받아 한 번에 만들어서, latest.json 처럼 잡이 서로 덮을 일이 없다.
+  # 한쪽 빌드가 실패해도 성공한 플랫폼만으로 올린다
+  online-manifest:
+    needs: [release, online-macos, online-windows]
+    if: ${{ !cancelled() && needs.release.outputs.online == 'true' && (needs.online-macos.result == 'success' || needs.online-windows.result == 'success') }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # tauri-action 이 productName 의 공백을 점으로 바꿔 올린다
+      ASSET_PREFIX: Maple.Companion.Online_
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Upload latest-online.json
+        run: |
+          mkdir sigs
+          gh release download "$GITHUB_REF_NAME" -p "${ASSET_PREFIX}*.sig" -D sigs
+          node --experimental-strip-types scripts/updater-manifest.ts sigs latest-online.json "$ASSET_PREFIX"
+          gh release upload "$GITHUB_REF_NAME" latest-online.json --clobber

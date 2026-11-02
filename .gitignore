@@ -37,3 +37,6 @@ secrets/
 
 # 릴리스 CI 가 만드는 앱 아이콘(넥슨 그림). scripts/release-icon.ts
 src-tauri/icons-release
+
+# 온라인 특수판 CI 가 tauri.online.conf.json 으로 만드는 설정(release.yml)
+src-tauri/tauri.online.ci.conf.json

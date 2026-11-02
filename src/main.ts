@@ -1287,8 +1287,7 @@ notifier.onOpen(() => {
   if (job.canChooseJob) hud.openJobChoice();
   else if (job.branchChoice) hud.openBranchChoice(job.branchChoice, character.era);
 });
-// 온라인 특수판은 공개 릴리스로 업데이트하면 보통 판으로 덮여서 업데이트를 묻지 않는다
-if (import.meta.env.VITE_ONLINE !== '1') startUpdateChecks({
+startUpdateChecks({
   onFound(version, firstTime) {
     availableUpdate = version;
     // 전직 알림 설정과 따로 늘 알린다. 새 버전마다 한 번뿐이다
