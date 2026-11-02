@@ -2,12 +2,15 @@ use std::fs;
 use std::path::PathBuf;
 
 use tauri::image::Image;
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
 
 /// 프론트가 maplestory.io 에서 받은 단풍잎 아이콘 원본. 다음 실행에서는 네트워크 없이 이걸로 바로 띄운다
 const CACHE_FILE: &str = "tray-icon.png";
 /// 사용자가 직접 놓는 아이콘. 있으면 단풍잎 캐시와 다운로드보다 앞선다
 const CUSTOM_FILE: &str = "custom-tray-icon.png";
+/// 온라인 특수판 번들에만 들어가는 아이콘(tauri.online.conf.json). 사용자 파일이 없는 친구 기기에서 쓴다
+const BUNDLED_FILE: &str = "tray-icon.png";
 /// macOS 메뉴바는 트레이 그림을 높이 18pt 로 그린다(tray-icon 크레이트가 고정). 레티나에서 36px 이라
 /// 아이템 아이콘(약 30px)을 늘리지 않고 36×36 가운데에 두면 원본 픽셀이 화면 픽셀에 1:1 로 맞아 번지지 않는다
 const CANVAS: u32 = 36;
@@ -20,8 +23,16 @@ fn cache_path(app: &AppHandle) -> Option<PathBuf> {
     data_file(app, CACHE_FILE)
 }
 
+fn bundled_path(app: &AppHandle) -> Option<PathBuf> {
+    app.path().resolve(BUNDLED_FILE, BaseDirectory::Resource).ok()
+}
+
+/// 사용자 파일이나 번들 아이콘이 있으면 프론트가 받아 온 단풍잎으로 덮지 않는다
 pub fn has_custom(app: &AppHandle) -> bool {
-    data_file(app, CUSTOM_FILE).is_some_and(|path| path.is_file())
+    [data_file(app, CUSTOM_FILE), bundled_path(app)]
+        .into_iter()
+        .flatten()
+        .any(|path| path.is_file())
 }
 
 pub fn from_png(bytes: &[u8]) -> Option<Image<'static>> {
@@ -31,9 +42,19 @@ pub fn from_png(bytes: &[u8]) -> Option<Image<'static>> {
 
 /// 지금 트레이에 쓰는 그림의 PNG 원본. 앱 아이콘도 같은 그림으로 만든다
 pub fn cached_png(app: &AppHandle) -> Option<Vec<u8>> {
-    [CUSTOM_FILE, CACHE_FILE]
+    first_png([
+        data_file(app, CUSTOM_FILE),
+        bundled_path(app),
+        data_file(app, CACHE_FILE),
+    ])
+}
+
+/// 앞에 둔 경로일수록 먼저 쓴다. 읽지 못하거나 PNG 가 아니면 다음으로 넘어간다
+fn first_png(paths: impl IntoIterator<Item = Option<PathBuf>>) -> Option<Vec<u8>> {
+    paths
         .into_iter()
-        .filter_map(|name| fs::read(data_file(app, name)?).ok())
+        .flatten()
+        .filter_map(|path| fs::read(path).ok())
         .find(|bytes| Image::from_bytes(bytes).is_ok())
 }
 
@@ -87,6 +108,33 @@ mod tests {
         let rgba = vec![9; 40 * 40 * 4];
         let image = center_on_canvas(&rgba, 40, 40);
         assert_eq!((image.width(), image.height()), (40, 40));
+    }
+
+    #[test]
+    fn first_png_follows_order_and_skips_unreadable() {
+        let dir = std::env::temp_dir().join(format!("tray-icon-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let png = |name: &str, shade: u8| {
+            let path = dir.join(name);
+            image::RgbaImage::from_pixel(2, 2, image::Rgba([shade, 0, 0, 255]))
+                .save(&path)
+                .unwrap();
+            path
+        };
+        let (custom, bundled, cache) = (png("c.png", 1), png("b.png", 2), png("k.png", 3));
+        let junk = dir.join("junk.png");
+        fs::write(&junk, b"<html>").unwrap();
+        let missing = dir.join("missing.png");
+        let red = |paths: [Option<PathBuf>; 3]| {
+            let bytes = first_png(paths).unwrap();
+            image::load_from_memory(&bytes).unwrap().to_rgba8().get_pixel(0, 0)[0]
+        };
+        let all = [Some(custom), Some(bundled.clone()), Some(cache.clone())];
+        assert_eq!(red(all), 1);
+        assert_eq!(red([Some(missing.clone()), Some(bundled.clone()), Some(cache.clone())]), 2);
+        assert_eq!(red([None, Some(junk), Some(cache)]), 3);
+        assert!(first_png([Some(missing), None]).is_none());
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

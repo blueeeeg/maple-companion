@@ -7,6 +7,9 @@
     "beforeBuildCommand": "pnpm build:online"
   },
   "bundle": {
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": false,
+    "resources": {
+      "icons-release/tray-icon.png": "tray-icon.png"
+    }
   }
 }

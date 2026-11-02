@@ -136,6 +136,8 @@ cp .env.example .env.local
 
 ## 8. 온라인 특수판 빌드
 
+온라인 특수판 빌드 전에 `src-tauri/icons-release/tray-icon.png` 를 둔다. 번들 리소스라 파일이 없으면 빌드가 멈춘다. 이 폴더는 gitignore 라 커밋되지 않는다.
+
 ```bash
 pnpm install
 pnpm tauri build --config src-tauri/tauri.online.conf.json

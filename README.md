@@ -502,12 +502,14 @@ OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(
 
 ```bash
 cp .env.example .env.local     # VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 를 채운다
+cp <트레이 PNG> src-tauri/icons-release/tray-icon.png   # 온라인 특수판 빌드 전에 둔다(없으면 빌드가 멈춘다)
 pnpm tauri build --config src-tauri/tauri.online.conf.json   # 온라인 특수판 앱
 pnpm dev:online                # 브라우저로 온라인 특수판 화면만 (http://localhost:1420)
 pnpm build:online              # 프론트만 온라인 특수판으로 빌드(vite build --mode online)
 ```
 
 - `src-tauri/tauri.online.conf.json` 은 `tauri.conf.json` 위에 덮는 설정이다. 이름·식별자를 바꾸고, 빌드 명령을 `build:online`(`vite build --mode online` → `VITE_ONLINE=1`)으로 바꾸고, 업데이트 파일을 만들지 않는다
+- 트레이 아이콘은 `src-tauri/icons-release/tray-icon.png` 를 번들 리소스로 넣는다. 이 폴더는 gitignore 라 저장소에 올라가지 않고, 온라인 특수판 설정에만 `bundle.resources` 가 있어 보통 판에는 안 들어간다. 우선순위는 앱 데이터의 `custom-tray-icon.png` → 번들 아이콘 → 단풍잎 기본이다. 번들 아이콘이 있으면 단풍잎을 받아 오지 않는다
 - 비밀 값은 저장소에 없다. Supabase 주소와 anon 키는 빌드할 때 `.env.local` 에서 읽어 앱 번들에 들어간다(anon 키는 원래 공개해도 되는 키이고 권한은 서버 RLS 가 막는다). service_role 키는 앱 어디에도 쓰지 않고, 잘못 넣으면 앱이 알아보고 온라인 기능을 끈다. 방 비밀번호는 Supabase SQL Editor 에서만 정하고 서버에는 bcrypt 해시로만 남는다
 - Tauri CSP 는 보통 판과 같이 꺼져 있다(`app.security.csp: null`). 막는 것이 없어 Supabase https·wss 주소도 따로 열 필요가 없다
 
@@ -668,7 +670,7 @@ scripts/
 supabase/
   README.md          온라인 특수판 서버 준비 순서(프로젝트·익명 로그인·SQL·방 비밀번호·pg_cron·.env.local·빌드·확인)
   migrations/        테이블(room_secret·members·join_attempts·chat_messages)·RLS·RPC·채팅 트리거(10초 5개·실시간 내보내기), chat_messages.client_id(먼저 띄운 글과 서버 글 짝짓기)·실시간 정책, pg_cron 으로 채팅 24시간 지우기, 같이 도전 채널(room:events·boss:*) 실시간 정책
-src-tauri/tauri.online.conf.json  온라인 특수판 덮어쓰기 설정(이름·식별자·빌드 명령·업데이트 파일 끄기)
+src-tauri/tauri.online.conf.json  온라인 특수판 덮어쓰기 설정(이름·식별자·빌드 명령·업데이트 파일 끄기·트레이 아이콘 리소스)
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장
