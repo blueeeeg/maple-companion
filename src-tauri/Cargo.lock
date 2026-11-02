@@ -2093,7 +2093,7 @@ dependencies = [
 
 [[package]]
 name = "maple-companion"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "image",
  "mac-notification-sys",
