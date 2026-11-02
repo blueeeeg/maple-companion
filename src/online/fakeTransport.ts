@@ -17,7 +17,7 @@ export type BusMessage =
   | { kind: 'map-track'; topic: string; from: string; state: PeerState }
   | { kind: 'map-move'; topic: string; from: string; move: PeerMove }
   | { kind: 'map-leave'; topic: string; from: string }
-  | { kind: 'room-here'; from: string; reply: boolean }
+  | { kind: 'room-here'; from: string; name: string; reply: boolean }
   | { kind: 'room-leave'; from: string }
   | { kind: 'chat'; message: ChatMessage }
   | { kind: 'event'; payload: unknown }
@@ -77,7 +77,8 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
   const userId = options.userId ?? `fake-${Math.random().toString(36).slice(2, 10)}`;
   let member = options.member ?? false;
   const maps = new Map<string, { handlers: MapHandlers; peers: Map<string, PeerState>; state: PeerState | null }>();
-  let room: { handlers: RoomHandlers; here: Set<string> } | null = null;
+  let room: { handlers: RoomHandlers; name: string; here: Map<string, string> } | null = null;
+  const roomMembers = () => new Map([[userId, room!.name], ...room!.here]);
   let onEvent: ((payload: unknown) => void) | null = null;
   const bosses = new Map<string, { handlers: BossHandlers; peers: Set<string> }>();
   const history: ChatMessage[] = [];
@@ -110,10 +111,10 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
     if (message.kind === 'room-here' || message.kind === 'room-leave') {
       if (!room) return;
       if (message.kind === 'room-here') {
-        room.here.add(message.from);
-        if (!message.reply) bus.post({ kind: 'room-here', from: userId, reply: true });
+        room.here.set(message.from, message.name);
+        if (!message.reply) bus.post({ kind: 'room-here', from: userId, name: room.name, reply: true });
       } else room.here.delete(message.from);
-      room.handlers.onCount(room.here.size + 1);
+      room.handlers.onMembers(roomMembers());
       return;
     }
     const map = maps.get(message.topic);
@@ -148,15 +149,20 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
       member = true;
       return 'ok';
     },
-    openRoom(handlers) {
+    openRoom(handlers, name) {
       requireMember();
-      room = { handlers, here: new Set() };
+      room = { handlers, name, here: new Map() };
       queueMicrotask(() => {
         handlers.onStatus('online');
-        handlers.onCount(1);
-        bus.post({ kind: 'room-here', from: userId, reply: false });
+        handlers.onMembers(new Map([[userId, name]]));
+        bus.post({ kind: 'room-here', from: userId, name, reply: false });
       });
       return {
+        track(next) {
+          if (!room) return;
+          room.name = next;
+          bus.post({ kind: 'room-here', from: userId, name: next, reply: true });
+        },
         leave() {
           room = null;
           bus.post({ kind: 'room-leave', from: userId });

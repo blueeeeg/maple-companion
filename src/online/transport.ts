@@ -52,12 +52,14 @@ export interface MapLink {
 
 export interface RoomHandlers {
   onStatus(status: LinkStatus): void;
-  /** 방에 접속한 사람 수(나 포함) */
-  onCount(count: number): void;
+  /** 방에 접속한 사람(나 포함). user id → 캐릭터 이름. 누가 들어오거나 나갈 때마다 온다 */
+  onMembers(members: Map<string, string>): void;
   onMessage(message: ChatMessage): void;
 }
 
 export interface RoomLink {
+  /** 캐릭터를 바꿨을 때 방에 알리는 이름을 고친다 */
+  track(name: string): void;
   leave(): void;
 }
 
@@ -87,7 +89,7 @@ export interface OnlineTransport {
   signIn(): Promise<string>;
   isMember(): Promise<boolean>;
   join(password: string): Promise<JoinResult>;
-  openRoom(handlers: RoomHandlers): RoomLink;
+  openRoom(handlers: RoomHandlers, name: string): RoomLink;
   joinMap(topic: string, handlers: MapHandlers): MapLink;
   /** 서버가 받아 저장한 글. 거절하면 OnlineError */
   sendChat(message: NewChatMessage): Promise<ChatMessage>;

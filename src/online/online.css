@@ -1,38 +1,5 @@
 /* 온라인 특수판 전용. online/index.ts 가 import 해서 보통 빌드에는 들어가지 않는다 */
 
-/* ── HUD 접속 표시 ── */
-.hud .online-status {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  height: 19px;
-  padding: 0 5px;
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.online-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #8a8f9c;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-}
-
-.online-status[data-status='online'] .online-dot {
-  background: #5fe06a;
-}
-
-.online-status[data-status='locked'] .online-dot {
-  background: #ffd23f;
-}
-
-.online-status[data-status='offline'] .online-dot,
-.online-status[data-status='unconfigured'] .online-dot {
-  background: #ff5a4a;
-}
-
 /* ── 채팅: 원작처럼 채팅창 없이 EXP 바 위에 글만 띄운다. px 로만 적어 큰 창에서도 글자가 커지지 않는다 ── */
 .online-chat-feed,
 .online-chat-log {
@@ -92,6 +59,12 @@
 
 .online-chat-line.is-mine .online-chat-name {
   color: #ffe08a;
+}
+
+.online-chat-line.is-system {
+  color: #c9d3e0;
+  font-style: italic;
+  opacity: 0.7;
 }
 
 .online-chat-line.is-pending {
@@ -186,6 +159,60 @@
   color: #7a8496;
 }
 
+/* 💬 버튼 모서리 점: 초록 연결됨, 호박 연결 중(천천히 깜빡), 회색 연결 안 됨·입장 전 */
+.online-chat-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8a8f9c;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.online-chat-button[data-dot='online'] .online-chat-dot {
+  background: #5fe06a;
+}
+
+.online-chat-button[data-dot='connecting'] .online-chat-dot {
+  background: #ffb02e;
+  animation: online-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes online-dot-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .online-chat-button[data-dot='connecting'] .online-chat-dot {
+    animation: none;
+  }
+}
+
+/* 입력창 위 접속자 줄 */
+.online-chat-who {
+  align-self: flex-start;
+  box-sizing: border-box;
+  max-width: min(300px, 100%);
+  margin: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  background: rgba(10, 12, 20, 0.5);
+  color: #bcd2e6;
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-chat-who[hidden] {
+  display: none;
+}
+
 /* 입력창이 열려 있으면 알림 줄은 위로 비킨다 */
 #app.online-chat-open .notice {
   top: 44px;
@@ -193,6 +220,7 @@
 }
 
 .hud .online-chat-button {
+  position: relative;
   flex: none;
   height: 19px;
   padding: 0 4px;

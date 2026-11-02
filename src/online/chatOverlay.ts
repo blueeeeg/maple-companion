@@ -42,6 +42,10 @@ export interface ChatOverlay {
   add(message: ChatMessage, mine: boolean): void;
   pending(message: ChatMessage): void;
   fail(clientId: string, reason: string): void;
+  /** 들어왔어요·나갔어요 시스템 줄 */
+  notice(text: string): void;
+  /** 입력창 위에 보이는 접속자 줄. 빈 문자열이면 감춘다 */
+  setWho(line: string): void;
   /** 처음 들어왔을 때 한 번 띄우는 안내 */
   hint(text: string): void;
   readonly isOpen: boolean;
@@ -62,6 +66,10 @@ function isTyping(target: EventTarget | null): boolean {
 function lineElement({ message, mine, state, reason }: ChatLine): HTMLLIElement {
   const line = document.createElement('li');
   line.className = `online-chat-line${mine ? ' is-mine' : ''}${state === 'sent' ? '' : ` is-${state}`}`;
+  if (state === 'system') {
+    line.textContent = message.text;
+    return line;
+  }
   line.title = timeOf(message.createdAt);
   const name = document.createElement('span');
   name.className = 'online-chat-name';
@@ -82,6 +90,7 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
     `
     <ol class="online-chat-feed" aria-live="polite" hidden></ol>
     <section class="online-chat" aria-label="채팅" hidden>
+      <p class="online-chat-who" hidden></p>
       <ol class="online-chat-log"></ol>
       <p class="online-chat-error" role="status" hidden></p>
       <div class="online-chat-bar">
@@ -97,6 +106,7 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
   const bar = panel.querySelector<HTMLElement>('.online-chat-bar')!;
   const input = panel.querySelector<HTMLInputElement>('.online-chat-input')!;
   const error = panel.querySelector<HTMLElement>('.online-chat-error')!;
+  const who = panel.querySelector<HTMLElement>('.online-chat-who')!;
   const chatLog = createChatLog(LOG_LIMIT);
   const feed = createChatFeed();
   let hintText: string | null = null;
@@ -257,6 +267,15 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
       chatLog.fail(clientId, reason);
       if (!panel.hidden) renderLog();
       pokeFeed();
+    },
+    notice(text) {
+      chatLog.system(text);
+      if (!panel.hidden) renderLog();
+      pokeFeed();
+    },
+    setWho(line) {
+      who.hidden = line === '';
+      who.textContent = line;
     },
     hint(text) {
       hintText = text;

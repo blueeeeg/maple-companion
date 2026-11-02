@@ -1,6 +1,6 @@
 import type { ChatMessage } from './transport';
 
-export type LineState = 'pending' | 'sent' | 'failed';
+export type LineState = 'pending' | 'sent' | 'failed' | 'system';
 
 export interface ChatLine {
   message: ChatMessage;
@@ -15,6 +15,7 @@ export interface ChatLine {
 /** 창에 보이는 글 목록. 먼저 띄운 내 글과 서버에서 돌아온 글을 한 줄로 맞춘다 */
 export function createChatLog(limit: number) {
   const lines: ChatLine[] = [];
+  let systemCount = 0;
 
   const byClientId = (clientId: string | undefined) =>
     clientId ? lines.find((line) => line.message.clientId === clientId) : undefined;
@@ -36,6 +37,12 @@ export function createChatLog(limit: number) {
       } else if (!lines.some((each) => each.message.id === message.id)) {
         lines.push({ message, mine, state: 'sent', at: message.createdAt });
       }
+      trim();
+    },
+    /** 들어왔어요·나갔어요 같은 시스템 줄. 서버 글이 아니라 이 기기에만 남는다 */
+    system(text: string, at = new Date().toISOString()): void {
+      const id = `system:${(systemCount += 1)}`;
+      lines.push({ message: { id, userId: '', name: '', era: 'current', mapId: 0, text, createdAt: at }, mine: false, state: 'system', at });
       trim();
     },
     /** 서버 답을 기다리는 내 글 */

@@ -15,7 +15,9 @@ interface Client {
   actors: Map<string, { look: ActorLook; pose: ActorPose }>;
   balloons: { id: string | null; text: string }[];
   log: ChatLine[];
-  statuses: [OnlineStatus, number][];
+  statuses: OnlineStatus[];
+  members: string[][];
+  notices: string[];
   asked: (JoinResult | null)[];
   session: ReturnType<typeof createOnlineSession>;
   clock: { now: number };
@@ -27,6 +29,8 @@ function client(transport: OnlineTransport, name: string, answers: (string | nul
   const chatLog = createChatLog(100);
   const log = chatLog.lines;
   const statuses: Client['statuses'] = [];
+  const members: Client['members'] = [];
+  const notices: string[] = [];
   const asked: Client['asked'] = [];
   const clock = { now: 0 };
   const host: Client['host'] = {
@@ -50,7 +54,9 @@ function client(transport: OnlineTransport, name: string, answers: (string | nul
     transport,
     host,
     {
-      status: (status, count) => statuses.push([status, count]),
+      status: (status) => statuses.push(status),
+      members: (names) => members.push(names),
+      notice: (text) => notices.push(text),
       message: (message, mine) => chatLog.add(message, mine),
       pending: (message) => chatLog.pending(message),
       failed: (clientId, reason) => chatLog.fail(clientId, reason),
@@ -61,7 +67,7 @@ function client(transport: OnlineTransport, name: string, answers: (string | nul
     },
     () => clock.now,
   );
-  return { host, actors, balloons, log, statuses, asked, session, clock };
+  return { host, actors, balloons, log, statuses, members, notices, asked, session, clock };
 }
 
 async function pair() {
@@ -89,7 +95,7 @@ describe('방 비밀번호', () => {
     const a = client(createBusTransport(bus.connect(), { password: PASSWORD, userId: 'a' }), '단풍이', [null]);
     await a.session.connect();
     expect(a.session.status).toBe('locked');
-    expect(a.statuses[a.statuses.length - 1]).toEqual(['locked', 0]);
+    expect(a.statuses[a.statuses.length - 1]).toBe('locked');
   });
 
   it('이미 멤버면 묻지 않는다', async () => {
@@ -103,9 +109,10 @@ describe('방 비밀번호', () => {
 });
 
 describe('같은 맵의 친구', () => {
-  it('두 사람이 서로를 보고 접속 수를 센다', async () => {
+  it('두 사람이 서로를 보고 접속자 이름을 받는다', async () => {
     const { a, b } = await pair();
-    expect(a.statuses[a.statuses.length - 1]).toEqual(['online', 2]);
+    expect(a.members[a.members.length - 1]).toEqual(['단풍이', '주황버섯']);
+    expect(b.members[b.members.length - 1]).toEqual(['주황버섯', '단풍이']);
     a.session.tick();
     b.session.tick();
     await flush();
@@ -232,9 +239,9 @@ describe('채팅', () => {
     let deliver = (_: ChatMessage) => {};
     const transport: OnlineTransport = {
       ...real,
-      openRoom(handlers) {
+      openRoom(handlers, name) {
         deliver = handlers.onMessage;
-        return real.openRoom(handlers);
+        return real.openRoom(handlers, name);
       },
       sendChat: async (message) => {
         const saved = await real.sendChat(message);

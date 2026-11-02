@@ -4,13 +4,13 @@ import type { Scene } from '../scene/scene';
 import type { BossExtraAction } from '../ui/bossWindow';
 import type { Hud } from '../ui/hud';
 import { createChatOverlay } from './chatOverlay';
+import { type ChatStatus, chatButtonLabel, dotState, onlineNamesLine } from './chatStatus';
 import { onlineConfig } from './config';
 import { type CoopHost, createCoop } from './coopSession';
 import { createCoopView } from './coopView';
 import { createPasswordPrompt } from './passwordPrompt';
 import { MOVE_INTERVAL_MS } from './presence';
 import { type OnlineHost, type OnlineStatus, createOnlineSession } from './session';
-import { createStatusIndicator } from './statusIndicator';
 import { createSupabaseTransport } from './supabaseTransport';
 import type { OnlineTransport } from './transport';
 
@@ -60,12 +60,23 @@ function firstJoin(): boolean {
 
 export async function startOnline(host: OnlineAppHost): Promise<void> {
   const transport = await pickTransport();
-  let onIndicator = () => {};
-  const indicator = createStatusIndicator(() => onIndicator());
-  host.hud.addIndicator(indicator.element);
+  // 상태 글자 대신 💬 버튼 모서리 점으로 보인다. 입장 전에는 이 버튼이 비밀번호 창을 연다
+  const chatButton = document.createElement('button');
+  chatButton.type = 'button';
+  chatButton.className = 'online-chat-button';
+  chatButton.innerHTML = '💬<span class="online-chat-dot" aria-hidden="true"></span>';
+  let names: string[] = [];
+  const showStatus = (status: ChatStatus) => {
+    const label = chatButtonLabel(status);
+    const who = status === 'online' ? onlineNamesLine(names) : '';
+    chatButton.dataset.dot = dotState(status);
+    chatButton.title = who ? `${label}\n${who}` : status === 'online' ? `${label} (Enter)` : label;
+    chatButton.setAttribute('aria-label', label);
+  };
+  showStatus(transport ? 'connecting' : 'unconfigured');
+  host.hud.addIndicator(chatButton);
   if (!transport) {
     console.warn('[online] VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 가 없어 온라인 기능을 숨긴다');
-    indicator.set('unconfigured', 0);
     return;
   }
 
@@ -105,10 +116,16 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
     }
   };
   const session = createOnlineSession(transport, host, {
-    status: (status, count) => {
-      indicator.set(status, count);
+    status: (status) => {
+      showStatus(status);
       onStatus(status);
     },
+    members: (list) => {
+      names = list;
+      chat.setWho(onlineNamesLine(list));
+      showStatus(session.status);
+    },
+    notice: (text) => chat.notice(text),
     message: (message, mine) => chat.add(message, mine),
     pending: (message) => chat.pending(message),
     failed: (clientId, reason) => chat.fail(clientId, reason),
@@ -119,22 +136,14 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
     else if (chat.isOpen) chat.close();
     else chat.open();
   };
-  onIndicator = openChat;
   host.hud.addMenuItem('💬 채팅', openChat);
 
-  const chatButton = document.createElement('button');
-  chatButton.type = 'button';
-  chatButton.className = 'online-chat-button';
-  chatButton.textContent = '💬';
-  chatButton.title = '채팅 (Enter)';
-  chatButton.setAttribute('aria-label', '채팅');
   // 입력창이 열려 있을 때 눌러도 입력칸 포커스를 뺏지 않아야 닫기로 동작한다
   chatButton.addEventListener('mousedown', (event) => event.preventDefault());
   chatButton.addEventListener('click', () => {
     host.focusWindow();
     openChat();
   });
-  host.hud.addIndicator(chatButton);
 
   const poll = () => {
     session.tick();

@@ -83,20 +83,32 @@ export function createSupabaseTransport(config: OnlineConfig): OnlineTransport {
       }
       return data === true ? 'ok' : 'wrong';
     },
-    openRoom(handlers) {
+    openRoom(handlers, name) {
+      let tracked = name;
+      let online = false;
       const channel: RealtimeChannel = client.channel('room:chat', {
         config: { private: true, presence: { key: userId, enabled: true } },
       });
       channel
-        .on('presence', { event: 'sync' }, () => handlers.onCount(Object.keys(channel.presenceState()).length))
+        .on('presence', { event: 'sync' }, () => {
+          const members = lastOfEach(channel.presenceState<{ name?: string }>());
+          handlers.onMembers(new Map([...members].map(([id, state]) => [id, typeof state.name === 'string' ? state.name : ''])));
+        })
         .on('broadcast', { event: 'message' }, ({ payload }) => handlers.onMessage(fromRow(payload as ChatRow)))
         .subscribe((status, error) => {
           if (error) console.warn('[online] 방 채널', status, error);
           const link = channelStatus(status);
           handlers.onStatus(link);
-          if (link === 'online') void channel.track({ at: new Date().toISOString() });
+          online = link === 'online';
+          if (online) void channel.track({ at: new Date().toISOString(), name: tracked });
         });
-      return { leave: () => void client.removeChannel(channel) };
+      return {
+        track(next) {
+          tracked = next;
+          if (online) void channel.track({ at: new Date().toISOString(), name: next });
+        },
+        leave: () => void client.removeChannel(channel),
+      };
     },
     joinMap(topic, handlers) {
       const channel = client.channel(topic, { config: { private: true, presence: { key: userId, enabled: true } } });

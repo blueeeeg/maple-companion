@@ -1,6 +1,7 @@
 import type { Era } from '../maple/api';
 import type { ActorLook, ActorPose, Scene } from '../scene/scene';
 import { createPublisher, type Publisher } from './presence';
+import { createPresenceNotices } from './presenceNotice';
 import { chatText, CHAT_MAX_LENGTH, createThrottle } from './throttle';
 import {
   type ChatMessage,
@@ -35,7 +36,11 @@ export interface OnlineHost {
 }
 
 export interface OnlineView {
-  status(status: OnlineStatus, count: number): void;
+  status(status: OnlineStatus): void;
+  /** 방에 있는 사람 이름(나 포함, 내가 맨 앞). 온라인이 아니면 빈 목록 */
+  members(names: string[]): void;
+  /** 들어왔어요·나갔어요 같은 시스템 줄 */
+  notice(text: string): void;
   /** 서버가 확정한 글. 먼저 띄운 내 글이면 clientId 가 같은 줄을 확정으로 바꿔야 한다 */
   message(message: ChatMessage, mine: boolean): void;
   /** 서버 답을 기다리는 내 글. 보내자마자 띄운다 */
@@ -153,11 +158,13 @@ export function createOnlineSession(
   now: () => number = () => performance.now(),
 ): OnlineSession {
   let status: OnlineStatus = 'connecting';
-  let count = 0;
+  let members = new Map<string, string>();
+  let roomName = '';
   let userId: string | null = null;
   let room: RoomLink | null = null;
   let map: { topic: string; link: MapLink; publisher: Publisher; peers: Map<string, PeerState> } | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const notices = createPresenceNotices((text) => view.notice(text), () => userId);
   const throttle = createThrottle();
   /** 내가 보낸 글은 보내자마자 띄우고 방 채널로 다시 오는 것은 버린다. 지난 글을 받을 때도 겹치지 않게 한다 */
   const seen = new Set<string>();
@@ -166,8 +173,14 @@ export function createOnlineSession(
 
   function setStatus(next: OnlineStatus): void {
     status = next;
-    if (next !== 'online') count = 0;
-    view.status(status, count);
+    if (next !== 'online') {
+      notices.reset();
+      if (members.size > 0) {
+        members = new Map();
+        view.members([]);
+      }
+    }
+    view.status(status);
   }
 
   function retryLater(): void {
@@ -186,6 +199,7 @@ export function createOnlineSession(
   }
 
   function closeRoom(): void {
+    notices.reset();
     leaveMap();
     room?.leave();
     room = null;
@@ -193,6 +207,7 @@ export function createOnlineSession(
 
   function openRoom(): void {
     closeRoom();
+    roomName = host.self()?.name ?? '';
     room = transport.openRoom({
       onStatus(link) {
         if (link === 'online') setStatus('online');
@@ -205,12 +220,15 @@ export function createOnlineSession(
           retryLater();
         }
       },
-      onCount(next) {
-        count = next;
-        if (status === 'online') view.status(status, count);
+      onMembers(next) {
+        if (status !== 'online') return;
+        members = new Map([...next].map(([id, name]) => [id, typeof name === 'string' ? name.trim().slice(0, 12) : '']));
+        const mine = userId ? members.get(userId) : undefined;
+        view.members([...(mine === undefined ? [] : [mine]), ...[...members].filter(([id]) => id !== userId).map(([, name]) => name)]);
+        notices.update(members);
       },
       onMessage: (message) => receive(message, true),
-    });
+    }, roomName);
   }
 
   async function connect(): Promise<void> {
@@ -302,6 +320,10 @@ export function createOnlineSession(
     const self = host.self();
     const pose = host.scene.heroPose();
     if (!self || !pose) return;
+    if (room && self.name !== roomName) {
+      roomName = self.name;
+      room.track(roomName);
+    }
     const topic = mapTopic(self.era, pose.mapId);
     if (map?.topic !== topic) joinMap(topic);
     map!.publisher.update({ ...self, ...pose }, now());
