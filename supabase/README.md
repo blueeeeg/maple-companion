@@ -3,12 +3,48 @@
 친구 몇 명이 같은 맵에서 서로를 보고 채팅하는 온라인 특수판의 서버 쪽 준비 순서다. 방 주인이 한 번만 하면 된다.
 앱 쪽 설명은 저장소 README 의 「온라인 특수판」 절에 있다.
 
-> 이 SQL 은 아직 실제 Supabase 프로젝트에서 돌려 보지 않았다. 아래 순서대로 하다가 오류가 나면 오류 문구를 그대로 남겨 주세요.
+> 2026-11-02 실제 프로젝트(eu-west-1)에 CLI 로 올려 두 창 입장·채팅·지난 글·속도 제한·비멤버 차단까지 확인했다.
+> 대시보드로 해도 되고, 아래 「CLI 로 하기」를 따라도 된다.
+
+## CLI 로 하기 (Supabase CLI 2.122)
+
+DB 비밀번호 없이 된다. CLI 가 Management API 로 임시 로그인 역할을 만들어 쓴다.
+service_role·secret 키는 어디에도 쓰지 않는다.
+
+```bash
+npx supabase login                                  # 브라우저로 한 번
+npx supabase link --project-ref <프로젝트 ref>
+npx supabase db push --linked                       # migrations 둘(테이블·함수·정책, pg_cron 과 정리 작업)
+```
+
+**익명 로그인 켜기 (CLI 로 된다)**
+`config push` 는 config.toml 에 적힌 값을 원격에 덮어쓴다. `supabase init` 이 만든 기본값을 그대로 밀면 site_url·메일 확인·MFA 같은 다른 설정까지 바뀐다.
+그래서 원격 설정을 먼저 받아 놓고 한 줄만 바꾼다. 저장소의 `config.toml` 은 이렇게 받은 것이다.
+
+```bash
+npx supabase config pull --yes          # 원격 설정을 config.toml 로
+# config.toml [auth] enable_anonymous_sign_ins = true 로 바꾼다
+npx supabase config diff                # auth.enable_anonymous_sign_ins 하나만 나와야 한다
+npx supabase config push                # 바뀌는 묶음마다 diff 를 보여 주고 y/N 을 묻는다
+```
+
+**실시간 공개 접근 끄기 (대시보드에서만)**
+CLI 2.122 의 config.toml 에는 이 설정이 없다. `[realtime] private_only` 를 적어도 diff·push 가 무시한다.
+아래 3번대로 대시보드에서 끈다. 꺼져 있지 않아도 앱이 쓰는 비공개 채널은 정책이 막는다. 끄면 정책을 안 거치는 공개 채널을 아무도 못 연다.
+
+**앱 키 넣기**
+`npx supabase projects api-keys --project-ref <ref> -o json` 에서 `type` 이 `publishable` 인 키(`sb_publishable_...`)만 골라 `.env.local` 에 넣는다. 출력에는 secret 키도 같이 나오니 화면에 그대로 띄우지 말고 골라서 바로 파일로 쓴다.
+
+**방 비밀번호**
+아래 5번의 한 줄을 SQL Editor 에서 실행한다.
+CLI 로 하려면 그 한 줄을 파일에 적어 `npx supabase db query --linked -f <파일>` 로 실행하고 파일을 지운다. 명령줄 인자로 넘기면 셸 기록에 남는다.
 
 ## 1. 프로젝트 만들기
 
 1. <https://supabase.com/dashboard> 에서 **New project** 를 누른다
-2. Region 은 **Northeast Asia (Seoul)** 을 고른다. 친구들과 가까울수록 캐릭터가 덜 끊겨 보인다
+2. Region 은 **Northeast Asia (Seoul)** 을 고른다. 친구들과 가까울수록 채팅이 빨리 뜬다
+   - eu-west-1 프로젝트를 한국에서 쟀을 때(2026-11-02): DB 를 거치는 REST 왕복 중앙값 약 350ms, 채팅이 상대 화면에 뜨기까지 약 0.9~1.1초, 위치 broadcast 왕복 중앙값 약 100~150ms
+   - 위치·접속은 DB 를 안 거쳐서 지역 영향이 작다. 채팅·입장은 DB 를 거쳐서 지역 차이가 그대로 드러난다
 3. Database password 는 비밀번호 관리자에 넣어 둔다. 앱에는 쓰지 않는다
 
 ## 2. 익명 로그인 켜기
@@ -56,6 +92,8 @@ select public.set_room_password('여기에 비밀번호');
 - 바꾸고 싶으면 같은 줄을 다시 실행한다. 이미 들어온 친구는 그대로 남는다. 모두 다시 넣게 하려면 `delete from public.members;` 를 이어서 실행한다
 
 ## 6. 채팅 24시간 뒤 지우기 (pg_cron)
+
+CLI 의 `db push` 로 올렸으면 이 절은 이미 끝났다. 두 번째 migration 이 pg_cron 을 켜고 작업을 등록한다.
 
 1. **Database → Extensions** 에서 **pg_cron** 을 켠다
 2. SQL Editor 에서 [`migrations/20261102000002_chat_retention_cron.sql`](migrations/20261102000002_chat_retention_cron.sql) 을 실행한다. 30분마다 24시간 지난 채팅을 지운다
