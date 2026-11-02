@@ -220,6 +220,8 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
         if (reason) return;
         if (input.value === text) input.value = '';
         close();
+        // 먼저 띄운 줄은 입력칸이 열려 있을 때 들어와 피드를 건너뛰었다. 서버 확정(약 1초)을 기다리지 않게 닫자마자 띄운다
+        pokeFeed();
       })
       .finally(() => (sending = false));
   }
