@@ -8,6 +8,8 @@ export interface PeerState {
   look: number[];
   standAction: string;
   walkAction: string;
+  /** 공격 동작 이름. 옛 판은 안 보낸다 */
+  attackAction?: string;
   mount: number | null;
   chair: number | null;
   mapId: number;
@@ -61,6 +63,24 @@ export interface RoomLink {
 
 export type JoinResult = 'ok' | 'wrong' | 'limited';
 
+/** 방 전체에 알리는 일(같이 도전 초대). 받은 값은 모양을 다시 확인해서 쓴다 */
+export interface EventLink {
+  send(payload: unknown): void;
+  leave(): void;
+}
+
+export interface BossHandlers {
+  onStatus(status: LinkStatus): void;
+  /** 채널에 붙어 있는 사람 user id 전부(나 포함) */
+  onPeers(ids: string[]): void;
+  onEvent(payload: unknown): void;
+}
+
+export interface BossLink {
+  send(payload: unknown): void;
+  leave(): void;
+}
+
 /** 서버(Supabase)와 테스트용 가짜가 같이 따르는 모양 */
 export interface OnlineTransport {
   /** 로그인 화면 없이 익명으로 들어간다. 내 user id */
@@ -73,6 +93,10 @@ export interface OnlineTransport {
   sendChat(message: NewChatMessage): Promise<ChatMessage>;
   /** 24시간 안 글을 오래된 것부터 */
   recentChat(): Promise<ChatMessage[]>;
+  /** room:events. 내가 보낸 것은 나에게 오지 않는다 */
+  openEvents(onEvent: (payload: unknown) => void): EventLink;
+  /** 같이 도전 채널(boss:{초대 id}). 내가 보낸 것은 나에게 오지 않는다 */
+  joinBoss(topic: string, handlers: BossHandlers): BossLink;
 }
 
 export class OnlineError extends Error {

@@ -2,6 +2,7 @@
 // 서버 규칙(비밀번호·10초 5개·120자)을 흉내만 낸다. 진짜 권한 확인은 Supabase 쪽이다
 import { CHAT_MAX_LENGTH } from './throttle';
 import {
+  type BossHandlers,
   type ChatMessage,
   type MapHandlers,
   OnlineError,
@@ -18,7 +19,12 @@ export type BusMessage =
   | { kind: 'map-leave'; topic: string; from: string }
   | { kind: 'room-here'; from: string; reply: boolean }
   | { kind: 'room-leave'; from: string }
-  | { kind: 'chat'; message: ChatMessage };
+  | { kind: 'chat'; message: ChatMessage }
+  | { kind: 'event'; payload: unknown }
+  | { kind: 'boss-hello'; topic: string; from: string }
+  | { kind: 'boss-here'; topic: string; from: string }
+  | { kind: 'boss-leave'; topic: string; from: string }
+  | { kind: 'boss-event'; topic: string; payload: unknown };
 
 /** 내가 보낸 것은 나에게 오지 않는다 */
 export interface Bus {
@@ -72,11 +78,30 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
   let member = options.member ?? false;
   const maps = new Map<string, { handlers: MapHandlers; peers: Map<string, PeerState>; state: PeerState | null }>();
   let room: { handlers: RoomHandlers; here: Set<string> } | null = null;
+  let onEvent: ((payload: unknown) => void) | null = null;
+  const bosses = new Map<string, { handlers: BossHandlers; peers: Set<string> }>();
   const history: ChatMessage[] = [];
   const sentAt: number[] = [];
   let nextId = 0;
 
   bus.listen((message) => {
+    if (message.kind === 'event') {
+      onEvent?.(message.payload);
+      return;
+    }
+    if (message.kind === 'boss-hello' || message.kind === 'boss-here' || message.kind === 'boss-leave' || message.kind === 'boss-event') {
+      const boss = bosses.get(message.topic);
+      if (!boss) return;
+      if (message.kind === 'boss-event') {
+        boss.handlers.onEvent(message.payload);
+        return;
+      }
+      if (message.kind === 'boss-leave') boss.peers.delete(message.from);
+      else boss.peers.add(message.from);
+      if (message.kind === 'boss-hello') bus.post({ kind: 'boss-here', topic: message.topic, from: userId });
+      boss.handlers.onPeers([...boss.peers]);
+      return;
+    }
     if (message.kind === 'chat') {
       history.push(message.message);
       room?.handlers.onMessage(message.message);
@@ -188,6 +213,37 @@ export function createBusTransport(bus: Bus, options: FakeOptions): OnlineTransp
       requireMember();
       const since = Date.now() - 24 * 60 * 60 * 1000;
       return history.filter((message) => Date.parse(message.createdAt) > since);
+    },
+    openEvents(handler) {
+      requireMember();
+      onEvent = handler;
+      return {
+        send: (payload) => bus.post({ kind: 'event', payload }),
+        leave() {
+          if (onEvent === handler) onEvent = null;
+        },
+      };
+    },
+    joinBoss(topic, handlers) {
+      requireMember();
+      const boss = { handlers, peers: new Set([userId]) };
+      bosses.set(topic, boss);
+      queueMicrotask(() => {
+        if (bosses.get(topic) !== boss) return;
+        handlers.onStatus('online');
+        handlers.onPeers([...boss.peers]);
+        bus.post({ kind: 'boss-hello', topic, from: userId });
+      });
+      return {
+        send(payload) {
+          if (bosses.get(topic) === boss) bus.post({ kind: 'boss-event', topic, payload });
+        },
+        leave() {
+          if (bosses.get(topic) !== boss) return;
+          bosses.delete(topic);
+          bus.post({ kind: 'boss-leave', topic, from: userId });
+        },
+      };
     },
   };
 }

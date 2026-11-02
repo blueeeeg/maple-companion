@@ -26,10 +26,21 @@ export interface BossWindowHandlers {
   onClose(): void;
 }
 
+/** 「지금 도전」 위에 붙이는 버튼(온라인 특수판의 같이 도전). 보스 차례가 와 있을 때만 누를 수 있다 */
+export interface BossExtraAction {
+  label: string;
+  title: string;
+  /** 보스 차례가 아니라 못 누를 때의 설명 */
+  idleTitle: string;
+  /** 시작하면 null 이고 받는 쪽이 창을 닫는다. 못 하면 그 까닭 */
+  run(bossId: number): string | null;
+}
+
 export interface BossWindow {
   show(state: BossWindowState): void;
   update(state: BossWindowState): void;
   hide(): void;
+  setExtraAction(action: BossExtraAction | null): void;
 }
 
 // 창은 원작 보스 입장 창(UIBossEnter.img/main/backgrnd, 802×602)을 352×226 으로 잘라 붙인다. 가로는 위아래가 똑같은 열 구간
@@ -159,6 +170,8 @@ function loadBossFrame(): Promise<Record<keyof typeof FRAME_STATES, string>> {
 /** 버튼 색은 원작 보스 UI 버튼 묶음(83×26)을 따른다. 보상 받는 진짜 싸움만 초록이고 나머지는 회색이다 */
 const ACTION_SKINS: Record<string, ButtonSkin> = {
   go: BUTTON_SKINS.bossGreen,
+  extra: BUTTON_SKINS.bossGreen,
+  'extra-off': BUTTON_SKINS.bossGrey,
   'go-practice': BUTTON_SKINS.bossGrey,
   reserve: BUTTON_SKINS.bossGrey,
   cancel: BUTTON_SKINS.bossGrey,
@@ -251,6 +264,8 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
   let problem: string | null = null;
   /** `{시대}|{몹 ID}` → 아이콘 */
   const icons = new Map<string, string>();
+  let extra: BossExtraAction | null = null;
+  const detail = pick('.boss-detail');
 
   const placeIcon = (holder: HTMLElement, boss: BossSpec) => {
     const show = (src: string) => {
@@ -421,6 +436,10 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
     }
     name.textContent = boss.name;
     meta.textContent = `Lv.${boss.minLevel}부터 · 처치 ${kills(current, boss).toLocaleString()}번`;
+    // 틱마다 다시 그려도 누르려던 버튼의 포커스가 남게 한다
+    const focusedKind = document.activeElement instanceof HTMLElement && detail.contains(document.activeElement) ? document.activeElement.dataset.kind : undefined;
+    detail.querySelector('.boss-action.is-extra')?.remove();
+    detail.classList.toggle('has-extra', extra !== null && confirming !== boss.id);
     if (confirming === boss.id) return renderConfirm(current, boss);
 
     const turn = turnLine(current.turn);
@@ -464,10 +483,27 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
       isLocked || current.blocked !== null,
     );
     go.title = ready ? '보스 차례를 써서 지금 싸워요. 보상은 보통 보스와 같아요' : '보스 차례가 아니라 보상 없는 연습전이에요';
-    // 틱마다 다시 그려도 누르려던 버튼의 포커스가 남게 한다
-    const focusedKind = [...actions.children].find((each) => each === document.activeElement)?.getAttribute('data-kind');
+    const buttons = [reserve, go];
+    if (extra) {
+      const action = extra;
+      const off = isLocked || current.blocked !== null || !ready;
+      // 초록 버튼의 원작 비활성 그림이 활성과 거의 같아서 못 누를 때는 회색 버튼으로 바꾼다
+      const more = actionButton(
+        action.label,
+        off ? 'extra-off' : 'extra',
+        () => {
+          problem = action.run(boss.id);
+          if (problem !== null) render();
+        },
+        off,
+      );
+      more.classList.add('is-extra');
+      more.title = ready ? action.title : action.idleTitle;
+      detail.append(more);
+      buttons.push(more);
+    }
     actions.replaceChildren(reserve, go);
-    if (focusedKind) [reserve, go].find((each) => each.dataset.kind === focusedKind)?.focus();
+    if (focusedKind) buttons.find((each) => each.dataset.kind === focusedKind)?.focus();
   }
 
   /** 마지막으로 그린 내용. 틱마다 같은 내용을 다시 그리면 누르던 버튼이 바뀌어 클릭이 빠진다 */
@@ -564,6 +600,11 @@ export function createBossWindow(root: HTMLElement, handlers: BossWindowHandlers
       screen.hidden = true;
       confirming = null;
       problem = null;
+    },
+    setExtraAction(action) {
+      if (action === extra) return;
+      extra = action;
+      if (!screen.hidden) render();
     },
   };
 }

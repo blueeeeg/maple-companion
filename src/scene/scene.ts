@@ -158,6 +158,9 @@ const BOSS_COIN_SPREAD = 70;
 const BOSS_COIN_STAGGER_MS = 70;
 /** 대미지 숫자가 HUD·HP 게이지(화면 위 약 70px)에 가리지 않게 보스 머리가 화면 밖이면 숫자를 내려 띄운다 */
 const BOSS_DAMAGE_CEILING = 110;
+/** 같이 싸울 때 캐릭터끼리 겹치지 않게 순서마다 물러서는 거리. 세 칸마다 다시 앞으로 온다 */
+const COOP_SLOT_GAP = 70;
+const COOP_SLOTS = 3;
 /** 포털까지 걷다가 이보다 오래 걸리면(바닥 끝에 막히는 등) 그 자리에서 들어간다 */
 const PORTAL_WALK_LIMIT_MS = 60_000;
 /** 포털을 누르면 가는 맵 이름을 이만큼 띄운다 */
@@ -192,6 +195,16 @@ export interface BossFightEvents {
   onReturn(): void;
 }
 
+/** 여럿이 같이 싸우는 보스. HP 는 밖(방장)이 정해 setBossHp 로 넣고, 장면은 내가 때린 몫만 알린다 */
+export interface CoopBossLink {
+  /** 같이 싸우는 사람 가운데 내 순서. 캐릭터가 겹쳐 서지 않게 이만큼 물러선다 */
+  slot: number;
+  /** 내가 때린 몫. points 는 깎은 HP, damages 는 띄운 대미지 숫자 */
+  onHit(points: number, damages: number[], critical: boolean): void;
+  /** 보스가 맵에 섰다. 그사이 바뀐 HP 를 다시 넣을 때다 */
+  ready(): void;
+}
+
 export interface SceneCallbacks {
   /** 몬스터를 잡으면 떨어뜨릴 메소 금액을 돌려준다 */
   onKill(monster: MonsterSpec): number;
@@ -224,7 +237,13 @@ export interface Scene {
    * 보스나 보스 맵을 못 받아 오면 마을에 그대로 남고 실패한다. hits: 보스를 잡는 데 드는 스킬 사용 횟수.
    * era: 보스 맵·몹·게이지를 받을 시대(캐릭터의 시대)
    */
-  startBossFight(boss: BossSpec, hits: number, events: BossFightEvents, era?: Era): Promise<void>;
+  startBossFight(boss: BossSpec, hits: number, events: BossFightEvents, era?: Era, coop?: CoopBossLink): Promise<void>;
+  /** 같이 싸우는 보스의 HP. 줄면 맞는 모습을 보이고 0 이면 쓰러진다 */
+  setBossHp(hp: number, maxHp: number): void;
+  /** 다른 사람이 때린 대미지 숫자를 보스 위에 띄운다 */
+  showBossDamage(damages: number[], critical: boolean): void;
+  /** 같이 싸우기를 그만두고 지금 HP 그대로 혼자 이어 싸운다 */
+  endCoop(): void;
   celebrate(text: string): void;
   /** 설정 「데미지 숫자 표시」 */
   setDamageNumbers(visible: boolean): void;
@@ -297,6 +316,8 @@ export interface ActorLook {
   era: Era;
   standAction: string;
   walkAction: string;
+  /** 없으면 공격도 서 있는 그림이다 */
+  attackAction?: string;
 }
 
 export type CastResult = 'ok' | 'noArt' | 'failed' | 'late' | 'notReady';
@@ -341,6 +362,8 @@ interface BossState {
   body: { left: number; right: number; top: number; height: number };
   /** 몸통 뒤에 원점을 맞춰 겹친 부위(클래식 자쿰 팔). 부위가 있는 보스는 돌아서지 않는다(원작 noFlip) */
   parts: { sprite: Sprite; animations: BossPart }[];
+  /** 같이 싸우는 중이면 있다. HP 를 직접 깎지 않는다 */
+  coop?: CoopBossLink;
   finish(): void;
 }
 
@@ -988,8 +1011,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       ? Math.max(bossSpan.y - target.boss!.body.top, bossDamageCeiling() + (lines - 1) * HIT_LINE_HEIGHT)
       : target.sprite.y - target.sprite.height;
     const base = (80 + Math.random() * 120) * (1 + heroTier * heroTier * 4) * (bonus ? 1.5 : 1);
+    const damages: number[] = [];
     for (let line = 0; line < lines; line += 1) {
       const damage = Math.floor(base * (0.85 + Math.random() * 0.3));
+      damages.push(damage);
       const baseline = top + 8 - line * HIT_LINE_HEIGHT;
       let waitMs = line * HIT_LINE_STAGGER_MS;
       addEffect(new Container(), worldEffects, (dtMs) => {
@@ -1000,19 +1025,44 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       });
       if (skill) playLayers(skill.hit, center.x, center.y, facing, line * HIT_LINE_STAGGER_MS);
     }
-    target.hp -= bonus ? 2 : 1;
     target.hitMs = 300;
-    if (target.boss) bossGauge.setRatio(target.hp / target.boss.maxHp);
-    if (target.hp <= 0) {
-      target.dyingMs = 0;
-      target.clockMs = 0;
-      target.sprite.eventMode = 'none';
-      if (target.boss) dropBossMeso(target.boss.events.onDefeat(), center.x, target.sprite.y - 10);
-      else if (target.field) {
-        manual?.table.kill(target.field.slot, manual.clockMs);
-        dropMeso(callbacks.onFieldKill?.(target.spec) ?? 0, target.sprite.x, target.sprite.y - 10, target.sprite.y);
-      } else dropMeso(callbacks.onKill(target.spec), target.sprite.x, target.sprite.y - 10);
+    const coop = target.boss?.coop;
+    if (coop) {
+      coop.onHit(bonus ? 2 : 1, damages, bonus);
+      return;
     }
+    target.hp -= bonus ? 2 : 1;
+    if (target.boss) bossGauge.setRatio(target.hp / target.boss.maxHp);
+    if (target.hp <= 0) defeat(target);
+  }
+
+  function defeat(target: Encounter): void {
+    target.dyingMs = 0;
+    target.clockMs = 0;
+    target.sprite.eventMode = 'none';
+    if (target.boss) {
+      const span = bossBodySpan(target, target.boss);
+      dropBossMeso(target.boss.events.onDefeat(), (span.left + span.right) / 2, target.sprite.y - 10);
+    } else if (target.field) {
+      manual?.table.kill(target.field.slot, manual.clockMs);
+      dropMeso(callbacks.onFieldKill?.(target.spec) ?? 0, target.sprite.x, target.sprite.y - 10, target.sprite.y);
+    } else dropMeso(callbacks.onKill(target.spec), target.sprite.x, target.sprite.y - 10);
+  }
+
+  /** 다른 사람이 때린 대미지. 내 숫자와 겹치지 않게 조금 옆에 띄운다 */
+  function floatBossDamage(target: Encounter, boss: BossState, damages: number[], critical: boolean): void {
+    const span = bossBodySpan(target, boss);
+    const x = (span.left + span.right) / 2 + (Math.random() - 0.5) * 60;
+    const top = Math.max(span.y - boss.body.top, bossDamageCeiling() + (damages.length - 1) * HIT_LINE_HEIGHT) + 20;
+    damages.forEach((damage, line) => {
+      let waitMs = line * HIT_LINE_STAGGER_MS;
+      addEffect(new Container(), worldEffects, (dtMs) => {
+        waitMs -= dtMs;
+        if (waitMs > 0) return true;
+        floatDamage(damage, x, top + 8 - line * HIT_LINE_HEIGHT, critical);
+        return false;
+      });
+    });
   }
 
   /** 지금 보스 몸통이 차지한 좌우 끝(맵 x)과 발 높이. 몸통은 stand 첫 프레임 기준이라 동작이 바뀌어도 흔들리지 않는다 */
@@ -1408,8 +1458,15 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     encounter.ageMs += dtMs;
     if (encounter.ageMs > ENCOUNTER_LIMIT_MS && encounter.dyingMs === null) {
       console.warn(`[scene] ${encounter.spec.name} 사냥이 끝나지 않아 마무리한다`);
-      encounter.hp = 1;
-      strike(encounter, false);
+      // 같이 싸우는 보스는 때려도 HP 가 안 깎이니 바로 쓰러뜨린다. 사람마다 자기 보상을 정산한다
+      if (encounter.boss?.coop) {
+        encounter.hp = 0;
+        bossGauge.setRatio(0);
+        defeat(encounter);
+      } else {
+        encounter.hp = 1;
+        strike(encounter, false);
+      }
     }
     if (encounter.boss) {
       updateBoss(encounter, encounter.boss, dtMs);
@@ -2170,8 +2227,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   function remoteActionName(look: ActorLook, action: ActorAction): string {
     if (action === 'walk') return look.walkAction;
-    // 공격 동작은 스킬·무기마다 달라 서 있는 그림으로 둔다
-    if (action === 'stand' || action === 'attack') return look.standAction;
+    // 공격 동작을 안 알려 준 사람은 서 있는 그림으로 둔다
+    if (action === 'attack') return look.attackAction ?? look.standAction;
+    if (action === 'stand') return look.standAction;
     return action;
   }
 
@@ -2585,7 +2643,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
           encounterLoading = false;
         });
     },
-    async startBossFight(boss, hits, events, era = 'current') {
+    async startBossFight(boss, hits, events, era = 'current', coop) {
       if (encounter || encounterLoading || bossBusy || !ground || !home) throw new Error('지금은 보스와 싸울 수 없음');
       bossBusy = true;
       try {
@@ -2608,7 +2666,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
         const first = animations.stand.frames[0];
         const body = bossBodyBox([animations.stand, ...mob.parts.map((part) => part.stand)]);
         const bossStandDistance = framedDistance(
-          Math.max(standDistance(), -body.left + HERO_HALF_WIDTH),
+          Math.max(standDistance(), -body.left + HERO_HALF_WIDTH) + (coop ? (coop.slot % COOP_SLOTS) * COOP_SLOT_GAP : 0),
           viewWidth,
           FRAME_MARGIN,
         );
@@ -2650,6 +2708,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
             standDistance: bossStandDistance,
             body,
             parts: [],
+            coop,
             finish: () => finish(),
           },
         };
@@ -2677,6 +2736,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
             .catch(() => {});
         }
         events.onArrive();
+        coop?.ready();
         updateCamera(1);
         await fadeTo(0);
         showBanner(boss.name, BOSS_BANNER_Y);
@@ -2689,6 +2749,28 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       } finally {
         bossBusy = false;
       }
+    },
+    setBossHp(hp, maxHp) {
+      const target = encounter;
+      if (!target?.boss || target.dyingMs !== null) return;
+      if (hp < target.hp) target.hitMs = 300;
+      target.hp = Math.max(0, hp);
+      target.boss.maxHp = maxHp;
+      bossGauge.setRatio(target.hp / maxHp);
+      if (target.hp <= 0) defeat(target);
+      wake();
+    },
+    showBossDamage(damages, critical) {
+      const target = encounter;
+      if (!target?.boss || target.dyingMs !== null || damages.length === 0) return;
+      floatBossDamage(target, target.boss, damages, critical);
+      wake();
+    },
+    endCoop() {
+      const target = encounter;
+      if (!target?.boss?.coop) return;
+      target.boss.coop = undefined;
+      if (target.hp <= 0 && target.dyingMs === null) defeat(target);
     },
     celebrate(text) {
       // main.ts 는 레벨업이면 「LEVEL UP!」, 전직이면 「N차 전직!」·「전직!」을 넘긴다

@@ -31,7 +31,7 @@ import {
   resolveHunts,
   settleHunt,
 } from './game/bosses';
-import { bossTurn, settleBossFight } from './game/bossChallenge';
+import { bossTurn, settleBossFight, settleBossKill } from './game/bossChallenge';
 import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { selectChair } from './game/chairs';
@@ -76,7 +76,7 @@ import { createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
 import { startUpdateChecks } from './platform/updater';
 import { loadOnline } from './onlineGate';
-import { createScene } from './scene/scene';
+import { type CoopBossLink, createScene } from './scene/scene';
 import { frameOffset, viewportFor } from './scene/viewport';
 import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui/bossWindow';
 import { type CashShopState, createCashShop } from './ui/cashShop';
@@ -159,6 +159,10 @@ let panelVisible = true;
 let bossSkippedAt = -1;
 /** 지금 싸우는 보스가 어떤 싸움인지. 보스 맵에 들어가 마을로 돌아올 때까지 남는다 */
 let bossFight: BossFight['kind'] | null = null;
+/** 온라인 특수판에서 같이 도전을 기다리는 까닭. 기다리는 동안 자동 사냥·이동·보스 차례를 쉰다 */
+let coopWaiting: string | null = null;
+/** 온라인 특수판 채팅 입력창이 열려 있다. 그동안 직접 조작 키를 막는다 */
+let chatTyping = false;
 let lastCastAt = -Infinity;
 /** 스킬창 아이콘을 미리 받아 둔 직업·차수 */
 let prefetchedSkillBook = '';
@@ -367,7 +371,7 @@ const scene = await createScene(stage, {
 const isMuted = () => roster.muted || settings.bgmVolume === 0;
 
 const manualKeys = createManualKeys(window, {
-  enabled: () => settings.manualControl && screen === 'map' && isShown(),
+  enabled: () => settings.manualControl && screen === 'map' && isShown() && !chatTyping,
   onPress: () => scene.nudge(),
   onExit: () => setManualControl(false),
 });
@@ -654,6 +658,7 @@ function openBoss(): void {
 /** 보스와 싸울 수 없는 까닭. 창이 떠 있는 동안 맵이 멈춰 있어 싸우던 몬스터는 창을 닫아야 끝난다 */
 function challengeBlocked(): string | null {
   if (bossFight !== null) return '보스와 싸우는 중이에요';
+  if (coopWaiting) return coopWaiting;
   if (settings.manualControl) return '직접 조작 중에는 도전할 수 없어요. ⚙️ 메뉴에서 끄고 도전해 주세요';
   if (scene.inEncounter) return '몬스터와 싸우는 중이에요. 창을 닫고 잡은 뒤에 도전할 수 있어요';
   if (townLoading) return '맵을 옮기는 중이에요. 잠시 뒤 다시 도전해 주세요';
@@ -691,9 +696,8 @@ function challengeBoss(bossId: number, practice: boolean): string | null {
   const character = selectedCharacter(roster);
   const boss = character ? bossesOf(character.era).find((each) => each.id === bossId) : undefined;
   if (!character || !boss) return '보스를 찾지 못했어요';
-  if (boss.minLevel > characterLevel(character).level) return `Lv.${boss.minLevel}부터 도전할 수 있어요`;
-  const blocked = challengeBlocked();
-  if (blocked) return blocked;
+  const problem = bossProblem(character, boss);
+  if (problem) return problem;
   const ready = bossTurn(character, huntPace(settings)).kind === 'ready';
   // 창을 연 사이 차례가 바뀌었으면 연습전을 진짜 싸움으로 바꾸지 않고 창에서 다시 고르게 한다
   if (!practice && !ready) return '보스 차례가 아니에요. 연습전으로 도전할 수 있어요';
@@ -701,6 +705,30 @@ function challengeBoss(bossId: number, practice: boolean): string | null {
   closeInfoWindow();
   if (practice) hud.notify(`연습전 · ${boss.name} · 경험치·메소·처치 기록이 없어요`);
   return null;
+}
+
+function bossProblem(character: Character, boss: BossSpec): string | null {
+  if (boss.minLevel > characterLevel(character).level) return `Lv.${boss.minLevel}부터 도전할 수 있어요`;
+  return challengeBlocked();
+}
+
+/** 온라인 특수판 같이 도전. 보스 차례를 쓰는 진짜 싸움만 된다 */
+function coopProblem(bossId: number): string | null {
+  const character = selectedCharacter(roster);
+  const boss = character ? bossesOf(character.era).find((each) => each.id === bossId) : undefined;
+  if (!character || !boss) return '보스를 찾지 못했어요';
+  const problem = bossProblem(character, boss);
+  if (problem) return problem;
+  return bossTurn(character, huntPace(settings)).kind === 'ready' ? null : '보스 차례가 아니에요';
+}
+
+function coopFight(bossId: number, maxHp: number, link: CoopBossLink | null): Promise<void> | string {
+  const problem = coopProblem(bossId);
+  if (problem) return problem;
+  const character = selectedCharacter(roster)!;
+  const boss = bossesOf(character.era).find((each) => each.id === bossId)!;
+  if (screen === 'boss') closeInfoWindow();
+  return fightBoss(boss, { kind: link ? 'coop' : 'challenge' }, character.era, { hits: maxHp, link });
 }
 
 function closeInfoWindow(): void {
@@ -824,10 +852,10 @@ function enterPortal(exit: Point): void {
 }
 
 /**
- * turn: 사냥 차례로 나온 보스, challenge: 보스 도전 창에서 보스 차례를 써서 부른 보스(둘 다 보통 보스로 정산),
- * practice: 보상 없는 연습전, dev: 개발용으로 불러낸 보스(사냥 진행을 건드리지 않고 보스 한 번 몫만 준다)
+ * turn: 사냥 차례로 나온 보스, challenge: 보스 도전 창에서 보스 차례를 써서 부른 보스, coop: 온라인 특수판 같이 도전
+ * (셋 다 보통 보스로 정산), practice: 보상 없는 연습전, dev: 개발용으로 불러낸 보스(사냥 진행을 건드리지 않고 보스 한 번 몫만 준다)
  */
-type BossFight = { kind: 'turn'; encounterNumber: number } | { kind: 'challenge' | 'practice' | 'dev' };
+type BossFight = { kind: 'turn'; encounterNumber: number } | { kind: 'challenge' | 'coop' | 'practice' | 'dev' };
 
 function handleBossKill(boss: BossSpec, fight: BossFight): number {
   const character = selectedCharacter(roster);
@@ -842,14 +870,15 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
   }
   let xp: number;
   let meso: number;
+  let drops: number[];
   if (fight.kind === 'dev') {
     xp = bossXp(pace);
     meso = bossMeso(reward, Math.random, pace);
     character.killXp += xp;
     character.meso += meso;
     character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
-  } else ({ xp, meso } = settleBossFight(character, pace, reward, boss, false));
-  const drops = awardBossDrops(character, boss.id, jobPath(character.jobLine, character.jobBranch), false, Math.random, character.era);
+    drops = awardBossDrops(character, boss.id, jobPath(character.jobLine, character.jobBranch), false, Math.random, character.era);
+  } else ({ xp, meso, drops } = settleBossKill(character, pace, reward, boss));
   writeRoster(roster);
   hud.notify(`보스 ${boss.name} 처치 · EXP +${Math.round(xp).toLocaleString()} · 메소 +${meso.toLocaleString()}`);
   announceDrops(
@@ -860,8 +889,8 @@ function handleBossKill(boss: BossSpec, fight: BossFight): number {
   return meso;
 }
 
-/** era: 보스 맵·몹·BGM 을 받을 시대(캐릭터의 시대) */
-function fightBoss(boss: BossSpec, fight: BossFight, era: Era): void {
+/** era: 보스 맵·몹·BGM 을 받을 시대(캐릭터의 시대). coop: 같이 도전의 보스 HP 와 연결. 마을로 돌아오면 끝난다 */
+function fightBoss(boss: BossSpec, fight: BossFight, era: Era, coop?: { hits: number; link: CoopBossLink | null }): Promise<void> {
   const practice = fight.kind === 'practice';
   bossFight = fight.kind;
   if (practice) hud.setPractice(boss.name);
@@ -869,8 +898,8 @@ function fightBoss(boss: BossSpec, fight: BossFight, era: Era): void {
     bossFight = null;
     hud.setPractice(null);
   };
-  scene
-    .startBossFight(boss, bossHits(), {
+  return scene
+    .startBossFight(boss, coop?.hits ?? bossHits(), {
       // 숨겨진 동안 치른 보스는 장면 없이 정산되니 보스 곡으로 바꾸지 않는다
       onArrive: () => {
         if (isShown()) bgm.setMap(era === 'current' ? boss.mapId : { mapId: boss.mapId, era });
@@ -881,7 +910,7 @@ function fightBoss(boss: BossSpec, fight: BossFight, era: Era): void {
         if (field && town) bgm.setMap(bgmMapOf(field.mapId, town));
         else if (town) bgm.setTown(town);
       },
-    }, era)
+    }, era, coop?.link ?? undefined)
     .then(done, () => {
       done();
       // 도전 창에서 고른 보스를 못 불렀으면 보스 차례는 그대로 두고 다음 차례에 다시 나온다
@@ -1175,6 +1204,8 @@ async function tick(): Promise<void> {
   // 직접 조작 중에는 마을 돌기·사냥터 이동·자동 사냥·보스 차례를 쉰다. 쌓인 사냥 시계는 직접 잡은 몬스터가 꺼내 쓰고,
   // 끄면 남은 몫을 「비운 사이」 처럼 이어서 치른다
   if (settings.manualControl) return;
+  // 같이 도전을 기다리는 동안 맵을 옮기거나 사냥을 시작하면 시작 신호가 왔을 때 보스 맵으로 못 간다
+  if (coopWaiting) return;
 
   if (!scene.inEncounter) {
     if (pinned) {
@@ -1300,6 +1331,36 @@ loadOnline()
       hud,
       scene,
       isActive: () => isShown() && screen === 'map',
+      focusWindow: () => desktop.focusWindow(),
+      setTyping(open) {
+        chatTyping = open;
+        manualKeys.clear();
+      },
+      setBossAction(action) {
+        bossWindow.setExtraAction(
+          action && {
+            ...action,
+            run(bossId) {
+              const problem = action.run(bossId);
+              if (!problem) closeInfoWindow();
+              return problem;
+            },
+          },
+        );
+      },
+      coop: {
+        me() {
+          const character = selectedCharacter(roster);
+          return character ? { name: character.name, era: character.era, level: characterLevel(character).level } : null;
+        },
+        check: coopProblem,
+        fight: coopFight,
+        setWaiting(reason) {
+          coopWaiting = reason;
+          const character = selectedCharacter(roster);
+          if (character && screen === 'boss') bossWindow.update(bossState(character));
+        },
+      },
       self() {
         const character = selectedCharacter(roster);
         if (!character) return null;
@@ -1310,6 +1371,7 @@ loadOnline()
           look: job.look,
           standAction: job.standAction,
           walkAction: job.walkAction,
+          attackAction: job.attackAction,
           mount: character.mountSelected,
           chair: character.chairSelected,
         };

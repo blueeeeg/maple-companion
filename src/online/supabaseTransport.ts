@@ -143,5 +143,40 @@ export function createSupabaseTransport(config: OnlineConfig): OnlineTransport {
       if (error) fail(error);
       return ((data ?? []) as ChatRow[]).map(fromRow).reverse();
     },
+    openEvents(onEvent) {
+      const channel = client.channel('room:events', { config: { private: true } });
+      let subscribed = false;
+      channel
+        .on('broadcast', { event: 'event' }, ({ payload }) => onEvent(payload))
+        .subscribe((status, error) => {
+          if (error) console.warn('[online] 알림 채널', status, error);
+          subscribed = status === 'SUBSCRIBED';
+        });
+      return {
+        send(payload) {
+          if (subscribed) void channel.send({ type: 'broadcast', event: 'event', payload });
+        },
+        leave: () => void client.removeChannel(channel),
+      };
+    },
+    joinBoss(topic, handlers) {
+      const channel = client.channel(topic, { config: { private: true, presence: { key: userId, enabled: true } } });
+      let subscribed = false;
+      channel
+        .on('presence', { event: 'sync' }, () => handlers.onPeers(Object.keys(channel.presenceState())))
+        .on('broadcast', { event: 'event' }, ({ payload }) => handlers.onEvent(payload))
+        .subscribe((status, error) => {
+          if (error) console.warn('[online] 보스 채널', topic, status, error);
+          subscribed = status === 'SUBSCRIBED';
+          handlers.onStatus(channelStatus(status));
+          if (subscribed) void channel.track({ at: new Date().toISOString() });
+        });
+      return {
+        send(payload) {
+          if (subscribed) void channel.send({ type: 'broadcast', event: 'event', payload });
+        },
+        leave: () => void client.removeChannel(channel),
+      };
+    },
   };
 }

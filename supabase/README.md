@@ -1,6 +1,6 @@
 # 온라인 특수판 서버(Supabase) 준비
 
-친구 몇 명이 같은 맵에서 서로를 보고 채팅하는 온라인 특수판의 서버 쪽 준비 순서다. 방 주인이 한 번만 하면 된다.
+친구 몇 명이 같은 맵에서 서로를 보고 채팅하고 보스를 같이 잡는 온라인 특수판의 서버 쪽 준비 순서다. 방 주인이 한 번만 하면 된다.
 앱 쪽 설명은 저장소 README 의 「온라인 특수판」 절에 있다.
 
 > 2026-11-02 실제 프로젝트(eu-west-1)에 CLI 로 올려 두 창 입장·채팅·지난 글·속도 제한·비멤버 차단까지 확인했다.
@@ -14,7 +14,8 @@ service_role·secret 키는 어디에도 쓰지 않는다.
 ```bash
 npx supabase login                                  # 브라우저로 한 번
 npx supabase link --project-ref <프로젝트 ref>
-npx supabase db push --linked                       # migrations 둘(테이블·함수·정책, pg_cron 과 정리 작업)
+npx supabase db push --linked --dry-run             # 올릴 migration 이름만 본다
+npx supabase db push --linked                       # migrations 넷(테이블·함수·정책, pg_cron 과 정리 작업, client_id, 같이 도전 채널)
 ```
 
 **익명 로그인 켜기 (CLI 로 된다)**
@@ -75,9 +76,23 @@ CLI 로 하려면 그 한 줄을 파일에 적어 `npx supabase db query --linke
 | `recent_chat()` | 24시간 안 채팅 100개. 부를 때 24시간 지난 글을 지운다 |
 | `set_room_password(new_password)` | 방 비밀번호 정하기. SQL Editor(또는 service_role)에서만 부를 수 있다 |
 | 채팅 트리거 | 보낸 사람·시각은 서버가 정하고, 10초에 5개 넘게 보내면 거절, 저장된 글만 `room:chat` 채널로 내보낸다 |
-| 실시간 정책 | 멤버만 `room:chat`·`map:{시대}:{맵 ID}` 채널을 받는다. 맵 채널에는 위치·접속을 보내고, 방 채널에는 접속만 알린다(채팅은 트리거만 보낸다) |
+| 실시간 정책 | 멤버만 `room:chat`·`map:{시대}:{맵 ID}` 채널을 받는다. 맵 채널에는 위치·접속을 보내고, 방 채널에는 접속만 알린다(채팅은 트리거만 보낸다). 같이 도전 채널은 아래 「같이 도전 채널」 |
 
 모든 테이블에 RLS 가 켜져 있다.
+
+### 같이 도전 채널 (`20261102000004_online_coop_channels.sql`)
+
+보스 도전 창 「같이 도전」이 쓰는 채널 둘을 멤버에게 연다. 실시간 정책 `online_members_receive`·`online_members_send` 를 이 migration 이 다시 만든다(테이블은 늘지 않는다).
+
+**`room:events`**
+같이 도전 초대와 초대 닫기를 방 전체에 알린다. 멤버가 broadcast 로 보내고 받는다. `room:chat` 은 그대로 멤버가 broadcast 할 수 없다.
+
+**`boss:{초대 id}`**
+같이 싸우는 사람끼리 쓴다. 누가 남았는지는 presence 로, 시작·때린 몫·보스 HP·처치·취소는 broadcast 로 주고받는다. 서버에 남는 것은 없다.
+
+- 채널 권한은 「멤버인가」까지만 본다. broadcast 의 보낸 사람(`from`)은 보낸 쪽이 적는 값이라 서버가 보증하지 않는다. 앱이 받은 값의 모양·범위를 다시 보고, 보스 HP 는 방장(앱)이 한 사람이 한 번에·1초에 깎을 수 있는 양을 넘는 몫을 버린다
+- 보상은 서버를 거치지 않고 사람마다 자기 기기에서 정산한다. 혼자 잡을 때와 같다
+- 2026-11-02 `db push --dry-run` 으로 이 migration 하나만 올라가는 것을 본 뒤 올렸다. `pg_policies` 에서 두 정책이 `room:events`·`boss:%` 를 담은 것을 확인했다
 
 ## 5. 방 비밀번호 정하기
 
@@ -136,8 +151,9 @@ pnpm tauri build --config src-tauri/tauri.online.conf.json
 1. `pnpm dev:online` 으로 브라우저에서 연다(<http://localhost:1420>). HUD 오른쪽에 노란 점과 「입장하기」, 그리고 비밀번호 창이 뜬다
 2. 비밀번호를 넣으면 초록 점과 「접속 1명」이 된다. SQL Editor 에서 `select * from public.members;` 에 행이 하나 생긴다
 3. 다른 브라우저(또는 시크릿 창)로 하나 더 연다. 둘 다 설정에서 같은 마을에 머물게 하면 서로의 캐릭터가 이름표와 함께 보이고 「접속 2명」이 된다
-4. ⚙️ 메뉴 「💬 채팅」으로 글을 보낸다. 두 창의 채팅창에 뜨고, 같은 맵이면 머리 위에 말풍선이 뜬다. `select * from public.chat_messages order by id desc limit 5;` 에 남는다
+4. 창을 누르고 Enter 를 눌러(또는 HUD 의 💬) 글을 보낸다. 두 창의 EXP 바 위에 줄이 뜨고, 같은 맵이면 머리 위에 말풍선이 뜬다. `select * from public.chat_messages order by id desc limit 5;` 에 남는다
 5. 비밀번호를 틀리게 넣으면 「비밀번호가 달라요」, 다섯 번 틀리면 10분 동안 「너무 많이 틀렸어요」가 뜬다
+6. 보스 차례가 와 있는 두 캐릭터로 한쪽이 보스 도전 창 「같이 도전」을 누르면 다른 쪽에 초대가 뜬다. 「참여」 → 「바로 시작」 하면 둘이 같은 보스 맵에서 같은 HP 게이지로 싸우고, 잡으면 둘 다 처치 기록이 1 늘어난다
 
 ## 운영 메모
 

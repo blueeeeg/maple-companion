@@ -1,6 +1,8 @@
 import type { Era } from '../maple/api';
 import { type BossSpec, type HuntPace, type HuntProgress, bossDue, bossesOf, settleHunt } from './bosses';
 import type { Character } from './characters';
+import { awardBossDrops } from './equipment';
+import { jobPath } from './jobs';
 import type { Town } from './towns';
 
 /** 저장에서 읽은 보스 지정. 그 시대 보스 목록에 없는 보스면 지정 없음이다 */
@@ -64,4 +66,20 @@ export function settleBossFight(
   character.monsterBook[boss.name] = (character.monsterBook[boss.name] ?? 0) + 1;
   if (character.reservedBossId === boss.id) character.reservedBossId = null;
   return reward;
+}
+
+/**
+ * 진짜 보스 싸움(사냥 차례·「지금 도전」·온라인 특수판 「같이 도전」)을 정산하고 드롭(장비·의자·탈것 천장 포함)을 굴린다.
+ * 같이 잡아도 덤은 없고 사람마다 자기 것을 혼자 잡을 때와 똑같이 정산한다
+ */
+export function settleBossKill(
+  character: Character,
+  pace: HuntPace,
+  town: Town,
+  boss: BossSpec,
+  random = Math.random,
+): { xp: number; meso: number; drops: number[] } {
+  const { xp, meso } = settleBossFight(character, pace, town, boss, false, random);
+  const drops = awardBossDrops(character, boss.id, jobPath(character.jobLine, character.jobBranch), false, random, character.era);
+  return { xp, meso, drops };
 }

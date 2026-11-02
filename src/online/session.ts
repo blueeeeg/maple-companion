@@ -21,6 +21,7 @@ export interface SelfLook {
   look: number[];
   standAction: string;
   walkAction: string;
+  attackAction?: string;
   mount: number | null;
   chair: number | null;
 }
@@ -55,6 +56,7 @@ const lookOf = (state: PeerState): ActorLook => ({
   era: state.era,
   standAction: state.standAction,
   walkAction: state.walkAction,
+  attackAction: state.attackAction,
 });
 const poseOf = (state: Pick<PeerState, 'mapId' | 'x' | 'y' | 'facing' | 'action'>): ActorPose => ({
   mapId: state.mapId,
@@ -86,6 +88,7 @@ export function cleanPeer(raw: unknown): PeerState | null {
   if (!Array.isArray(state.look) || state.look.length > 40 || !state.look.every((id) => Number.isInteger(id) && id > 0)) return null;
   if (typeof state.standAction !== 'string' || !ACTION_NAME.test(state.standAction)) return null;
   if (typeof state.walkAction !== 'string' || !ACTION_NAME.test(state.walkAction)) return null;
+  if (state.attackAction !== undefined && (typeof state.attackAction !== 'string' || !ACTION_NAME.test(state.attackAction))) return null;
   if (!Number.isInteger(state.mapId)) return null;
   const optionalId = (value: unknown) => (Number.isInteger(value) ? (value as number) : null);
   return {
@@ -94,6 +97,7 @@ export function cleanPeer(raw: unknown): PeerState | null {
     look: state.look,
     standAction: state.standAction,
     walkAction: state.walkAction,
+    ...(state.attackAction ? { attackAction: state.attackAction } : {}),
     mount: optionalId(state.mount),
     chair: optionalId(state.chair),
     mapId: state.mapId!,
@@ -130,6 +134,8 @@ export interface OnlineSession {
   /** 아직 안 띄운 지난 24시간 글 */
   recent(): Promise<{ message: ChatMessage; mine: boolean }[]>;
   readonly status: OnlineStatus;
+  /** 익명 로그인한 내 id. 아직이면 null */
+  readonly userId: string | null;
 }
 
 function failReason(error: unknown): string {
@@ -374,6 +380,9 @@ export function createOnlineSession(
     recent,
     get status() {
       return status;
+    },
+    get userId() {
+      return userId;
     },
   };
 }

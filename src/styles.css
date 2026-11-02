@@ -3847,6 +3847,18 @@ body {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.65);
 }
 
+/* 「지금 도전」 바로 위에 붙는 버튼(온라인 특수판). 그 자리만큼 설명 줄을 줄인다 */
+.boss-action.is-extra {
+  position: absolute;
+  left: 90px;
+  top: 102px;
+}
+
+.boss-detail.has-extra .boss-body {
+  height: 56px;
+  overflow: hidden;
+}
+
 .boss-action:hover:not(:disabled) {
   filter: brightness(1.15);
 }

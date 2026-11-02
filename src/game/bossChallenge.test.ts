@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_APPEARANCE } from './appearance';
 import { BOSSES, BOSS_XP, DEFAULT_PACE, type HuntPace, type HuntProgress, bossDue, resolveHunts } from './bosses';
-import { bossTurn, bossWaitSeconds, formatBossWait, normalizeReservedBoss, settleBossFight } from './bossChallenge';
+import { bossTurn, bossWaitSeconds, formatBossWait, normalizeReservedBoss, settleBossFight, settleBossKill } from './bossChallenge';
 import { type Character, createCharacter } from './characters';
 import { encountersDue } from './encounters';
+import { awardBossDrops } from './equipment';
+import { jobPath } from './jobs';
 import { TOWNS } from './towns';
 
 const henesys = TOWNS[0];
@@ -113,6 +115,32 @@ describe('진짜 도전', () => {
     const same = freshCharacter({ ...progress(19), reservedBossId: pinkBean.id });
     settleBossFight(same, DEFAULT_PACE, henesys, pinkBean, false);
     expect(same.reservedBossId).toBeNull();
+  });
+});
+
+/** 같은 씨앗이면 같은 수열 */
+const seeded = (seed: number) => () => {
+  seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+  return seed / 2_147_483_648;
+};
+
+describe('같이 도전 정산', () => {
+  it('같이 잡은 보스는 혼자 「지금 도전」 으로 잡은 것과 똑같이 정산한다(보스 차례·처치 기록·드롭·천장)', () => {
+    for (const seed of [1, 7, 42, 2026]) {
+      const ready = { ...progress(19, 180), jobLine: 'warrior' as const, reservedBossId: pinkBean.id };
+      const solo = freshCharacter(ready);
+      const coop = freshCharacter(ready);
+      // 혼자 싸움은 main.ts 가 원래 하던 순서(정산 → 드롭) 그대로 계산한다
+      const soloRandom = seeded(seed);
+      const reward = settleBossFight(solo, DEFAULT_PACE, henesys, pinkBean, false, soloRandom);
+      const soloDrops = awardBossDrops(solo, pinkBean.id, jobPath(solo.jobLine, solo.jobBranch), false, soloRandom, solo.era);
+      const coopReward = settleBossKill(coop, DEFAULT_PACE, henesys, pinkBean, seeded(seed));
+      expect(coopReward).toEqual({ ...reward, drops: soloDrops });
+      expect(coop).toEqual(solo);
+      expect(coop.monsterBook[pinkBean.name]).toBe(1);
+      expect(coop.reservedBossId).toBeNull();
+      expect(bossTurn(coop, DEFAULT_PACE).kind).not.toBe('ready');
+    }
   });
 });
 
