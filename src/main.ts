@@ -75,6 +75,7 @@ import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
 import { createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
 import { startUpdateChecks } from './platform/updater';
+import { loadOnline } from './onlineGate';
 import { createScene } from './scene/scene';
 import { frameOffset, viewportFor } from './scene/viewport';
 import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui/bossWindow';
@@ -1255,7 +1256,8 @@ notifier.onOpen(() => {
   if (job.canChooseJob) hud.openJobChoice();
   else if (job.branchChoice) hud.openBranchChoice(job.branchChoice, character.era);
 });
-startUpdateChecks({
+// 온라인 특수판은 공개 릴리스로 업데이트하면 보통 판으로 덮여서 업데이트를 묻지 않는다
+if (import.meta.env.VITE_ONLINE !== '1') startUpdateChecks({
   onFound(version, firstTime) {
     availableUpdate = version;
     // 전직 알림 설정과 따로 늘 알린다. 새 버전마다 한 번뿐이다
@@ -1291,3 +1293,27 @@ scheduleTick();
 // 보스 도전 창의 아이콘을 창을 열기 전에 뒤에서 받아 둔다. 클래식 캐릭터면 그 시대 보스 것이다
 prefetchBossWindow(selectedCharacter(roster)?.era);
 prefetchMusicWindow();
+loadOnline()
+  .then((online) =>
+    online?.startOnline({
+      root,
+      hud,
+      scene,
+      isActive: () => isShown() && screen === 'map',
+      self() {
+        const character = selectedCharacter(roster);
+        if (!character) return null;
+        const job = characterJob(character, characterLevel(character).level);
+        return {
+          name: character.name,
+          era: character.era,
+          look: job.look,
+          standAction: job.standAction,
+          walkAction: job.walkAction,
+          mount: character.mountSelected,
+          chair: character.chairSelected,
+        };
+      },
+    }),
+  )
+  .catch((error: unknown) => console.warn('[online] 온라인 기능을 켜지 못했다', error));

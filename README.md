@@ -473,6 +473,33 @@ OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(
 
 맵 렌더 이미지에는 원점 정보가 없어서, 처음 들어가는 마을은 발판 좌표를 이미지의 땅 경계에 맞추는 계산을 한 번 하고 결과를 KMS 버전별로 저장해 둔다(`src/maple/ground.ts`). 발판이 렌더 그림보다 위아래로 넓으면(자쿰의 제단은 윗층 발판 그림이 렌더에 없어 바닥 띠만 온다) 가장 긴 바닥 발판만으로 맞춘다. 버전 표시 없이 남긴 예전 보정값은 KMS 389 에서만 읽는다.
 
+## 온라인 특수판
+
+친구 몇 명이 같은 맵에서 서로의 캐릭터를 보고 채팅하는 따로 빌드한 판이다. 공개 릴리스에는 없고, 방 주인이 직접 빌드해서 친구들에게 건넨다.
+
+- **보통 판과 따로다.** 이름은 「Maple Companion Online」, 식별자는 `com.maplecompanion.online` 이라 같이 깔아도 캐릭터·설정·캐시가 섞이지 않는다. 보통 판 빌드에는 온라인 코드가 들어가지 않는다(빌드 플래그 `VITE_ONLINE` 이 없으면 온라인 모듈을 import 하지 않는다). 앱 안 업데이트도 묻지 않는다. 공개 릴리스로 업데이트하면 보통 판으로 덮이기 때문이다
+- **로그인 화면이 없다.** 켤 때 Supabase 익명 계정을 몰래 만든다. 처음 한 번 방 비밀번호를 넣으면 서버가 그 계정을 멤버로 기억해서 다음부터는 묻지 않는다. 「나중에」로 닫았으면 HUD 의 「입장하기」를 눌러 다시 넣는다
+- **같은 맵의 친구가 보인다.** 같은 시대·같은 맵에 있는 멤버가 이름표와 함께 내 캐릭터 뒤에 걸어 다닌다. 겉모습(장비·캐시)·서기·걷기·점프·사다리·로프·앉기 동작을 따라 하고, 탈것은 타지 않은 모습으로 보인다. 사냥·보상·마을 이동에는 끼어들지 않는다
+- **채팅.** ⚙️ 메뉴 「💬 채팅」이나 HUD 의 「접속 N명」을 눌러 채팅창을 연다. Enter 로 보내고 Esc 로 닫는다. 채팅창에는 방 전체의 글이 뜨고, 같은 맵에 있는 사람이 한 말은 머리 위에 원작 말풍선으로도 뜬다. 한 글은 120자까지, 10초에 4개까지 보낸다(서버는 5개까지 받는다). 입력하는 동안 키는 직접 조작으로 가지 않는다
+- **연결 상태.** HUD 에 점과 글자로 보인다. 초록 「접속 N명」(방에 들어와 있는 사람 수, 나 포함), 노랑 「입장하기」, 회색 「연결 중」, 빨강 「연결 안 됨」. 주소·키 없이 빌드했거나 서버에 못 붙으면 온라인 기능만 빠지고 앱은 그대로 돈다. 못 붙으면 30초마다 다시 붙는다
+- **보내는 것.** 캐릭터 이름, 시대, 맵 ID, 겉모습 아이템 ID·동작 이름, 고른 의자·탈것 ID, 맵 안 자리·방향·동작, 채팅 글이다. 그 밖의 개인정보는 보내지 않는다. 자리는 창이 보이고 맵 화면일 때 움직일 때만 1초에 5번까지 보내고, 창을 숨기면 멈춘다
+- **채팅은 24시간만 남는다.** 서버가 30분마다 지운다(pg_cron). pg_cron 을 못 켠 프로젝트에서도 24시간 지난 글은 안 보이고 채팅창을 열 때 지워진다. 위치·접속은 서버에 남지 않는다
+
+### 서버 준비와 빌드
+
+서버(Supabase) 준비는 [supabase/README.md](supabase/README.md) 에 순서대로 적었다. 프로젝트 만들기 → 익명 로그인 켜기 → SQL 실행 → 방 비밀번호 정하기 → pg_cron → 주소·키를 `.env.local` 에 넣기 순서다.
+
+```bash
+cp .env.example .env.local     # VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 를 채운다
+pnpm tauri build --config src-tauri/tauri.online.conf.json   # 온라인 특수판 앱
+pnpm dev:online                # 브라우저로 온라인 특수판 화면만 (http://localhost:1420)
+pnpm build:online              # 프론트만 온라인 특수판으로 빌드(vite build --mode online)
+```
+
+- `src-tauri/tauri.online.conf.json` 은 `tauri.conf.json` 위에 덮는 설정이다. 이름·식별자를 바꾸고, 빌드 명령을 `build:online`(`vite build --mode online` → `VITE_ONLINE=1`)으로 바꾸고, 업데이트 파일을 만들지 않는다
+- 비밀 값은 저장소에 없다. Supabase 주소와 anon 키는 빌드할 때 `.env.local` 에서 읽어 앱 번들에 들어간다(anon 키는 원래 공개해도 되는 키이고 권한은 서버 RLS 가 막는다). service_role 키는 앱 어디에도 쓰지 않고, 잘못 넣으면 앱이 알아보고 온라인 기능을 끈다. 방 비밀번호는 Supabase SQL Editor 에서만 정하고 서버에는 bcrypt 해시로만 남는다
+- Tauri CSP 는 보통 판과 같이 꺼져 있다(`app.security.csp: null`). 막는 것이 없어 Supabase https·wss 주소도 따로 열 필요가 없다
+
 ## 개발
 
 ```bash
@@ -518,6 +545,20 @@ Rust 가 필요하다(`rustup`). 트레이 아이콘은 왼쪽·오른쪽 클릭
 ```
 src/
   main.ts            틱마다 활동 시간 → 레벨·전직·사냥·마을 이동을 정한다
+  onlineGate.ts      온라인 특수판(VITE_ONLINE=1)에서만 online/ 을 import 한다. 보통 빌드에서는 import 가 빠진다
+  online/            온라인 특수판 전용(보통 빌드에 안 들어간다). 같은 맵 친구 보기·채팅
+    index.ts         연결 고르기(Supabase, 개발 서버의 가짜 연결), HUD 표시·채팅창·비밀번호 창 붙이기, 1초에 5번 자리 알리기
+    session.ts       익명 로그인 → 멤버 확인·비밀번호 → 방 채널, 맵마다 채널 바꾸기, 받은 캐릭터 검사·장면에 그리기, 채팅 보내기·받기·말풍선
+    supabaseTransport.ts  Supabase 연결(익명 로그인, join_room·recent_chat RPC, 비공개 채널 presence·broadcast, chat_messages)
+    fakeTransport.ts 서버 없는 가짜 연결(테스트는 메모리, 개발 서버 VITE_ONLINE_FAKE=1 은 브라우저 탭끼리)
+    transport.ts     연결이 따르는 모양과 주고받는 값(캐릭터·위치·채팅)
+    presence.ts      내 자리를 바뀐 것만 1초에 5번까지 보내기, 겉모습·맵이 바뀌면 presence 다시 알리기
+    throttle.ts      채팅 보내기 간격(10초 4개·1초 1개), 120자 검사
+    config.ts        빌드 때 넣은 Supabase 주소·anon 키 읽기(비었거나 service_role 키면 끈다)
+    chatWindow.ts    채팅창(지난 24시간 글, Enter 보내기·Esc 닫기)
+    passwordPrompt.ts  방 비밀번호 창(원작 범용 버튼)
+    statusIndicator.ts HUD 의 점과 「접속 N명」
+    online.css       위 화면들의 스타일
   game/              레벨 곡선, 직업, 마을·몬스터 데이터, 사냥 정산, 저장
     bosses.ts        보스 목록(몹·맵 ID), 시대별 보스 목록(bossesOf), 보스 차례·고르기(지정한 보스 포함)·보상, 사냥 한 번 정산(settleHunt)
     bosses.classic.ts  클래식(GMS 83) 보스 14마리(몹·맵 ID, 자쿰 팔 부위)
@@ -558,7 +599,7 @@ src/
     chairArt.ts      보스 의자의 WZ 값(bodyRelMove·sitAction·effect 레이어 z·pos·프레임 origin·delay·_outlink)과 프레임 그림 받기
     mountArt.ts      탈것의 WZ 값(stand1·walk1 프레임마다 navel·delay·레이어 z·origin·navel·그림 경로, 안장, 탄 몸 동작, 망토 숨김), 몸 navel 표, API 그림 보정값(−8, −2), 레이어 그림 받기
     navigation.ts    발판·사다리·로프 길 만들기(걷기·떨어지기·아래 점프·점프·오르기), 길찾기, 길 따라 움직이기(탈것이면 걷기만 빠르게)
-  scene/             PixiJS 화면 (맵, 캐릭터, 몬스터, 카메라, 발판 길을 따라 포털로 들어가 맵 옮기기, 직접 조작·맵 몬스터)
+  scene/             PixiJS 화면 (맵, 캐릭터, 몬스터, 카메라, 발판 길을 따라 포털로 들어가 맵 옮기기, 직접 조작·맵 몬스터, 다른 사람 캐릭터·원작 말풍선)
     viewport.ts      창 배율 → 게임 화면 크기·DOM 배율, 360×230 창을 가운데에 둘 자리
     framePolicy.ts   지금 장면에 맞는 fps(멈춤 0·서 있기 10·움직임 30)
     heroLoad.ts      캐릭터 그림과 스킬 데이터를 받는 대로 따로 적용(직업을 바꾸면 스킬을 기다리지 않고 무기·동작부터 바뀐다)
@@ -567,12 +608,13 @@ src/
     fieldMobs.ts     직접 조작 맵 몬스터: 맵 몬스터 자리 고르기(24마리까지)·리스폰 시계·순찰·A 로 때릴 대상 고르기
     calibrationStore.ts  지면 보정값을 시대·맵마다 localStorage 에 읽고 쓰기
     seating.ts       의자를 골랐을 때 앉을지(싸움·맵 이동·스킬 동작이면 선다), 돌아다니지 않고 쉬기, 맵에 들어와 앉을 자리(바닥 끝·포털 비키기)
+    remoteMotion.ts  다른 사람 캐릭터를 받은 자리 사이로 한 박자(200ms) 늦게 이어 걷기, 멀리 옮기면 바로 옮기기
     riding.ts        탈것을 탈지(의자 먼저, 싸움·스킬·사다리·로프면 내린다), 탄 캐릭터 그림 위치·탈것 레이어 위치와 앞뒤 순서, 망토 빼기, 걷기 속도 배율
   audio/bgm.ts       BGM 재생. 맵 따라가기·한 곡 반복·즐겨찾기 무작위, 곡을 통째로 받아 남긴 것으로 틀기, 맵 따라가기일 때 곧 갈 맵 곡 미리 받기, 없으면 스트리밍하다 받은 파일로 갈아 끼우기, 남긴 곡 용량(300MB) 넘으면 오래 안 들은 곡 지우기, 예전 맵 번호 파일 옮기기
   audio/bgmTracks.ts 원작 BGM 목록(곡 경로·폴더·이 앱의 맵 이름), 「헤네시스 · FloralLife」 이름, 찾기·목록 좁히기, 맵 → 곡, 남길 파일 이름
   audio/bgmCatalog.ts  원작 BGM 폴더·곡 이름과 이 앱이 아는 맵의 곡. scripts/curate-bgm.ts 가 만든다
   audio/bgmCatalog.classic.ts  클래식 마을·사냥터·보스 맵의 곡(GMS 83 경로). scripts/curate-bgm.ts --era classic 이 만든다
-  ui/hud.ts          레벨·경험치 바(클래식은 v83 EXP 게이지)·「전직 가능!」·스탯·스킬·보스·캐시샵 버튼·⚙️ 메뉴(직접 조작·소리·장비·BGM 고르기·설정·캐릭터 선택)·연습전 표시·장비 획득 알림·직접 조작 표시
+  ui/hud.ts          레벨·경험치 바(클래식은 v83 EXP 게이지)·「전직 가능!」·스탯·스킬·보스·캐시샵 버튼·⚙️ 메뉴(직접 조작·소리·장비·BGM 고르기·설정·캐릭터 선택)·연습전 표시·장비 획득 알림·직접 조작 표시. 메뉴 항목·HUD 표시를 더하는 자리(온라인 특수판이 쓴다)
   ui/manualKeys.ts   직접 조작 키(방향키·Space·Alt·A·Esc) 읽기. 창 포커스가 있을 때만, 포커스를 잃으면 다 뗀다
   ui/musicWindow.ts  BGM 고르기 창(원작 의자 BGM 고르기 창 PLAYLIST 틀·곡 칸·재생 중 칸). 트는 방식, 찾기, 전체·★·맵 곡, ▶·★, 지금 곡
   ui/settings.ts     설정 화면
@@ -605,6 +647,10 @@ scripts/
   mapleio.ts         스크립트가 같이 쓰는 maplestory.io 요청(캐시·다시 받기·없는 노드 500 처리)·시대 인자
   curate-bgm.ts      WZ 의 Sound/Bgm* 곡 이름과 마을·사냥터·보스 맵의 곡(info/bgm)을 읽어 src/audio/bgmCatalog.ts 를 쓴다. 소리는 받지 않는다. --era classic 이면 클래식 마을·사냥터·보스 맵 곡만 bgmCatalog.classic.ts 로 쓴다
   release-icon.ts    릴리스 CI 에서 버섯집 그림(시크릿 RELEASE_ICON_PNG_BASE64)을 정수배로 늘리고 tauri icon 으로 src-tauri/icons-release/ 에 아이콘 세트와 --config 파일을 만든다
+supabase/
+  README.md          온라인 특수판 서버 준비 순서(프로젝트·익명 로그인·SQL·방 비밀번호·pg_cron·.env.local·빌드·확인)
+  migrations/        테이블(room_secret·members·join_attempts·chat_messages)·RLS·RPC·채팅 트리거(10초 5개·실시간 내보내기)·실시간 정책, pg_cron 으로 채팅 24시간 지우기
+src-tauri/tauri.online.conf.json  온라인 특수판 덮어쓰기 설정(이름·식별자·빌드 명령·업데이트 파일 끄기)
 src-tauri/src/
   idle.rs            마지막 입력 후 지난 시간 (macOS CoreGraphics / Windows GetLastInputInfo)
   activity.rs        5초마다 활동 시간을 쌓아 app data 의 activity.json 에 저장. 자리 비움 판정 시간도 같이 저장

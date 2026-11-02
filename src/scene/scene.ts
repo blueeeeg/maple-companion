@@ -21,6 +21,7 @@ import {
   mobAnimationUrl,
   mobFrameUrl,
   mobInfoUrl,
+  wzImageUrl,
 } from '../maple/api';
 import {
   type DamageFont,
@@ -79,6 +80,7 @@ import { type BodySpan, cameraFocus, cameraScroll, framedDistance, spanFocus } f
 import { lerpColor } from './color';
 import { applyEachLoaded } from './heroLoad';
 import { nameTagBox, nameTagLabel, nameTagPosition } from './nameTag';
+import { type RemoteMotion, createRemoteMotion } from './remoteMotion';
 import { RIDE_SPEED_SCALE, motionDelays, mountFrameLayout, riderImageOffset, riderLook, shouldRide } from './riding';
 import { seatSpotX, shouldSit, wanderPauseLeft, wanderPauseMs } from './seating';
 import { viewportFor } from './viewport';
@@ -169,6 +171,17 @@ const MANUAL_PORTAL_COOLDOWN_MS = 1500;
 const MANUAL_FREEZE_MS = 30_000;
 /** 화면 밖 이만큼 안의 몬스터가 움직이면 30fps 로 그린다 */
 const MANUAL_VIEW_SLACK = 60;
+/** 말풍선은 이만큼 떠 있다 */
+const BALLOON_MS = 5000;
+/** 발에서 말풍선 꼬리 끝까지(맵 픽셀). 서 있는 캐릭터 머리 바로 위다 */
+const BALLOON_HEAD = 78;
+/** 말풍선 글 칸 폭(화면 px). 넘으면 줄을 바꾼다 */
+const BALLOON_TEXT_WIDTH = 130;
+const BALLOON_PARTS = ['nw', 'n', 'ne', 'w', 'c', 'e', 'sw', 's', 'se', 'arrow'] as const;
+type BalloonArt = Record<(typeof BALLOON_PARTS)[number], Texture>;
+/** 말풍선 모서리만 제자리에 그림이 있고 나머지는 `_Canvas` 로 `_outlink` 되어 있다 */
+const balloonPartUrl = (part: (typeof BALLOON_PARTS)[number]) =>
+  wzImageUrl(`UI/${['nw', 'ne', 'sw', 'se'].includes(part) ? '' : '_Canvas/'}ChatBalloon.img/0/${part}`);
 
 export interface BossFightEvents {
   /** 보스 맵으로 바뀌어 화면이 밝아지기 직전 */
@@ -252,6 +265,38 @@ export interface Scene {
   setManualFocus(focused: boolean): void;
   /** 키를 누른 순간 낮춘 fps 에서 바로 깨운다 */
   nudge(): void;
+  /** 내 캐릭터가 선 맵과 발 위치(맵 월드 좌표). 맵을 아직 못 받았으면 null */
+  heroPose(): ActorPose | null;
+  /**
+   * 다른 사람 캐릭터. 같은 맵(pose.mapId)에 있을 때만 이름표와 함께 그리고, 사냥·이동·카메라에는 끼어들지 않는다.
+   * 같은 id 로 다시 부르면 바꾼다
+   */
+  addRemoteActor(id: string, look: ActorLook, pose: ActorPose): void;
+  /** 받은 자리로 한 박자 늦게 이어 걷는다. 겉모습이 바뀌었으면 그림을 다시 받는다 */
+  updateRemoteActor(id: string, change: { look?: ActorLook; pose?: ActorPose }): void;
+  removeRemoteActor(id: string): void;
+  /** 원작 말풍선을 머리 위에 잠깐 띄운다. id 가 null 이면 내 캐릭터 */
+  showBalloon(id: string | null, text: string): void;
+}
+
+/** 다른 사람 캐릭터의 동작. 서기·걷기는 그 사람 직업의 동작 이름으로, 나머지는 이 이름 그대로 캐릭터 그림을 받는다 */
+export type ActorAction = 'stand' | 'walk' | 'attack' | 'jump' | 'ladder' | 'rope' | 'prone' | 'sit';
+
+/** 발 위치는 맵 월드 좌표다. 맵 그림 보정은 그리는 쪽이 자기 것을 더한다 */
+export interface ActorPose {
+  mapId: number;
+  x: number;
+  y: number;
+  facing: -1 | 1;
+  action: ActorAction;
+}
+
+export interface ActorLook {
+  name: string;
+  look: number[];
+  era: Era;
+  standAction: string;
+  walkAction: string;
 }
 
 export type CastResult = 'ok' | 'noArt' | 'failed' | 'late' | 'notReady';
@@ -564,7 +609,12 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const nameTagBack = new Graphics();
   const nameTagText = new Text({ style: { fontFamily: FONT, fontSize: NAME_TAG_FONT_SIZE, fill: 0xffffff } });
   nameTag.addChild(nameTagBack, nameTagText);
-  world.addChild(mapSprite, actors, frontSprite, upperFrontSprite, nameTag, worldEffects);
+  // 다른 사람 이름표는 내 이름표 아래, 말풍선은 이름표 위에 그린다
+  const remoteTags = new Container();
+  remoteTags.eventMode = 'none';
+  const balloonLayer = new Container();
+  balloonLayer.eventMode = 'none';
+  world.addChild(mapSprite, actors, frontSprite, upperFrontSprite, remoteTags, nameTag, balloonLayer, worldEffects);
   // 포털은 원작처럼 맵 위, 캐릭터·몬스터 뒤에 돈다
   const portalLayer = new Container();
   world.addChildAt(portalLayer, world.getChildIndex(actors));
@@ -587,7 +637,10 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   const mountFront = new Container();
   mountBack.visible = false;
   mountFront.visible = false;
-  actors.addChild(chairBack, mountBack, hero, mountFront, chairFront);
+  // 다른 사람 캐릭터는 내 캐릭터 뒤에 둔다. 몬스터는 늘 맨 뒤(0)에 끼워 이보다도 뒤다
+  const remoteLayer = new Container();
+  remoteLayer.eventMode = 'none';
+  actors.addChild(remoteLayer, chairBack, mountBack, hero, mountFront, chairFront);
 
   let ground: GroundPath | null = null;
   let heroAnimations: HeroAnimations | null = null;
@@ -614,6 +667,8 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   /** `{시대}|{스킬 ID}` → 그 스킬의 원작 동작 */
   const knownActions = new Map<string, string[]>();
   let facing: -1 | 1 = -1;
+  /** 이번 프레임에 길 따라가기·직접 조작이 정한 동작. 다른 사람에게 알릴 때 쓴다 */
+  let posedAction: ActorAction | null = null;
   let chairId: number | null = null;
   /** 고른 의자의 그림과 앉은 동작. 다 받아야 앉는다 */
   let chair: {
@@ -1149,6 +1204,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function updateHero(dtMs: number): void {
+    posedAction = null;
     if (!ground) return;
     if (navMotion) {
       stepNavMotion(dtMs);
@@ -1420,10 +1476,14 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
 
   /** 원작 기본 이름표는 그림이 아니라 클라이언트가 그린다. 반투명 검은 상자의 네 모서리를 1px 씩 깎아 둥글게 보인다 */
   function drawNameTag(label: string): void {
-    nameTagText.text = label;
-    const box = nameTagBox({ width: nameTagText.width, height: nameTagText.height });
-    nameTagText.position.set(box.textX, box.textY);
-    nameTagBack
+    paintNameTag(nameTagBack, nameTagText, label);
+  }
+
+  function paintNameTag(back: Graphics, text: Text, label: string): void {
+    text.text = label;
+    const box = nameTagBox({ width: text.width, height: text.height });
+    text.position.set(box.textX, box.textY);
+    back
       .clear()
       .rect(1, 0, box.width - 2, box.height)
       .rect(0, 1, 1, box.height - 2)
@@ -1680,6 +1740,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     motion.elapsedMs += dtMs;
     // 걷기 배율은 걷는 걸음에만 들어가서 앞 프레임에 탔는지로 정해도 된다
     const pose = motion.runner.update(dtMs, riding ? RIDE_SPEED_SCALE : 1);
+    posedAction = pose.action;
     hero.x = pose.x + motion.stage.calibration.dx;
     hero.y = pose.y + motion.stage.calibration.dy;
     facing = pose.facing;
@@ -1941,6 +2002,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     // 원작처럼 땅에서 공격하는 동안은 걷지도 뛰지도 않는다. 공중에서는 날던 대로 날아간다
     const locked = state.attackMs > 0 && before.platform !== null;
     const pose = state.controller.update(dtMs, locked ? NO_KEYS : { ...keys, up: keys.up && !portal });
+    posedAction = state.attackMs > 0 ? 'attack' : pose.action;
     if (keys.attack && state.cooldownMs <= 0 && pose.action !== 'ladder' && pose.action !== 'rope') manualAttack(state);
     hero.x = pose.x + stage.calibration.dx;
     hero.y = pose.y + stage.calibration.dy;
@@ -2093,6 +2155,226 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     return new Promise((resolve) => (fadeResolve = resolve));
   }
 
+  interface RemoteActor {
+    look: ActorLook;
+    pose: ActorPose;
+    motion: RemoteMotion;
+    sprite: Sprite;
+    tag: Container;
+    /** 동작 이름 → 받은 그림. 받는 중이거나 못 받았으면 null 이라 다시 받지 않는다 */
+    animations: Map<string, Animation | null>;
+    shown: string;
+    clockMs: number;
+  }
+  const remotes = new Map<string, RemoteActor>();
+
+  function remoteActionName(look: ActorLook, action: ActorAction): string {
+    if (action === 'walk') return look.walkAction;
+    // 공격 동작은 스킬·무기마다 달라 서 있는 그림으로 둔다
+    if (action === 'stand' || action === 'attack') return look.standAction;
+    return action;
+  }
+
+  function remoteAnimation(actor: RemoteActor, name: string): Animation | null {
+    if (!actor.animations.has(name)) {
+      const { animations } = actor;
+      animations.set(name, null);
+      loadHeroAction(actor.look.look, name, actor.look.era).then(
+        ({ animation }) => {
+          // 그새 겉모습이 바뀌었으면 그 그림 목록은 이미 버려졌다
+          if (actor.animations !== animations) return;
+          animations.set(name, animation);
+          wake();
+        },
+        () => {
+          // 그 동작 그림이 없으면 서 있는 그림으로 두고 잠시 뒤 다시 받는다
+          setTimeout(() => animations.delete(name), LOOK_RETRY_MS);
+        },
+      );
+    }
+    return actor.animations.get(name) ?? null;
+  }
+
+  function setRemoteName(actor: RemoteActor, name: string): void {
+    const [back, text] = actor.tag.children as [Graphics, Text];
+    paintNameTag(back, text, nameTagLabel(name) ?? '');
+  }
+
+  function removeRemote(id: string): void {
+    const actor = remotes.get(id);
+    if (!actor) return;
+    remotes.delete(id);
+    actor.sprite.destroy();
+    actor.tag.destroy({ children: true });
+    removeBalloon(id);
+  }
+
+  /** 걷거나 받은 자리로 따라가는 중인 사람이 화면에 있으면 30fps 로 그린다 */
+  function remoteMoving(): boolean {
+    const now = performance.now();
+    return [...remotes.values()].some(
+      (actor) => actor.sprite.visible && (actor.pose.action === 'walk' || !actor.motion.settled(now)),
+    );
+  }
+
+  function updateRemoteActors(dtMs: number): void {
+    const stage = portalStage;
+    const now = performance.now();
+    remotes.forEach((actor) => {
+      const here = stage !== null && ground !== null && actor.pose.mapId === stage.mapId;
+      const wanted = remoteActionName(actor.look, actor.pose.action);
+      const exact = here ? remoteAnimation(actor, wanted) : null;
+      const animation = exact ?? (here ? remoteAnimation(actor, actor.look.standAction) : null);
+      actor.sprite.visible = animation !== null;
+      actor.tag.visible = animation !== null;
+      if (!animation || !stage) return;
+      const shown = exact ? wanted : actor.look.standAction;
+      if (shown !== actor.shown) {
+        actor.shown = shown;
+        actor.clockMs = 0;
+      }
+      actor.clockMs += dtMs;
+      const at = actor.motion.sample(now);
+      const x = at.x + stage.calibration.dx;
+      const y = at.y + stage.calibration.dy;
+      actor.sprite.texture = animation.frames[frameAt(animation.delays, actor.clockMs, true)];
+      actor.sprite.position.set(x, y);
+      // 사다리·로프 그림은 등을 보이고 있어서 뒤집지 않는다
+      const climbing = actor.pose.action === 'ladder' || actor.pose.action === 'rope';
+      actor.sprite.scale.x = climbing ? 1 : -actor.pose.facing;
+      // 내 이름표처럼 화면 끝·경험치 바에 가리지 않게 화면 좌표로 맞춘다
+      const feet = { x: world.position.x + x * worldScale, y: world.position.y + y * worldScale };
+      const box = { width: actor.tag.width * worldScale, height: actor.tag.height * worldScale };
+      const tagAt = nameTagPosition(feet, box, { width, height }, app.renderer.resolution);
+      actor.tag.position.set((tagAt.x - world.position.x) / worldScale, (tagAt.y - world.position.y) / worldScale);
+    });
+  }
+
+  let balloonArt: Promise<BalloonArt | null> | null = null;
+  let balloonArtReady: BalloonArt | null = null;
+  /** 원작 말풍선(UI.wz ChatBalloon.img 0번, 기본 흰 말풍선). 못 받으면 비슷한 흰 상자로 그린다 */
+  function loadBalloonArt(): Promise<BalloonArt | null> {
+    if (!balloonArt) {
+      balloonArt = Promise.all(BALLOON_PARTS.map((part) => loadTexture(balloonPartUrl(part)))).then(
+        (textures) => (balloonArtReady = Object.fromEntries(BALLOON_PARTS.map((part, index) => [part, textures[index]])) as BalloonArt),
+        () => {
+          balloonArt = null;
+          return null;
+        },
+      );
+    }
+    return balloonArt;
+  }
+
+  /** 말풍선 틀을 그리고 꼬리 끝이 (0, 0) 에 오게 맞춘다. 화면 px 단위다 */
+  function layoutBalloon(node: Container, label: Text, art: BalloonArt | null): void {
+    node.removeChildren().forEach((child) => child !== label && child.destroy());
+    const width = Math.max(16, Math.ceil(label.width));
+    const height = Math.max(12, Math.ceil(label.height));
+    if (!art) {
+      const pad = 5;
+      const boxWidth = width + pad * 2;
+      const boxHeight = height + pad * 2;
+      const box = new Graphics()
+        .roundRect(0.5, 0.5, boxWidth - 1, boxHeight - 1, 4)
+        .fill(0xffffff)
+        .stroke({ color: 0x000000, width: 1 })
+        .poly([boxWidth / 2 - 4, boxHeight - 1, boxWidth / 2 + 4, boxHeight - 1, boxWidth / 2, boxHeight + 5])
+        .fill(0xffffff);
+      label.position.set(pad, pad);
+      node.addChild(box, label);
+      node.pivot.set(Math.round(boxWidth / 2), boxHeight + 5);
+      return;
+    }
+    const left = art.nw.width;
+    const top = art.nw.height;
+    const piece = (texture: Texture, x: number, y: number, w = texture.width, h = texture.height) => {
+      const sprite = new Sprite(texture);
+      sprite.position.set(x, y);
+      sprite.width = w;
+      sprite.height = h;
+      return sprite;
+    };
+    const boxWidth = left + width + art.ne.width;
+    const bottom = top + height;
+    // 꼬리는 아래 테두리 가운데를 덮는다
+    const arrowX = Math.round((boxWidth - art.arrow.width) / 2);
+    node.addChild(
+      piece(art.nw, 0, 0),
+      piece(art.n, left, 0, width, art.n.height),
+      piece(art.ne, left + width, 0),
+      piece(art.w, 0, top, art.w.width, height),
+      piece(art.c, left, top, width, height),
+      piece(art.e, left + width, top, art.e.width, height),
+      piece(art.sw, 0, bottom),
+      piece(art.s, left, bottom, width, art.s.height),
+      piece(art.se, left + width, bottom),
+      piece(art.arrow, arrowX, bottom),
+      label,
+    );
+    label.position.set(left, top);
+    node.pivot.set(Math.round(boxWidth / 2), bottom + Math.max(art.s.height, art.arrow.height));
+  }
+
+  const balloons = new Map<string, { node: Container; leftMs: number }>();
+  const balloonKey = (id: string | null) => (id === null ? '' : `remote:${id}`);
+
+  function removeBalloon(id: string | null): void {
+    const key = balloonKey(id);
+    const balloon = balloons.get(key);
+    if (!balloon) return;
+    balloons.delete(key);
+    balloon.node.destroy({ children: true });
+  }
+
+  function showBalloon(id: string | null, text: string): void {
+    removeBalloon(id);
+    const node = new Container();
+    // 이름표처럼 맵 배율로 줄이지 않고 화면 픽셀로 그려 글자가 안 흐려진다
+    node.scale.set(1 / worldScale);
+    const label = new Text({
+      text,
+      style: {
+        fontFamily: FONT,
+        fontSize: 12,
+        fill: 0x000000,
+        wordWrap: true,
+        breakWords: true,
+        wordWrapWidth: BALLOON_TEXT_WIDTH,
+        lineHeight: 15,
+      },
+    });
+    layoutBalloon(node, label, balloonArtReady);
+    if (!balloonArtReady) {
+      void loadBalloonArt().then((art) => {
+        if (art && !node.destroyed) layoutBalloon(node, label, art);
+      });
+    }
+    balloonLayer.addChild(node);
+    balloons.set(balloonKey(id), { node, leftMs: BALLOON_MS });
+    placeBalloons();
+    wake();
+  }
+
+  function placeBalloons(): void {
+    balloons.forEach(({ node }, key) => {
+      const actor = key === '' ? null : remotes.get(key.slice('remote:'.length));
+      const feet = actor ? (actor.sprite.visible ? actor.sprite.position : null) : ground && heroAnimations ? hero.position : null;
+      node.visible = feet !== null;
+      if (feet) node.position.set(Math.round(feet.x), Math.round(feet.y - BALLOON_HEAD));
+    });
+  }
+
+  function updateBalloons(dtMs: number): void {
+    balloons.forEach((balloon, key) => {
+      balloon.leftMs -= dtMs;
+      if (balloon.leftMs > 0) return;
+      balloons.delete(key);
+      balloon.node.destroy({ children: true });
+    });
+    placeBalloons();
+  }
+
   // Pixi 티커는 콜백이 던지면 다음 프레임을 요청하지 않아서 창을 숨겼다 다시 열 때까지 화면이 멈춘다. 그 프레임만 버리고 이어 간다
   app.ticker.add((ticker) => {
     Ticker.system.update(performance.now());
@@ -2125,6 +2407,7 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
   }
 
   function stillForMs(): number {
+    if (remoteMoving()) return 0;
     if (manual) return manualBusy() ? 0 : Infinity;
     if (navMotion || castPose || heroAction !== 'stand') return 0;
     if (parkedAtPortal || seated) return Infinity;
@@ -2187,6 +2470,9 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
     updateEncounter(dtMs);
     if (manual) updateManualMobs(manual, dtMs);
     updateCamera(Math.min(1, dtMs / 250));
+    // 카메라를 옮긴 뒤라 이름표·말풍선이 맵과 같은 자리에 붙는다
+    updateRemoteActors(dtMs);
+    updateBalloons(dtMs);
     bossGauge.update(dtMs);
     if (fade.alpha !== fadeTarget) {
       const step = dtMs / 330;
@@ -2509,6 +2795,60 @@ export async function createScene(host: HTMLElement, callbacks: SceneCallbacks):
       manualFocused = focused;
     },
     nudge: () => wake(),
+    heroPose() {
+      const stage = portalStage;
+      if (!stage || !ground || !heroAnimations) return null;
+      return {
+        mapId: stage.mapId,
+        x: hero.x - stage.calibration.dx,
+        y: hero.y - stage.calibration.dy,
+        facing,
+        action: seated ? 'sit' : (posedAction ?? heroAction),
+      };
+    },
+    addRemoteActor(id, look, pose) {
+      removeRemote(id);
+      const sprite = new Sprite();
+      sprite.anchor.set(0.5);
+      sprite.visible = false;
+      remoteLayer.addChild(sprite);
+      const tag = new Container();
+      tag.scale.set(1 / worldScale);
+      tag.visible = false;
+      tag.addChild(new Graphics(), new Text({ style: { fontFamily: FONT, fontSize: NAME_TAG_FONT_SIZE, fill: 0xffffff } }));
+      remoteTags.addChild(tag);
+      const actor: RemoteActor = {
+        look,
+        pose,
+        motion: createRemoteMotion(pose, performance.now()),
+        sprite,
+        tag,
+        animations: new Map(),
+        shown: '',
+        clockMs: 0,
+      };
+      setRemoteName(actor, look.name);
+      remotes.set(id, actor);
+      wake();
+    },
+    updateRemoteActor(id, { look, pose }) {
+      const actor = remotes.get(id);
+      if (!actor) return;
+      if (look && JSON.stringify(look) !== JSON.stringify(actor.look)) {
+        if (look.name !== actor.look.name) setRemoteName(actor, look.name);
+        actor.look = look;
+        actor.animations = new Map();
+      }
+      if (pose) {
+        // 다른 맵에서 왔으면 걸어오지 않고 그 자리에 나타난다
+        if (pose.mapId !== actor.pose.mapId) actor.motion = createRemoteMotion(pose, performance.now());
+        else actor.motion.push(pose, performance.now());
+        actor.pose = pose;
+      }
+      wake();
+    },
+    removeRemoteActor: removeRemote,
+    showBalloon,
     setRoutePortals(portals) {
       routePortals = portals;
       if (portalStage) placePortals(portalStage);

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Maple Companion Online",
+  "identifier": "com.maplecompanion.online",
+  "build": {
+    "beforeDevCommand": "pnpm dev:online",
+    "beforeBuildCommand": "pnpm build:online"
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false
+  }
+}

@@ -1,0 +1,108 @@
+# 온라인 특수판 서버(Supabase) 준비
+
+친구 몇 명이 같은 맵에서 서로를 보고 채팅하는 온라인 특수판의 서버 쪽 준비 순서다. 방 주인이 한 번만 하면 된다.
+앱 쪽 설명은 저장소 README 의 「온라인 특수판」 절에 있다.
+
+> 이 SQL 은 아직 실제 Supabase 프로젝트에서 돌려 보지 않았다. 아래 순서대로 하다가 오류가 나면 오류 문구를 그대로 남겨 주세요.
+
+## 1. 프로젝트 만들기
+
+1. <https://supabase.com/dashboard> 에서 **New project** 를 누른다
+2. Region 은 **Northeast Asia (Seoul)** 을 고른다. 친구들과 가까울수록 캐릭터가 덜 끊겨 보인다
+3. Database password 는 비밀번호 관리자에 넣어 둔다. 앱에는 쓰지 않는다
+
+## 2. 익명 로그인 켜기
+
+앱에는 로그인 화면이 없다. 켤 때 몰래 익명 계정을 만들어 그 계정으로 RLS(`auth.uid()`)를 거친다.
+
+1. **Authentication → Sign In / Providers** 에서 **Allow anonymous sign-ins** 를 켠다
+2. (권장) **Authentication → Rate Limits** 에서 익명 로그인 한도(IP 당 시간 당)를 기본값(30) 그대로 둔다. 비밀번호를 마구 넣어 보는 것을 늦춘다
+
+## 3. 실시간 채널을 비공개로만
+
+**Realtime → Settings** 에서 **Allow public access** 를 끈다. 앱은 비공개 채널만 쓰고, 비공개 채널은 아래 SQL 의 정책(멤버만)을 거친다.
+
+## 4. SQL 실행
+
+1. **SQL Editor → New query** 를 연다
+2. [`migrations/20261102000001_online_room.sql`](migrations/20261102000001_online_room.sql) 을 통째로 붙여 넣고 **Run** 을 누른다
+
+만들어지는 것:
+
+| 이름 | 뜻 |
+|---|---|
+| `room_secret` | 방 비밀번호의 bcrypt 해시(행 하나). 정책이 없어 앱에서는 못 읽는다 |
+| `members` | 비밀번호를 맞힌 익명 계정. 앱은 자기 행만 읽는다 |
+| `join_attempts` | 틀린 비밀번호 시도. 계정마다 10분에 5번까지 |
+| `chat_messages` | 채팅. 이름(캐릭터 이름 12자까지)·시대·맵 ID·글(120자까지)·시각 |
+| `join_room(password)` | 비밀번호가 맞으면 부른 계정을 `members` 에 넣는다 |
+| `recent_chat()` | 24시간 안 채팅 100개. 부를 때 24시간 지난 글을 지운다 |
+| `set_room_password(new_password)` | 방 비밀번호 정하기. SQL Editor(또는 service_role)에서만 부를 수 있다 |
+| 채팅 트리거 | 보낸 사람·시각은 서버가 정하고, 10초에 5개 넘게 보내면 거절, 저장된 글만 `room:chat` 채널로 내보낸다 |
+| 실시간 정책 | 멤버만 `room:chat`·`map:{시대}:{맵 ID}` 채널을 받는다. 맵 채널에는 위치·접속을 보내고, 방 채널에는 접속만 알린다(채팅은 트리거만 보낸다) |
+
+모든 테이블에 RLS 가 켜져 있다.
+
+## 5. 방 비밀번호 정하기
+
+SQL Editor 에서 새 쿼리로 한 줄만 실행한다.
+
+```sql
+select public.set_room_password('여기에 비밀번호');
+```
+
+- 비밀번호와 해시는 저장소에 넣지 않는다. 친구들에게는 메신저로 따로 알려 준다
+- SQL Editor 는 실행한 쿼리를 기록에 남긴다. 실행한 뒤 그 쿼리 탭을 지운다
+- 바꾸고 싶으면 같은 줄을 다시 실행한다. 이미 들어온 친구는 그대로 남는다. 모두 다시 넣게 하려면 `delete from public.members;` 를 이어서 실행한다
+
+## 6. 채팅 24시간 뒤 지우기 (pg_cron)
+
+1. **Database → Extensions** 에서 **pg_cron** 을 켠다
+2. SQL Editor 에서 [`migrations/20261102000002_chat_retention_cron.sql`](migrations/20261102000002_chat_retention_cron.sql) 을 실행한다. 30분마다 24시간 지난 채팅을 지운다
+3. 확인: `select jobname, schedule from cron.job;` 에 `maple-online-prune` 이 보이면 된다
+
+pg_cron 을 켤 수 없으면 2번을 건너뛴다. 그래도 지난 글은 남지 않는다.
+
+- 24시간 지난 글은 읽기 정책에 막혀 앱에 안 보인다
+- 누군가 채팅창을 열 때 `recent_chat()` 이 지난 글을 지운다(읽을 때 지우기). 아무도 채팅창을 안 열면 그때까지 표에 남는다
+
+## 7. 앱에 주소와 키 넣기
+
+1. **Project Settings → API**(또는 **API Keys**)에서 **Project URL** 과 **anon public** 키(새 키 체계면 `sb_publishable_...`)를 복사한다
+2. 저장소 루트에서 `.env.example` 을 `.env.local` 로 복사하고 두 값을 채운다
+
+```bash
+cp .env.example .env.local
+# VITE_SUPABASE_URL=https://xxxx.supabase.co
+# VITE_SUPABASE_ANON_KEY=eyJ... 또는 sb_publishable_...
+```
+
+- `.env.local` 은 `.gitignore` 에 있어 커밋되지 않는다
+- anon 키는 앱 번들에 그대로 들어간다. 원래 공개해도 되는 키이고 권한은 RLS 가 막는다
+- **service_role·secret 키는 어디에도 넣지 않는다.** 넣으면 앱이 알아보고 온라인 기능을 끈다
+
+## 8. 온라인 특수판 빌드
+
+```bash
+pnpm install
+pnpm tauri build --config src-tauri/tauri.online.conf.json
+# macOS 유니버설: pnpm tauri build --config src-tauri/tauri.online.conf.json --target universal-apple-darwin
+```
+
+결과물은 `src-tauri/target/release/bundle/` (유니버설이면 `target/universal-apple-darwin/release/bundle/`) 아래 `Maple Companion Online` 이다.
+보통 판과 이름·식별자(`com.maplecompanion.online`)가 달라 같이 깔아도 캐릭터·설정·캐시가 섞이지 않는다.
+공개 릴리스에 올리지 않고 친구들에게 직접 건넨다.
+
+## 9. 되는지 확인하기
+
+1. `pnpm dev:online` 으로 브라우저에서 연다(<http://localhost:1420>). HUD 오른쪽에 노란 점과 「입장하기」, 그리고 비밀번호 창이 뜬다
+2. 비밀번호를 넣으면 초록 점과 「접속 1명」이 된다. SQL Editor 에서 `select * from public.members;` 에 행이 하나 생긴다
+3. 다른 브라우저(또는 시크릿 창)로 하나 더 연다. 둘 다 설정에서 같은 마을에 머물게 하면 서로의 캐릭터가 이름표와 함께 보이고 「접속 2명」이 된다
+4. ⚙️ 메뉴 「💬 채팅」으로 글을 보낸다. 두 창의 채팅창에 뜨고, 같은 맵이면 머리 위에 말풍선이 뜬다. `select * from public.chat_messages order by id desc limit 5;` 에 남는다
+5. 비밀번호를 틀리게 넣으면 「비밀번호가 달라요」, 다섯 번 틀리면 10분 동안 「너무 많이 틀렸어요」가 뜬다
+
+## 운영 메모
+
+- 무료 플랜의 실시간 한도 안에서 쓰려고 위치는 움직일 때만, 창이 보일 때만, 1초에 5번까지 보낸다
+- 익명 계정은 Authentication → Users 에 쌓인다. 안 쓰는 계정을 지우면 그 계정의 멤버 자격과 채팅도 같이 지워진다
+- 채팅을 바로 다 지우려면 `delete from public.chat_messages;`

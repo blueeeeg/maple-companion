@@ -5,12 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:online": "vite --mode online",
     "build": "tsc && vite build",
+    "build:online": "tsc && vite build --mode online",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-notification": "^2.7.0",
     "pixi.js": "^8.22.0"

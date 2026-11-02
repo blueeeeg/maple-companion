@@ -70,6 +70,10 @@ export interface Hud {
   notifyItems(items: { itemId: number; name: string }[], source: string): void;
   /** 직접 조작 중 HUD 아래 왼쪽에 작게 띄우는 표시. null 이면 내린다 */
   setManualHint(text: string | null): void;
+  /** ⚙️ 메뉴의 「설정」 위에 항목을 더한다 */
+  addMenuItem(label: string, onSelect: () => void): void;
+  /** HUD 오른쪽 버튼들 앞에 작은 표시를 더한다 */
+  addIndicator(element: HTMLElement): void;
 }
 
 const NOTICE_MS = 4000;
@@ -321,6 +325,20 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
     setManualHint(text) {
       manualHint.hidden = text === null;
       manualHint.textContent = text ?? '';
+    },
+    addMenuItem(label, onSelect) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('role', 'menuitem');
+      item.textContent = label;
+      item.addEventListener('click', () => {
+        setMenuOpen(false);
+        onSelect();
+      });
+      menu.insertBefore(item, pick('.hud-settings'));
+    },
+    addIndicator(element) {
+      pick('.hud-spacer').after(element);
     },
     setPractice(bossName) {
       practice.hidden = bossName === null;
