@@ -323,3 +323,23 @@ describe('직접 조작 설정', () => {
     expect(normalizeSettings({ ...settings, idleMinutes: 10 })).toEqual({ ...settings, idleMinutes: 10 });
   });
 });
+
+describe('온라인 특수판 알림 설정', () => {
+  it('처음과 예전 판 저장은 채팅 알림 모두·친구 접속 알림 끄기다', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ chatAlerts: 'all', friendAlerts: false });
+    expect(normalizeSettings({ version: 1, jobAlerts: false })).toMatchObject({ chatAlerts: 'all', friendAlerts: false });
+  });
+
+  it('목록에 없는 값은 기본값이다', () => {
+    expect(normalizeSettings({ chatAlerts: 'loud', friendAlerts: 'yes' })).toMatchObject({ chatAlerts: 'all', friendAlerts: false });
+    expect(normalizeSettings({ chatAlerts: null }).chatAlerts).toBe('all');
+  });
+
+  it('고른 값은 저장했다 읽어도, 다른 설정을 고쳐도 남는다', () => {
+    for (const chatAlerts of ['all', 'mentions', 'off'] as const) {
+      const settings = withSettings({ chatAlerts, friendAlerts: true });
+      expect(parseSettings(JSON.stringify(settings))).toEqual(settings);
+      expect(normalizeSettings({ ...settings, bgmVolume: 10 })).toEqual({ ...settings, bgmVolume: 10 });
+    }
+  });
+});

@@ -152,6 +152,9 @@ let huntsHere = 0;
 const skippedFields = new Set<number>();
 let lastLevel: { characterId: string; level: number } | null = null;
 let lastTrayStatus = '';
+/** 트레이 글자 앞쪽(레벨·전직 가능)과 뒤에 붙는 것(온라인 특수판의 안 읽은 채팅 수) */
+let trayBase = '';
+let trayBadge = '';
 /** 트레이 메뉴에서 받을 수 있는 새 버전 */
 let availableUpdate: string | null = null;
 let panelVisible = true;
@@ -174,6 +177,15 @@ let offeredFreeChange = '';
 const sentAlerts = new Set<string>();
 
 const isShown = () => panelVisible && document.visibilityState === 'visible';
+/** 온라인 특수판 OS 알림의 tag. 누른 알림이 채팅이면 전직 대화 대신 채팅 입력창을 연다 */
+const ONLINE_NOTICE_TAG = 'online';
+
+function showTrayStatus(): void {
+  const text = trayBase + trayBadge;
+  if (!trayBase || text === lastTrayStatus) return;
+  desktop.setTrayStatus(text);
+  lastTrayStatus = text;
+}
 /** 마을·사냥터 맵의 BGM 을 고를 때 쓰는 맵. 클래식 마을 둘레 맵은 같은 ID 라도 클래식 곡이다 */
 const bgmMapOf = (mapId: number, owner: Town): BgmMap =>
   townEra(owner) === 'current' ? mapId : { mapId, era: townEra(owner) };
@@ -1134,11 +1146,8 @@ async function tick(): Promise<void> {
     );
   }
   // 알림을 놓치거나 꺼 둬도 창을 열기 전에 메뉴바에서 기다리는 전직이 보이게 한다
-  const trayStatus = job.canChooseJob || job.branchChoice ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
-  if (trayStatus !== lastTrayStatus) {
-    desktop.setTrayStatus(trayStatus);
-    lastTrayStatus = trayStatus;
-  }
+  trayBase = job.canChooseJob || job.branchChoice ? `Lv.${info.level} · 전직 가능!` : `Lv.${info.level}`;
+  showTrayStatus();
 
   // 열어 둔 정보창은 함께한 시간·경험치가 늘어나는 대로 고친다
   if (screen === 'stat') statWindow.update(statState(character));
@@ -1278,7 +1287,8 @@ desktop.onVisibilityChange((visible) => {
 desktop.onModeChange((mode) => (document.body.dataset.mode = mode));
 desktop.onOpenSettings(openSettings);
 // 직업 고르기 대화를 닫아 버린 뒤에 알림을 눌렀어도 다시 묻는다. 이미 떠 있으면 대화창이 무시한다
-notifier.onOpen(() => {
+notifier.onOpen((tag) => {
+  if (tag === ONLINE_NOTICE_TAG) return;
   // 업데이트 버튼은 트레이 메뉴에 있어서 창에서는 거기로 안내만 한다
   if (availableUpdate) hud.notify(updateNotice(availableUpdate).body);
   const character = selectedCharacter(roster);
@@ -1330,6 +1340,19 @@ loadOnline()
       hud,
       scene,
       isActive: () => isShown() && screen === 'map',
+      alertView: () => ({ shown: isShown(), focused: document.hasFocus() }),
+      settings: () => settings,
+      addSettingsRows: (build) => settingsScreen.addRows(build),
+      osNotify: (title, body) => notifier.notify(title, body, ONLINE_NOTICE_TAG),
+      onNotificationOpen(handler) {
+        notifier.onOpen((tag) => {
+          if (tag === ONLINE_NOTICE_TAG) handler();
+        });
+      },
+      setTrayBadge(badge) {
+        trayBadge = badge;
+        showTrayStatus();
+      },
       focusWindow: () => desktop.focusWindow(),
       setTyping(open) {
         chatTyping = open;

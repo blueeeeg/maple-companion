@@ -39,6 +39,17 @@ describe('입장·퇴장 알림', () => {
     expect(lines).toEqual(['주황버섯님이 들어왔어요', '주황버섯님이 나갔어요']);
   });
 
+  it('들어온 줄에만 그 이름을 같이 넘긴다(친구 접속 OS 알림이 쓴다)', () => {
+    const joined: (string | null)[] = [];
+    const notices = createPresenceNotices((_, name) => joined.push(name), () => 'me');
+    notices.update(room(['me', '단풍이']));
+    vi.advanceTimersByTime(SETTLE_MS);
+    notices.update(room(['me', '단풍이'], ['b', '주황버섯'], ['c', '']));
+    notices.update(room(['me', '단풍이']));
+    vi.advanceTimersByTime(LEAVE_DELAY_MS);
+    expect(joined).toEqual(['주황버섯', '모험가', null, null]);
+  });
+
   it('나갔다 곧바로 다시 들어오면 둘 다 알리지 않는다', () => {
     const { lines, notices } = setup();
     notices.update(room(['me', '단풍이'], ['b', '주황버섯']));

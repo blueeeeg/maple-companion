@@ -1,8 +1,12 @@
 // 온라인 특수판에서만 받는 모듈. src/onlineGate.ts 가 VITE_ONLINE=1 일 때만 import 한다
 import './online.css';
+import type { AlertView } from '../game/alerts';
+import type { ChatAlerts, Settings } from '../game/settings';
 import type { Scene } from '../scene/scene';
 import type { BossExtraAction } from '../ui/bossWindow';
 import type { Hud } from '../ui/hud';
+import type { Choice, SettingsRowKit } from '../ui/settings';
+import { createChatAlerts, isReading, unreadBadge } from './chatAlerts';
 import { createChatOverlay } from './chatOverlay';
 import { type ChatStatus, chatButtonLabel, dotState, onlineNamesLine } from './chatStatus';
 import { onlineConfig } from './config';
@@ -20,6 +24,15 @@ export interface OnlineAppHost extends OnlineHost {
   scene: OnlineHost['scene'] & Pick<Scene, 'setBossHp' | 'showBossDamage' | 'endCoop'>;
   /** 펫 창은 눌러도 키보드 포커스가 안 올 때가 있다 */
   focusWindow(): void;
+  /** 전직 알림과 같은 기준의 창 상태 */
+  alertView(): AlertView;
+  settings(): Settings;
+  addSettingsRows(build: (kit: SettingsRowKit) => void): void;
+  /** 전직 알림과 같은 OS 알림. 누르면 onNotificationOpen 이 불린다 */
+  osNotify(title: string, body: string): void;
+  onNotificationOpen(handler: () => void): void;
+  /** 트레이 글자 뒤에 붙인다. 빈 문자열이면 뗀다 */
+  setTrayBadge(badge: string): void;
   /** 채팅 입력창이 열려 있는 동안 직접 조작 키를 막는다 */
   setTyping(open: boolean): void;
   coop: Omit<CoopHost, 'notify' | 'scene'>;
@@ -32,6 +45,25 @@ const INACTIVE_POLL_MS = 1000;
 const COOP_TICK_MS = 100;
 const HINT_KEY = 'maple-companion:online-chat-hint';
 const CHAT_HINT = '엔터 또는 💬 로 채팅';
+const CHAT_ALERT_CHOICES: Choice<ChatAlerts>[] = [
+  { value: 'all', label: '모두' },
+  { value: 'mentions', label: '이름 불렀을 때만' },
+  { value: 'off', label: '끄기' },
+];
+const CHAT_ALERT_HINTS: Record<ChatAlerts, string> = {
+  all: '다른 앱을 보거나 창이 숨었을 때 OS 알림 · 30초 안의 글은 하나로 묶고, 내 캐릭터 이름(@이름)이 나오면 바로 알려요',
+  mentions: '내 캐릭터 이름(@이름)이 나온 글만 바로 알려요 · 창을 보고 있으면 알리지 않아요',
+  off: '채팅 OS 알림을 띄우지 않아요 · 안 읽은 수는 트레이 글자에 남아요',
+};
+const FRIEND_ALERT_HINT = '친구 접속: 다른 앱을 보는 동안 방에 누가 들어오면 OS 알림으로 알려요';
+
+/** 설정 창 높이에 줄이 더 안 들어가서 친구 접속 알림은 채팅 알림 줄에 붙인다 */
+function addAlertRow({ row, segments, checkbox, current, edit }: SettingsRowKit): void {
+  const control = row('채팅 알림', () => `${CHAT_ALERT_HINTS[current().chatAlerts]} · ${FRIEND_ALERT_HINT}`);
+  control.closest('.settings-rows')?.classList.add('has-online-row');
+  segments(control, CHAT_ALERT_CHOICES, () => current().chatAlerts, (chatAlerts) => edit({ chatAlerts }));
+  checkbox(control, '친구 접속', () => current().friendAlerts, (friendAlerts) => edit({ friendAlerts }));
+}
 
 async function pickTransport(): Promise<OnlineTransport | null> {
   // 개발 서버에서 서버 없이 두 창을 잇는다. 배포 빌드에는 들어가지 않는다
@@ -75,6 +107,7 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
   };
   showStatus(transport ? 'connecting' : 'unconfigured');
   host.hud.addIndicator(chatButton);
+  host.addSettingsRows(addAlertRow);
   if (!transport) {
     console.warn('[online] VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 가 없어 온라인 기능을 숨긴다');
     return;
@@ -85,7 +118,18 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
     onSend: (text) => session.send(text),
     onFirstOpen: () => session.recent(),
     canOpen: () => host.isActive() && session.status === 'online',
-    onTyping: host.setTyping,
+    onTyping(open) {
+      host.setTyping(open);
+      if (open) alerts.seen();
+    },
+  });
+  const alertView = () => ({ ...host.alertView(), feedVisible: host.isActive() || chat.isOpen });
+  const alerts = createChatAlerts({
+    notify: host.osNotify,
+    view: alertView,
+    settings: host.settings,
+    selfName: () => host.self()?.name ?? null,
+    onUnread: (count) => host.setTrayBadge(unreadBadge(count)),
   });
   const coop = createCoop(
     transport,
@@ -126,7 +170,11 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
       showStatus(session.status);
     },
     notice: (text) => chat.notice(text),
-    message: (message, mine) => chat.add(message, mine),
+    message(message, mine) {
+      chat.add(message, mine);
+      alerts.message(message, mine);
+    },
+    joined: (name) => alerts.joined(name),
     pending: (message) => chat.pending(message),
     failed: (clientId, reason) => chat.fail(clientId, reason),
     askPassword: (failed) => prompt.ask(failed),
@@ -144,9 +192,17 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
     host.focusWindow();
     openChat();
   });
+  // 알림을 눌렀으면 창은 이미 떠 있다. 💬 버튼과 달리 열려 있어도 닫지 않는다
+  host.onNotificationOpen(() => {
+    host.focusWindow();
+    if (session.status === 'online') chat.open();
+  });
+  window.addEventListener('focus', () => alerts.seen());
 
   const poll = () => {
     session.tick();
+    // 설정 창 등을 닫고 맵으로 돌아온 것처럼 포커스 이벤트 없이 채팅 줄이 보이게 된 때
+    if (alerts.unread > 0 && isReading(alertView())) alerts.seen();
     window.setTimeout(poll, host.isActive() ? MOVE_INTERVAL_MS : INACTIVE_POLL_MS);
   };
   poll();

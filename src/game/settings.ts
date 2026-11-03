@@ -19,11 +19,14 @@ export const LEVEL_UP_SMALL_SCALE = 0.65;
 export const BGM_VOLUME_MAX = 100;
 /** map: 맵 따라가기, repeat: 한 곡 반복, shuffle: 즐겨찾기 무작위 */
 export const BGM_MODE_OPTIONS = ['map', 'repeat', 'shuffle'] as const;
+/** 온라인 특수판 채팅 OS 알림. mentions 는 내 캐릭터 이름이 나온 글만 */
+export const CHAT_ALERT_OPTIONS = ['all', 'mentions', 'off'] as const;
 /** 원작 곡(700여 곡)을 다 담아도 남는다. 손으로 고친 저장 파일이 끝없이 커지지 않게만 막는다 */
 const MAX_BGM_FAVORITES = 1000;
 
 export type LevelUpEffect = (typeof LEVEL_UP_EFFECT_OPTIONS)[number];
 export type BgmMode = (typeof BGM_MODE_OPTIONS)[number];
+export type ChatAlerts = (typeof CHAT_ALERT_OPTIONS)[number];
 
 export interface Settings {
   version: typeof SETTINGS_VERSION;
@@ -50,6 +53,9 @@ export interface Settings {
   jobAlerts: boolean;
   /** 직접 조작 모드. 켜 두면 다음 실행에도 직접 조작으로 시작한다 */
   manualControl: boolean;
+  /** 아래 둘은 온라인 특수판에서만 쓴다. 보통 판도 값은 지우지 않고 그대로 둔다 */
+  chatAlerts: ChatAlerts;
+  friendAlerts: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -67,6 +73,8 @@ export const DEFAULT_SETTINGS: Settings = {
   idleMinutes: 2,
   jobAlerts: true,
   manualControl: false,
+  chatAlerts: 'all',
+  friendAlerts: false,
 };
 
 function oneOf<T>(options: readonly T[], value: unknown, fallback: T): T {
@@ -119,6 +127,8 @@ export function normalizeSettings(raw: unknown, level = 1): Settings {
     idleMinutes: oneOf(IDLE_MINUTE_OPTIONS, saved.idleMinutes, fallback.idleMinutes),
     jobAlerts: typeof saved.jobAlerts === 'boolean' ? saved.jobAlerts : fallback.jobAlerts,
     manualControl: typeof saved.manualControl === 'boolean' ? saved.manualControl : fallback.manualControl,
+    chatAlerts: oneOf(CHAT_ALERT_OPTIONS, saved.chatAlerts, fallback.chatAlerts),
+    friendAlerts: typeof saved.friendAlerts === 'boolean' ? saved.friendAlerts : fallback.friendAlerts,
   };
 }
 

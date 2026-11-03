@@ -41,6 +41,8 @@ export interface OnlineView {
   members(names: string[]): void;
   /** 들어왔어요·나갔어요 같은 시스템 줄 */
   notice(text: string): void;
+  /** 다른 사람이 방에 들어왔다. 입장 직후 목록·연결 깜빡임은 오지 않는다(notice 와 같은 규칙) */
+  joined?(name: string): void;
   /** 서버가 확정한 글. 먼저 띄운 내 글이면 clientId 가 같은 줄을 확정으로 바꿔야 한다 */
   message(message: ChatMessage, mine: boolean): void;
   /** 서버 답을 기다리는 내 글. 보내자마자 띄운다 */
@@ -164,7 +166,10 @@ export function createOnlineSession(
   let room: RoomLink | null = null;
   let map: { topic: string; link: MapLink; publisher: Publisher; peers: Map<string, PeerState> } | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
-  const notices = createPresenceNotices((text) => view.notice(text), () => userId);
+  const notices = createPresenceNotices((text, joined) => {
+    view.notice(text);
+    if (joined !== null) view.joined?.(joined);
+  }, () => userId);
   const throttle = createThrottle();
   /** 내가 보낸 글은 보내자마자 띄우고 방 채널로 다시 오는 것은 버린다. 지난 글을 받을 때도 겹치지 않게 한다 */
   const seen = new Set<string>();

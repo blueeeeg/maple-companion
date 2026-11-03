@@ -363,3 +363,12 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+/* 설정 창(원작 SysOpt 틀, 높이 230)에 채팅 알림 줄이 하나 더 들어가게 줄 높이만 2px 줄인다. 버튼(13px)·체크 상자(11px)는 원본 크기 그대로다 */
+.settings-rows.has-online-row .settings-row {
+  height: 15px;
+}
+
+.settings-rows.has-online-row .settings-label {
+  line-height: 15px;
+}

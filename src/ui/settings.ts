@@ -38,6 +38,20 @@ export interface SettingsHandlers {
 export interface SettingsScreen {
   show(state: SettingsScreenState): void;
   hide(): void;
+  /** 보통 판에 없는 줄을 맨 아래에 더한다(온라인 특수판). 고른 값은 「확인」을 눌러야 저장된다 */
+  addRows(build: (kit: SettingsRowKit) => void): void;
+}
+
+export type Choice<T> = { value: T; label: string };
+
+/** 설정 줄을 만드는 도구. 같은 모양·원작 그림을 쓴다 */
+export interface SettingsRowKit {
+  /** 줄을 만들고 값을 넣을 칸을 돌려준다. 마우스를 올리면 아래 안내 칸에 rowHint 가 뜬다 */
+  row(label: string, rowHint: string | (() => string)): HTMLElement;
+  segments<T>(control: HTMLElement, choices: Choice<T>[], read: () => T, write: (value: T) => void): void;
+  checkbox(control: HTMLElement, label: string, read: () => boolean, write: (value: boolean) => void): void;
+  current(): Settings;
+  edit(change: Partial<Settings>): void;
 }
 
 // 원작 시스템 옵션 창(UIWindow2.img/SysOpt). 창 틀(283×354)은 위쪽과 아래 띠만 원본 크기로 잘라 230 높이로 잇고,
@@ -58,8 +72,6 @@ const SLIDER_ART = {
   'thumb-hover': ui('Basic.img/HScr8/enabled/thumb1'),
 };
 const CHECK_ART = { off: ui('Basic.img/CheckBox0/0'), on: ui('Basic.img/CheckBox0/1') };
-
-type Choice<T> = { value: T; label: string };
 
 const minutes = <T extends number>(options: readonly T[]): Choice<T>[] =>
   options.map((value) => ({ value, label: `${value}분` }));
@@ -413,6 +425,9 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     hide() {
       screen.hidden = true;
       draft = null;
+    },
+    addRows(build) {
+      build({ row, segments, checkbox, current, edit });
     },
   };
 }
