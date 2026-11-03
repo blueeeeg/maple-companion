@@ -1,11 +1,11 @@
 import type { ChatAlerts } from '../game/settings';
 import type { ChatMessage } from './transport';
 
-/** 이 안에 온 글은 OS 알림 하나로 묶는다 */
+/** 첫 글은 바로 알리고, 그 뒤 이 안에 온 글은 끝날 때 한 번에 묶어 알린다 */
 export const COALESCE_MS = 30_000;
 export const CHAT_ALERT_TITLE = '채팅';
 export const FRIEND_ALERT_TITLE = '친구 접속';
-/** 알림 본문이 길면 OS 가 뒤를 잘라 「외 N개」가 안 보인다 */
+/** 알림 본문이 길면 OS 가 뒤를 잘라 끝이 안 보인다 */
 const BODY_TEXT_MAX = 60;
 const BADGE_MAX = 99;
 const NOBODY = '모험가';
@@ -37,10 +37,14 @@ const clip = (text: string) => {
   return chars.length > BODY_TEXT_MAX ? `${chars.slice(0, BODY_TEXT_MAX).join('')}…` : text;
 };
 
-/** 「단풍이: 보스 잡을 사람? 외 2개」 */
-export function chatAlertBody(first: Pick<ChatMessage, 'name' | 'text'>, others: number): string {
-  const line = `${first.name || NOBODY}: ${clip(first.text)}`;
-  return others > 0 ? `${line} 외 ${others}개` : line;
+/** 「단풍이: 보스 잡을 사람?」 */
+export function chatAlertBody(message: Pick<ChatMessage, 'name' | 'text'>): string {
+  return `${message.name || NOBODY}: ${clip(message.text)}`;
+}
+
+/** 묶음 끝 알림. 「새 채팅 3개 · 단풍이: 마지막 글」 */
+export function chatSummaryBody(count: number, last: Pick<ChatMessage, 'name' | 'text'>): string {
+  return `새 채팅 ${count}개 · ${chatAlertBody(last)}`;
 }
 
 /** 트레이 글자 뒤에 붙는 안 읽은 채팅 수. 없으면 빈 문자열 */
@@ -75,7 +79,8 @@ export const isReading = (view: ChatAlertView) => watching(view) && view.feedVis
 
 export function createChatAlerts(deps: ChatAlertDeps) {
   let unread = 0;
-  let batch: { first: ChatMessage; others: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** 첫 글을 알린 뒤 열어 둔 30초. 그 사이 온 글 수와 마지막 글 */
+  let batch: { count: number; last: ChatMessage | null; timer: ReturnType<typeof setTimeout> } | null = null;
 
   function setUnread(next: number): void {
     if (next === unread) return;
@@ -92,8 +97,8 @@ export function createChatAlerts(deps: ChatAlertDeps) {
     const pending = batch;
     batch = null;
     // 기다리는 동안 창을 봤거나 설정을 바꿨으면 보내지 않는다
-    if (!pending || watching(deps.view()) || deps.settings().chatAlerts !== 'all') return;
-    deps.notify(CHAT_ALERT_TITLE, chatAlertBody(pending.first, pending.others));
+    if (!pending?.last || watching(deps.view()) || deps.settings().chatAlerts !== 'all') return;
+    deps.notify(CHAT_ALERT_TITLE, chatSummaryBody(pending.count, pending.last));
   }
 
   return {
@@ -106,12 +111,17 @@ export function createChatAlerts(deps: ChatAlertDeps) {
       const mode = deps.settings().chatAlerts;
       if (mode === 'off' || watching(view)) return;
       if (mentions(message.text, deps.selfName())) {
-        deps.notify(CHAT_ALERT_TITLE, chatAlertBody(message, 0));
+        deps.notify(CHAT_ALERT_TITLE, chatAlertBody(message));
         return;
       }
       if (mode !== 'all') return;
-      if (batch) batch.others += 1;
-      else batch = { first: message, others: 0, timer: setTimeout(flush, COALESCE_MS) };
+      if (batch) {
+        batch.count += 1;
+        batch.last = message;
+        return;
+      }
+      deps.notify(CHAT_ALERT_TITLE, chatAlertBody(message));
+      batch = { count: 0, last: null, timer: setTimeout(flush, COALESCE_MS) };
     },
     joined(name: string): void {
       if (!deps.settings().friendAlerts || watching(deps.view())) return;

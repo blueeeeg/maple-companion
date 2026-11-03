@@ -6,6 +6,7 @@ import {
   FRIEND_ALERT_TITLE,
   type ChatAlertView,
   chatAlertBody,
+  chatSummaryBody,
   createChatAlerts,
   mentions,
   unreadBadge,
@@ -78,15 +79,14 @@ describe('이름을 불렀는지', () => {
 });
 
 describe('알림 문구', () => {
-  it('첫 글과 나머지 수', () => {
-    expect(chatAlertBody({ name: '단풍이', text: '보스 잡을 사람?' }, 2)).toBe('단풍이: 보스 잡을 사람? 외 2개');
-    expect(chatAlertBody({ name: '단풍이', text: '안녕' }, 0)).toBe('단풍이: 안녕');
-    expect(chatAlertBody({ name: '', text: '안녕' }, 0)).toBe('모험가: 안녕');
+  it('한 글과 묶음 끝 요약', () => {
+    expect(chatAlertBody({ name: '단풍이', text: '보스 잡을 사람?' })).toBe('단풍이: 보스 잡을 사람?');
+    expect(chatAlertBody({ name: '', text: '안녕' })).toBe('모험가: 안녕');
+    expect(chatSummaryBody(3, { name: '슬라임', text: '자쿰 ㄱ' })).toBe('새 채팅 3개 · 슬라임: 자쿰 ㄱ');
   });
 
-  it('긴 글은 잘라서 「외 N개」가 보이게 한다', () => {
-    const body = chatAlertBody({ name: '단풍이', text: '가'.repeat(120) }, 3);
-    expect(body).toBe(`단풍이: ${'가'.repeat(60)}… 외 3개`);
+  it('긴 글은 자른다', () => {
+    expect(chatAlertBody({ name: '단풍이', text: '가'.repeat(120) })).toBe(`단풍이: ${'가'.repeat(60)}…`);
   });
 
   it('트레이 뒤에 붙는 안 읽은 수', () => {
@@ -100,24 +100,33 @@ describe('채팅 OS 알림 묶기', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('30초 안에 온 글은 첫 글과 나머지 수로 한 번만 알린다', () => {
+  it('첫 글은 바로 알리고, 30초 안에 온 글은 끝날 때 요약 하나로 알린다', () => {
     const { sent, alerts } = setup();
     alerts.message(msg('단풍이', '보스 잡을 사람?'), false);
+    expect(sent).toEqual([{ title: CHAT_ALERT_TITLE, body: '단풍이: 보스 잡을 사람?' }]);
     vi.advanceTimersByTime(10_000);
     alerts.message(msg('슬라임', '나!'), false);
     alerts.message(msg('단풍이', '자쿰 ㄱ'), false);
-    expect(sent).toEqual([]);
-    vi.advanceTimersByTime(COALESCE_MS - 10_000);
-    expect(sent).toEqual([{ title: CHAT_ALERT_TITLE, body: '단풍이: 보스 잡을 사람? 외 2개' }]);
+    expect(sent).toHaveLength(1);
+    vi.advanceTimersByTime(COALESCE_MS - 10_000 - 1);
+    expect(sent).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sent[1]).toEqual({ title: CHAT_ALERT_TITLE, body: '새 채팅 2개 · 단풍이: 자쿰 ㄱ' });
   });
 
-  it('창이 숨어도 다른 앱을 봐도 알린다. 묶음이 끝나면 다음 글은 새 묶음이다', () => {
+  it('30초 동안 더 온 글이 없으면 요약은 없다', () => {
+    const { sent, alerts } = setup();
+    alerts.message(msg('단풍이', '하나'), false);
+    vi.advanceTimersByTime(COALESCE_MS * 2);
+    expect(sent.map((each) => each.body)).toEqual(['단풍이: 하나']);
+  });
+
+  it('창이 숨어도 다른 앱을 봐도 알린다. 30초가 지나면 다음 글은 다시 바로 알린다', () => {
     const { state, sent, alerts } = setup({ view: OTHER_APP });
     alerts.message(msg('단풍이', '하나'), false);
     vi.advanceTimersByTime(COALESCE_MS);
     state.view = HIDDEN;
     alerts.message(msg('슬라임', '둘'), false);
-    vi.advanceTimersByTime(COALESCE_MS);
     expect(sent.map((each) => each.body)).toEqual(['단풍이: 하나', '슬라임: 둘']);
   });
 
@@ -131,12 +140,13 @@ describe('채팅 OS 알림 묶기', () => {
     }
   });
 
-  it('묶는 동안 창을 보면 그 묶음은 버린다', () => {
+  it('묶는 동안 창을 보면 요약은 보내지 않는다', () => {
     const { state, sent, alerts } = setup();
     alerts.message(msg('단풍이', '하나'), false);
+    alerts.message(msg('단풍이', '둘'), false);
     state.view = LOOKING;
     vi.advanceTimersByTime(COALESCE_MS);
-    expect(sent).toEqual([]);
+    expect(sent.map((each) => each.body)).toEqual(['단풍이: 하나']);
   });
 
   it('내 글·시스템 줄은 알리지도 세지도 않는다', () => {
@@ -148,14 +158,22 @@ describe('채팅 OS 알림 묶기', () => {
     expect(unread).toEqual([]);
   });
 
-  it('이름을 부르면 묶지 않고 바로 따로 알린다. 묶던 글 수에는 안 센다', () => {
+  it('이름을 부르면 30초 안이어도 바로 따로 알린다. 요약의 글 수에는 안 센다', () => {
     const { sent, alerts } = setup();
     alerts.message(msg('단풍이', '보스 잡을 사람?'), false);
     alerts.message(msg('슬라임', '@주황버섯 같이 가자'), false);
-    expect(sent).toEqual([{ title: CHAT_ALERT_TITLE, body: '슬라임: @주황버섯 같이 가자' }]);
+    expect(sent.map((each) => each.body)).toEqual(['단풍이: 보스 잡을 사람?', '슬라임: @주황버섯 같이 가자']);
     alerts.message(msg('슬라임', '대답해'), false);
     vi.advanceTimersByTime(COALESCE_MS);
-    expect(sent[1].body).toBe('단풍이: 보스 잡을 사람? 외 1개');
+    expect(sent[2].body).toBe('새 채팅 1개 · 슬라임: 대답해');
+  });
+
+  it('이름 부른 글만 왔으면 요약이 없다', () => {
+    const { sent, alerts } = setup();
+    alerts.message(msg('단풍이', '하나'), false);
+    alerts.message(msg('단풍이', '주황버섯아'), false);
+    vi.advanceTimersByTime(COALESCE_MS);
+    expect(sent).toHaveLength(2);
   });
 
   it('이름 불렀을 때만: 다른 글은 알리지 않는다', () => {
@@ -175,12 +193,13 @@ describe('채팅 OS 알림 묶기', () => {
     expect(alerts.unread).toBe(2);
   });
 
-  it('묶는 동안 「끄기」로 바꾸면 보내지 않는다', () => {
+  it('묶는 동안 「끄기」로 바꾸면 요약은 보내지 않는다', () => {
     const { state, sent, alerts } = setup();
     alerts.message(msg('단풍이', '하나'), false);
+    alerts.message(msg('단풍이', '둘'), false);
     state.chatAlerts = 'off';
     vi.advanceTimersByTime(COALESCE_MS);
-    expect(sent).toEqual([]);
+    expect(sent).toHaveLength(1);
   });
 
   it('캐릭터 이름을 바꾸면 지금 이름으로 본다', () => {
@@ -209,14 +228,17 @@ describe('안 읽은 채팅 수', () => {
     expect(unread).toEqual([1, 2, 0]);
   });
 
-  it('seen 은 묶던 알림도 버린다. 이미 0 이면 다시 알리지 않는다', () => {
+  it('seen 은 기다리던 요약도 버리고 30초 창도 닫는다. 이미 0 이면 다시 알리지 않는다', () => {
     const { sent, unread, alerts } = setup();
     alerts.seen();
     alerts.message(msg('단풍이', '하나'), false);
+    alerts.message(msg('단풍이', '둘'), false);
     alerts.seen();
     vi.advanceTimersByTime(COALESCE_MS);
-    expect(sent).toEqual([]);
-    expect(unread).toEqual([1, 0]);
+    expect(sent.map((each) => each.body)).toEqual(['단풍이: 하나']);
+    expect(unread).toEqual([1, 2, 0]);
+    alerts.message(msg('단풍이', '셋'), false);
+    expect(sent.map((each) => each.body)).toEqual(['단풍이: 하나', '단풍이: 셋']);
   });
 });
 

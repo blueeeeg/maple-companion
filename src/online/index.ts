@@ -51,7 +51,7 @@ const CHAT_ALERT_CHOICES: Choice<ChatAlerts>[] = [
   { value: 'off', label: '끄기' },
 ];
 const CHAT_ALERT_HINTS: Record<ChatAlerts, string> = {
-  all: '다른 앱을 보거나 창이 숨었을 때 OS 알림 · 30초 안의 글은 하나로 묶고, 내 캐릭터 이름(@이름)이 나오면 바로 알려요',
+  all: '다른 앱을 보거나 창이 숨었을 때 OS 알림 · 첫 글은 바로, 그 뒤 30초 안의 글은 묶어서 · 내 이름(@이름)은 늘 바로',
   mentions: '내 캐릭터 이름(@이름)이 나온 글만 바로 알려요 · 창을 보고 있으면 알리지 않아요',
   off: '채팅 OS 알림을 띄우지 않아요 · 안 읽은 수는 트레이 글자에 남아요',
 };
