@@ -83,12 +83,13 @@ import { type CashShopState, createCashShop } from './ui/cashShop';
 import { type EquipWindowState, createEquipWindow } from './ui/equipWindow';
 import { createCharacterSelect } from './ui/characterSelect';
 import { createHud } from './ui/hud';
-import { KEY_LEGEND, createManualKeys } from './ui/manualKeys';
+import { KEY_LEGEND, createManualKeys, isTyping } from './ui/manualKeys';
 import { instructorName } from './ui/npcDialog';
 import { type MusicWindowState, createMusicWindow, prefetchMusicWindow } from './ui/musicWindow';
 import { createSettingsScreen } from './ui/settings';
 import { type SkillCheck, type SkillWindowState, createSkillWindow, prefetchSkillWindow } from './ui/skillWindow';
 import { type StatWindowState, createStatWindow } from './ui/statWindow';
+import { createWindowHide } from './ui/windowHide';
 
 const TICK_MS = 2000;
 const JOB_CHANGE_HINT = '이제 캐릭터 정보창 「직업」 줄에서 같은 계열 다른 직업으로 바꿀 수 있어요';
@@ -234,7 +235,9 @@ const hud = createHud(root, {
   onOpenSkill: openSkill,
   onOpenBoss: openBoss,
   onOpenEquip: openEquip,
+  onHideWindow: () => windowHide.request(),
 });
+const windowHide = createWindowHide(root, () => desktop.hideWindow(), isTyping);
 
 const characterSelect = createCharacterSelect(root, {
   onStart(id) {

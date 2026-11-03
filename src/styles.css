@@ -2118,6 +2118,40 @@ body {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* 창 숨기기. 옆 ⚙️ 와 같은 칸이되 HUD 가 좁아 폭을 조금 줄인다 */
+.hud .hud-hide {
+  flex: none;
+  min-width: 20px;
+  height: 19px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 15px;
+}
+
+/* 처음 창을 숨길 때 다시 여는 곳을 알려 준다. 설정·정보창이 떠 있어도 보이게 맨 위에 둔다 */
+.window-hide-hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 20;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #ffe9a8;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.window-hide-hint[hidden] {
+  display: none;
+}
+
 .hud-menu {
   position: absolute;
   top: 28px;

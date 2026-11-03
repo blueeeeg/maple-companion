@@ -4,6 +4,7 @@ import { type Era, cashShopUiUrl, itemIconUrl, wzImageUrl } from '../maple/api';
 import { applyArt, cropArt, loadWithRetry, loadedImage } from './art';
 import { PRACTICE_BANNER_URL } from './bossWindow';
 import { type GlyphBox, isQuickKeyBlue, keyOutBackground, keyOutFaint } from './glyph';
+import { HIDE_SHORTCUT_LABEL } from './windowHide';
 import {
   BRANCH_CHOICE_KEY,
   JOB_CHOICE_KEY,
@@ -46,6 +47,7 @@ export interface HudHandlers {
   onOpenSkill(): void;
   onOpenBoss(): void;
   onOpenEquip(): void;
+  onHideWindow(): void;
 }
 
 export interface Hud {
@@ -155,6 +157,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <button class="hud-boss hud-key" type="button" aria-label="보스 도전" title="보스 도전">보스</button>
       <button class="hud-shop" type="button" aria-label="캐시샵" title="캐시샵">🛍</button>
       <button class="hud-menu-button" type="button" aria-label="메뉴" title="메뉴" aria-haspopup="menu" aria-expanded="false">⚙️</button>
+      <button class="hud-hide" type="button" aria-label="창 숨기기" title="창 숨기기 (${HIDE_SHORTCUT_LABEL})">—</button>
     </header>
     <div class="hud-menu" role="menu" hidden>
       <button class="hud-manual-toggle" type="button" role="menuitem"></button>
@@ -163,6 +166,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
       <button class="hud-music" type="button" role="menuitem">🎵 BGM 고르기</button>
       <button class="hud-settings" type="button" role="menuitem">⚙️ 설정</button>
       <button class="hud-characters" type="button" role="menuitem">👤 캐릭터 선택</button>
+      <button class="hud-hide-item" type="button" role="menuitem">➖ 창 숨기기</button>
     </div>
     <div class="exp">
       <div class="exp-fill"></div>
@@ -249,6 +253,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers): Hud {
   menuItem('.hud-music', handlers.onOpenMusic);
   menuItem('.hud-settings', handlers.onOpenSettings);
   menuItem('.hud-characters', handlers.onOpenCharacterSelect);
+  menuItem('.hud-hide-item', handlers.onHideWindow);
+  pick('.hud-hide').addEventListener('click', handlers.onHideWindow);
   const stat = pick<HTMLButtonElement>('.hud-stat');
   const skill = pick<HTMLButtonElement>('.hud-skill');
   stat.addEventListener('click', handlers.onOpenStat);

@@ -20,6 +20,8 @@ export interface DesktopBridge {
   refreshTrayIcon(url: string): void;
   /** 직접 조작 키를 받게 창에 키보드 포커스를 준다. 이미 있으면 그대로다 */
   focusWindow(): void;
+  /** 트레이 「캐릭터 숨기기」와 같다. 트레이 메뉴 글자와 panel-visibility 도 같이 바뀐다 */
+  hideWindow(): void;
 }
 
 const browserBridge: DesktopBridge = {
@@ -36,6 +38,7 @@ const browserBridge: DesktopBridge = {
   onOpenSettings: () => {},
   refreshTrayIcon: () => {},
   focusWindow: () => window.focus(),
+  hideWindow: () => {},
 };
 
 const tauriBridge: DesktopBridge = {
@@ -70,6 +73,9 @@ const tauriBridge: DesktopBridge = {
     getCurrentWindow()
       .setFocus()
       .catch(() => {});
+  },
+  hideWindow() {
+    void invoke('hide_main_window');
   },
 };
 

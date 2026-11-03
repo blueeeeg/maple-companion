@@ -137,6 +137,14 @@ fn set_tray_icon(app: AppHandle, png: Vec<u8>) -> Result<(), String> {
     Ok(())
 }
 
+/// 창 안의 「—」 버튼·⌘W. 트레이 「캐릭터 숨기기」와 같은 길로 숨겨야 트레이 글자와 프론트 상태가 같이 바뀐다
+#[tauri::command]
+fn hide_main_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
+        hide_window(&app, &window);
+    }
+}
+
 fn current_mode(app: &AppHandle) -> DisplayMode {
     app.state::<SharedActivity>().data.lock().unwrap().mode
 }
@@ -371,6 +379,7 @@ pub fn run() {
             save_game_state,
             set_tray_status,
             set_tray_icon,
+            hide_main_window,
             bgm_cache::read_bgm,
             bgm_cache::has_bgm,
             bgm_cache::write_bgm,

@@ -32,7 +32,7 @@ export const KEY_LEGEND = '직접 조작 · ←→ 이동 · ↑↓ 사다리·�
 
 const released = (): ManualKeys => ({ left: false, right: false, up: false, down: false, jump: false, attack: false });
 
-function isTyping(target: EventTarget | null): boolean {
+export function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 }
 
