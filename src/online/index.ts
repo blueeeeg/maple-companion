@@ -1,6 +1,7 @@
 // 온라인 특수판에서만 받는 모듈. src/onlineGate.ts 가 VITE_ONLINE=1 일 때만 import 한다
 import './online.css';
 import type { AlertView } from '../game/alerts';
+import type { NotificationNotice } from '../platform/notification';
 import type { ChatAlerts, Settings } from '../game/settings';
 import type { Scene } from '../scene/scene';
 import type { BossExtraAction } from '../ui/bossWindow';
@@ -31,6 +32,14 @@ export interface OnlineAppHost extends OnlineHost {
   /** 전직 알림과 같은 OS 알림. 누르면 onNotificationOpen 이 불린다 */
   osNotify(title: string, body: string): void;
   onNotificationOpen(handler: () => void): void;
+  /** 전직 알림과 같은 알림의 권한·상태 */
+  notifications: {
+    prepare(): Promise<void>;
+    notice(): Promise<NotificationNotice>;
+    openSettings(): void;
+    /** 알림 하나를 바로 보낸다 */
+    test(): void;
+  };
   /** 트레이 글자 뒤에 붙인다. 빈 문자열이면 뗀다 */
   setTrayBadge(badge: string): void;
   /** 채팅 입력창이 열려 있는 동안 직접 조작 키를 막는다 */
@@ -57,12 +66,40 @@ const CHAT_ALERT_HINTS: Record<ChatAlerts, string> = {
 };
 const FRIEND_ALERT_HINT = '친구 접속: 다른 앱을 보는 동안 방에 누가 들어오면 OS 알림으로 알려요';
 
-/** 설정 창 높이에 줄이 더 안 들어가서 친구 접속 알림은 채팅 알림 줄에 붙인다 */
-function addAlertRow({ row, segments, checkbox, current, edit }: SettingsRowKit): void {
+const NOTICE_OFF_TEXT = '알림이 꺼져 있어요';
+const NOTICE_HINT: Record<NotificationNotice, string> = {
+  ok: '테스트: OS 알림 하나를 바로 보내요',
+  off: 'OS 설정에서 이 앱 알림이 꺼져 있어요. 「알림 설정 열기」로 켜요',
+  unknown: '알림이 안 뜨면 「알림 설정 열기」에서 이 앱 알림을 켜요',
+};
+
+/**
+ * 설정 창 높이에 줄이 더 안 들어가서 친구 접속 알림은 채팅 알림 줄에 붙인다.
+ * 알림 상태 안내와 테스트·설정 열기 버튼은 그 아래 이름 칸 없는 줄에 둔다
+ */
+function addAlertRow(kit: SettingsRowKit, notifications: OnlineAppHost['notifications']): void {
+  const { row, segments, checkbox, button, onRender, current, edit } = kit;
+  let notice: NotificationNotice = 'ok';
   const control = row('채팅 알림', () => `${CHAT_ALERT_HINTS[current().chatAlerts]} · ${FRIEND_ALERT_HINT}`);
   control.closest('.settings-rows')?.classList.add('has-online-row');
   segments(control, CHAT_ALERT_CHOICES, () => current().chatAlerts, (chatAlerts) => edit({ chatAlerts }));
   checkbox(control, '친구 접속', () => current().friendAlerts, (friendAlerts) => edit({ friendAlerts }));
+
+  const state = row('', () => NOTICE_HINT[notice]);
+  state.closest('.settings-row')?.classList.add('online-alert-row');
+  const offText = document.createElement('span');
+  offText.className = 'online-alert-off';
+  offText.textContent = NOTICE_OFF_TEXT;
+  state.append(offText);
+  const open = button(state, '알림 설정 열기', notifications.openSettings);
+  button(state, '테스트', notifications.test);
+  const show = (next: NotificationNotice) => {
+    notice = next;
+    offText.hidden = next !== 'off';
+    open.hidden = next === 'ok';
+  };
+  show('ok');
+  onRender(() => void notifications.notice().then(show));
 }
 
 async function pickTransport(): Promise<OnlineTransport | null> {
@@ -107,7 +144,7 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
   };
   showStatus(transport ? 'connecting' : 'unconfigured');
   host.hud.addIndicator(chatButton);
-  host.addSettingsRows(addAlertRow);
+  host.addSettingsRows((kit) => addAlertRow(kit, host.notifications));
   if (!transport) {
     console.warn('[online] VITE_SUPABASE_URL·VITE_SUPABASE_ANON_KEY 가 없어 온라인 기능을 숨긴다');
     return;
@@ -120,9 +157,13 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
     canOpen: () => host.isActive() && session.status === 'online',
     onTyping(open) {
       host.setTyping(open);
-      if (open) alerts.seen();
+      if (!open) return;
+      alerts.seen();
+      refreshChatNotice();
     },
+    onOpenAlertSettings: host.notifications.openSettings,
   });
+  const refreshChatNotice = () => void host.notifications.notice().then((notice) => chat.setAlertsOff(notice === 'off'));
   const alertView = () => ({ ...host.alertView(), feedVisible: host.isActive() || chat.isOpen });
   const alerts = createChatAlerts({
     notify: host.osNotify,
@@ -156,6 +197,10 @@ export async function startOnline(host: OnlineAppHost): Promise<void> {
     host.setBossAction(online ? bossAction : null);
     if (online && !joined) {
       joined = true;
+      // 방에 처음 들어온 때가 채팅 알림이 처음 필요해지는 때다. 아직 안 정했으면 macOS 가 이때 묻는다
+      void host.notifications.prepare().then(() => {
+        if (chat.isOpen) refreshChatNotice();
+      });
       if (firstJoin()) chat.hint(CHAT_HINT);
     }
   };

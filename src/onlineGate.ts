@@ -8,3 +8,8 @@ export async function loadOnline(): Promise<{ startOnline: typeof startOnline } 
   if (import.meta.env.VITE_ONLINE !== '1') return null;
   return import('./online/index');
 }
+
+/** 화면 배치만 가를 때 쓴다. 온라인 모듈을 읽을지는 위 loadOnline 의 조건이 정한다 */
+export function isOnlineEdition(): boolean {
+  return import.meta.env.VITE_ONLINE === '1';
+}

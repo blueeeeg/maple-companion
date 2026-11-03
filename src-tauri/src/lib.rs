@@ -4,6 +4,9 @@ mod bgm_cache;
 mod game_state;
 mod idle;
 mod notification;
+#[cfg(target_os = "macos")]
+mod notification_center;
+mod notification_permission;
 mod tray_icon;
 mod updater;
 
@@ -387,7 +390,10 @@ pub fn run() {
             bgm_cache::list_bgm,
             bgm_cache::rename_bgm,
             updater::check_update,
-            notification::show_notification
+            notification::show_notification,
+            notification_permission::notification_status,
+            notification_permission::request_notification_permission,
+            notification_permission::open_notification_settings
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -410,6 +416,12 @@ pub fn run() {
 
             build_tray(app.handle(), scale_percent)?;
             app_icon::sync(app.handle());
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                // 번들 밖 개발 실행은 예전 길로 보내고 누른 것도 그쪽에서 받는다
+                let _ = notification_center::listen(move || open_from_notification(&handle));
+            }
             let handle = app.handle().clone();
             app.notification().on_action(move |performed| {
                 if performed.action_id() == "tap" {

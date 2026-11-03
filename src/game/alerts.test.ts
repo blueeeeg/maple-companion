@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeAlert, firstAlert, shouldAlert } from './alerts';
+import { alertsTurnedOn, describeAlert, firstAlert, shouldAlert } from './alerts';
 import { DEFAULT_SETTINGS, normalizeSettings, parseSettings } from './settings';
 
 describe('언제 알리나', () => {
@@ -73,5 +73,22 @@ describe('알림 설정', () => {
     expect(normalizeSettings({ jobAlerts: false }).jobAlerts).toBe(false);
     expect(normalizeSettings({ jobAlerts: 'no' }).jobAlerts).toBe(true);
     expect(parseSettings(JSON.stringify({ ...DEFAULT_SETTINGS, jobAlerts: false })).jobAlerts).toBe(false);
+  });
+});
+
+describe('알림을 켠 때', () => {
+  const off = { jobAlerts: false, chatAlerts: 'off', friendAlerts: false } as const;
+
+  it('꺼져 있던 알림을 하나라도 켜면 참이다', () => {
+    expect(alertsTurnedOn(off, { ...off, jobAlerts: true })).toBe(true);
+    expect(alertsTurnedOn(off, { ...off, chatAlerts: 'mentions' })).toBe(true);
+    expect(alertsTurnedOn(off, { ...off, friendAlerts: true })).toBe(true);
+  });
+
+  it('그대로 두거나 끄거나 켜진 채 종류만 바꾸면 거짓이다', () => {
+    expect(alertsTurnedOn(off, off)).toBe(false);
+    expect(alertsTurnedOn(DEFAULT_SETTINGS, DEFAULT_SETTINGS)).toBe(false);
+    expect(alertsTurnedOn(DEFAULT_SETTINGS, { ...DEFAULT_SETTINGS, jobAlerts: false })).toBe(false);
+    expect(alertsTurnedOn({ ...off, chatAlerts: 'all' }, { ...off, chatAlerts: 'mentions' })).toBe(false);
   });
 });

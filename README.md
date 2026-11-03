@@ -229,7 +229,7 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 | 데미지 | 숫자 표시 켜기·끄기 | 켜기 |
 | 마을 | 돌기(4·8·15·30분마다) / 머물기(지금 캐릭터에게 열린 마을 하나) | 돌기 · 8분 |
 | 배경음악 | 음량 0~100, 음소거 | 35 · 켜기 |
-| 레벨업 | 이펙트 원본 / 작게(0.65배), 전직 알림 켜기·끄기 | 원본 · 켜기 |
+| 레벨업 | 이펙트 원본 / 작게(0.65배), 전직 알림 켜기·끄기, 「테스트」(보통 판) | 원본 · 켜기 |
 | 자리 비움 | 입력 없이 1·2·5·10분 지나면 활동 시간(성장) 멈춤 | 2분 |
 
 - 몬스터 주기를 바꿔도 시간당 EXP·메소는 같다. 한 마리 보상(경험치 60, 메소)을 「주기 ÷ 3분」 배로 준다. 1분이면 한 마리 20, 10분이면 200 이다
@@ -246,7 +246,16 @@ HUD 오른쪽 ⚙️ 메뉴의 「설정」이나 트레이 메뉴 「설정」�
 - 저장에는 머물 마을(`pinnedTownId`, 돌기면 `null`)과 도는 시간만 남긴다. 예전 판의 「마을 이동 · 자동」 체크(`townRotate`)는 없앴다. 예전에 마을을 고정해 뒀으면 그대로 머문다. 고정 없이 「자동」만 꺼 뒀으면 그때 서 있던 마을에 머물렀는데 그 마을은 저장되지 않았고 켤 때마다 최근 마을 중에서 골랐다. 그래서 지금 캐릭터에게 가장 최근에 열린 마을에 머물기로 옮긴다(`src/platform/gameState.ts` 가 레벨을 넘긴다). 돌기로 옮기면 멈춰 두었던 캐릭터가 갑자기 돌아다니게 돼서 고르지 않았다
 - 배경음악 음소거는 HUD 메뉴의 「소리 끄기」와 같은 값이다. 음량을 0 으로 둔 채 「소리 켜기」를 누르면 기본 음량으로 돌아온다
 - 「BGM 고르기」 창에서 고른 것도 같은 설정에 저장한다. 설정 창과 달리 「확인」 없이 고르는 즉시 저장된다. 트는 방식 `bgmMode`(`map`·`repeat`·`shuffle`, 기본 `map`), 반복할 곡 `bgmTrack`(`Bgm00/FloralLife` 같은 곡 경로, 기본 `null`), 즐겨찾기 `bgmFavorites`(곡 경로 목록, 기본 빈 목록)다. 예전 판 저장에는 이 값이 없어서 맵 따라가기로 읽는다. 곡 경로 꼴이 아닌 값은 버리고 겹친 즐겨찾기는 하나로 친다. 고른 곡이 없는 `repeat` 는 `map` 으로 읽는다. 즐겨찾기가 빈 `shuffle` 은 고른 대로 남기고, 트는 쪽이 맵 따라가기로 튼다
-- 전직 알림은 설정 창에 줄을 더 넣을 높이가 없어 레벨업 줄에 있다. 알림은 `tauri-plugin-notification` 으로 권한을 묻고 띄운다. macOS 는 알림에 앱 아이콘 그림을 넣으려고 Rust 가 직접 보낸다(아래 「OS 알림의 그림」). 처음 알릴 때 권한을 묻는다. macOS 는 처음 알림이 갈 때 시스템이 허용 여부를 묻고, 거절했으면 시스템 설정 → 알림에서 켠다. Windows 는 따로 묻지 않고, 설치 프로그램이 시작 메뉴 바로가기에 앱 ID(`com.maplecompanion.app`)를 붙여 둬야 알림이 뜬다. 그래서 설치한 앱에서만 앱 이름으로 뜨고 `pnpm tauri dev` 에서는 PowerShell 이름으로 뜬다. 꺼져 있으면 설정 → 시스템 → 알림에서 켠다. 브라우저로 볼 때는 웹 Notification 으로 띄운다
+- 전직 알림은 설정 창에 줄을 더 넣을 높이가 없어 레벨업 줄에 있다. 보통 판은 그 줄 「테스트」로 OS 알림 하나를 바로 보내 본다(온라인 특수판은 「채팅 알림」 줄 아래에 있다). macOS 는 알림에 앱 아이콘 그림을 넣으려고 Rust 가 직접 보낸다(아래 「OS 알림의 그림」).
+- **알림 권한(macOS).** 앱이 직접 UNUserNotificationCenter 로 허용 여부를 묻고(`src-tauri/src/notification_center.rs`), 아직 안 정했을 때만 시스템이 「…이(가) 알림을 보내려고 합니다」를 띄운다. 묻기 전에 알림을 보내면 그 알림은 버려지므로 보내기 직전에 먼저 묻는다
+  - 묻는 때: 처음 OS 알림을 보내기 직전, 설정에서 꺼져 있던 알림(전직 알림·채팅 알림·친구 접속)을 켜고 「확인」을 누를 때, 「테스트」를 누를 때, 온라인 특수판은 실행 뒤 처음 방에 들어갔을 때. 실행마다 한 번만 묻는다
+  - 묻는 창에 5분 동안 답하지 않으면 시스템이 창을 내리고 거절로 남긴다(macOS 26.5 에서 확인)
+  - 한 번이라도 UNUserNotificationCenter 를 쓴 앱이 예전 NSUserNotification 길로 보내면 usernoted 가 「You can't mix modern clients with legacy clients」로 버린다. 다른 실행에서 보낸 것도 버린다(macOS 26.5 에서 확인). 그래서 번들로 실행 중이면 보내기·누른 것 받기도 UNUserNotificationCenter 로 한다. 예전 길(mac-notification-sys)은 번들 밖 개발 실행만 쓴다
+  - 지금 상태는 `notification_status` 명령으로 읽는다(허용·거절·안 정함·임시 허용, 배너가 뜨는지). 허용했어도 알림 스타일이 「없음」이면 꺼진 것으로 본다
+  - 서명: 릴리스처럼 ad-hoc 서명(`signingIdentity "-"`)이어도 묻는 창이 뜬다. 다만 `/private/tmp` 같은 임시 폴더에서 띄운 번들은 usernoted 가 「Failed to find or validate client」로 거절해 `UNErrorDomain 1`(Notifications are not allowed)이 바로 돌아온다. 이렇게 묻기에 실패하면 상태는 「모름」으로 보고 설정 여는 버튼만 둔다
+  - `.app` 밖의 개발 실행(`pnpm tauri dev`)은 UNUserNotificationCenter 를 부르면 앱이 죽어서 부르지 않고 「모름」으로 둔다
+  - 꺼져 있으면 「알림 설정 열기」가 `x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=<identifier>` 로 시스템 설정의 이 앱 알림 화면을 바로 연다(macOS 26.5 에서 확인)
+- **알림 권한(Windows).** 상태는 `ToastNotificationManager` 의 알림 설정(앱 ID 가 identifier)으로 읽고, 읽지 못하면(개발 실행 등) 「모름」이다. 「알림 설정 열기」는 `ms-settings:notifications` 를 연다. Windows 는 따로 묻지 않고, 설치 프로그램이 시작 메뉴 바로가기에 앱 ID(`com.maplecompanion.app`)를 붙여 둬야 알림이 뜬다. 그래서 설치한 앱에서만 앱 이름으로 뜨고 `pnpm tauri dev` 에서는 PowerShell 이름으로 뜬다. 꺼져 있으면 설정 → 시스템 → 알림에서 켠다. 브라우저로 볼 때는 웹 Notification 으로 띄운다
 
 설정 창은 원작 시스템 옵션 창 `UI/UIWindow2.img/SysOpt/backgrnd`(283×354)를 원본 크기로 쓰되 위 198px·아래 32px 띠만 잘라 230 높이로 잇는다. 확인 `MemoInGame/Get/BtOK`·취소 `Basic.img/BtCancel4`(40×16), 음량 슬라이더 `Basic.img/HScr8`(양 끝 `prev0`·`next0`, 가운데 `base`, 손잡이 `thumb0`·`thumb1`), 체크 상자 `Basic.img/CheckBox0`(11×11)도 `_Canvas` 로 받아 원본 크기로 쓴다. 안쪽 회색 판과 항목 칸은 원작 옵션 창 색을 CSS 로 옮겼다. 그림을 못 받으면 같은 배치의 어두운 창과 글자 버튼으로 남는다.
 
@@ -427,9 +436,10 @@ OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(
 
 - macOS 알림 센터는 왼쪽 아이콘을 번들의 `Contents/Resources/icon.icns`(Info.plist 의 `CFBundleIconFile`)로만 그린다. Finder 사용자 아이콘, 실행 중인 앱 아이콘, NSUserNotification 의 비공개 키 `_identityImage`(mac-notification-sys 의 `app_icon`)는 모두 무시된다. macOS 26.5.1 에서 테스트 알림을 띄워 확인했다
 - `icon.icns` 를 실행 중에 바꿔 쓰면 코드 서명의 리소스 봉인이 깨진다(`codesign --verify` 가 「a sealed resource is missing or invalid」로 실패). 업데이트마다 번들이 통째로 바뀌어 다시 써야 하므로 쓰지 않는다. 버섯집 아이콘은 릴리스 빌드에서 번들에 넣는다(위 「릴리스 앱 아이콘」)
-- 그래서 알림 오른쪽 그림(`contentImage`)에 앱 아이콘 캔버스(1024×1024, 가운데 824px)를 넣는다. 트레이 그림으로 app data 의 `notification-image.png` 를 만들고, 그림이 바뀌었을 때만 다시 쓴다
-- tauri-plugin-notification 은 macOS 에서 이 그림을 넘길 길이 없어, 프론트는 Rust 명령 `show_notification` 을 부르고 Rust 가 mac-notification-sys 로 직접 보낸다. 보내는 앱은 플러그인과 같다(설치한 앱은 `com.maplecompanion.app`, `pnpm tauri dev` 는 터미널)
-- 알림을 누를 때까지 기다리게 보내야 누른 것을 받는다. 알림마다 스레드 하나가 기다리고, 알림을 누르거나 알림 센터에서 지우면 끝난다. 누르면 창이 열린다
+- 그래서 알림 오른쪽 그림에 앱 아이콘 캔버스(1024×1024, 가운데 824px)를 넣는다. 트레이 그림으로 app data 의 `notification-image.png` 를 만들고, 그림이 바뀌었을 때만 다시 쓴다
+- tauri-plugin-notification 은 macOS 에서 이 그림을 넘길 길이 없어, 프론트는 Rust 명령 `show_notification` 을 부르고 Rust 가 직접 보낸다
+- 번들로 실행 중이면 UNUserNotificationCenter 로 보내고 그림은 첨부(UNNotificationAttachment)로 붙인다. 시스템이 첨부 파일을 옮겨 가서 임시 폴더에 복사본을 만들어 넘긴다. 누른 것은 delegate 가 받아 창을 연다. 앱이 앞에 있을 때(「테스트」)도 배너로 띄운다
+- 번들 밖 개발 실행(`pnpm tauri dev`)은 mac-notification-sys 로 터미널 이름으로 보낸다(contentImage). 알림을 누를 때까지 기다리게 보내야 누른 것을 받아서 알림마다 스레드 하나가 기다린다
 - 트레이 그림이 없거나 그림 파일을 못 쓰면 그림 없이 보낸다. 명령이 실패하면 프론트가 플러그인으로 그림 없는 알림을 띄운다
 - Windows 는 플러그인 그대로 띄운다. 플러그인은 토스트에 그림을 넘기지 않아 시작 메뉴 바로가기의 앱 아이콘이 나온다
 
@@ -499,6 +509,8 @@ OS 알림의 그림도 macOS 에서는 앱 아이콘과 같은 그림을 쓴다(
   - 알림을 누르면 창이 뜨고 채팅 입력칸이 열린다
   - 맵 화면의 채팅 줄이 안 보이는 동안 온 남의 글 수를 트레이 글자 뒤에 「Lv.33 · 💬3」처럼 붙인다(macOS 메뉴바 글자, Windows 는 트레이 툴팁). 창에 포커스가 오거나 입력칸을 열면 지운다
   - ⚙️ 설정의 「채팅 알림」 줄에서 「모두 / 이름 불렀을 때만 / 끄기」(기본 모두)와 「친구 접속」 체크(기본 끔)를 고른다. 「친구 접속」을 켜면 다른 앱을 보는 동안 누가 방에 들어올 때 「단풍이님이 들어왔어요」를 OS 알림으로 띄운다. 채팅 줄과 같은 규칙이라 방에 처음 들어올 때의 접속자와 5초 안에 다시 들어온 사람은 알리지 않는다
+  - 「채팅 알림」 줄 아래 줄에 「테스트」(알림 하나를 바로 보낸다)를 둔다. OS 설정에서 이 앱 알림이 꺼져 있으면 「알림이 꺼져 있어요 · 알림 설정 열기」가, 상태를 모르면 「알림 설정 열기」만 붙는다. 채팅 입력창을 열 때도 꺼져 있으면 입력창 위에 같은 줄을 띄운다
+  - 실행 뒤 처음 방에 들어갔을 때 아직 알림 허용 여부를 안 정했으면 macOS 가 묻는다(위 「알림 권한」)
   - 집중 모드·방해 금지는 OS 가 알림을 막는다. 앱은 따로 보지 않는다
 - **같이 도전(보스).** 보스 도전 창 「지금 도전」 위의 「같이 도전」을 누르면 방에 초대가 간다. 같은 시대이고 그 보스 레벨이 되는 멤버에게 「{이름}님이 {보스} 같이 잡자고 해요 [참여]」가 30초 동안 뜬다. 방장은 30초를 기다리거나 「바로 시작」을 누른다. 아무도 안 들어오면 혼자 「지금 도전」 한 것과 같다
   - 들어온 사람 모두 같은 보스·같은 맵으로 들어가 서로 공격하는 모습과 남의 대미지 숫자, 같은 HP 게이지를 본다. 보스 HP 는 혼자 싸울 때의 HP 에 사람 수를 곱한 값이다
@@ -680,7 +692,7 @@ src/
   ui/art.ts          원작 그림을 crossorigin 으로 미리 받고, 못 받으면 깨진 그림 대신 숨긴다. 맵 렌더처럼 큰 그림은 원본을 붙잡지 않고 뗀 조각만 남긴다
   platform/          Tauri 연결 (활동 시간·자리 비움 판정 시간, 창 모드·크기, 트레이 문구·「설정」). 브라우저에서는 대체 구현
     gameState.ts     캐릭터 목록·설정 읽기·쓰기. Tauri 는 game-state.json, 브라우저는 localStorage. localStorage 옮기기
-    notification.ts  OS 알림 띄우기·권한 묻기, 알림을 눌러 창이 열린 것 받기. 브라우저는 웹 Notification
+    notification.ts  OS 알림 띄우기·권한 묻기(실행마다 한 번), 지금 상태로 띄울 안내(꺼짐·모름), OS 알림 설정 열기, 알림을 눌러 창이 열린 것 받기. 브라우저는 웹 Notification
     updater.ts       때가 되면 Rust 에 업데이트를 묻고, 처음 보는 버전이면 알린다. 받기 시작·실패 받기. 브라우저는 안 한다
     bgmCache.ts      받은 BGM 읽기·있는지 보기·쓰기·지우기·목록(크기·마지막으로 쓴 때)·이름 바꾸기. Tauri 는 app data 의 bgm/, 브라우저는 Cache API
 scripts/
@@ -705,7 +717,9 @@ src-tauri/src/
   tray_icon.rs       트레이 아이콘 PNG 읽기·저장. 메뉴바 높이(레티나 36px)에 맞게 늘리지 않고 가운데 둔다
   bgm_cache.rs       프론트가 받은 BGM 을 app data 의 bgm/ 에 읽기(읽을 때 수정 시각을 지금으로)·있는지 보기·쓰기(임시 파일 → rename)·지우기·목록·이름 바꾸기. 곡은 JSON 이 아니라 바이트로 오간다
   app_icon.rs        트레이 그림으로 앱 아이콘 만들기(정수배 확대). macOS 는 .app 에 Finder 사용자 아이콘으로 붙이고, Windows 는 창 아이콘만. 번들 아이콘이 버섯집인 릴리스 빌드는 하지 않는다
-  notification.rs    OS 알림 보내기(show_notification). macOS 는 직접 보내고 누르면 창을 연다. 번들 아이콘이 기본 그림이면 앱 아이콘과 같은 그림을 알림 오른쪽에 넣는다
+  notification.rs    OS 알림 보내기(show_notification). macOS 는 직접 보내고(번들이면 notification_center, 개발 실행은 mac-notification-sys) 누르면 창을 연다. 번들 아이콘이 기본 그림이면 앱 아이콘과 같은 그림을 알림 오른쪽에 넣는다
+  notification_center.rs  macOS UNUserNotificationCenter: 권한 묻기·상태 읽기·보내기(그림 첨부)·누른 알림 받기(delegate)
+  notification_permission.rs  알림 권한 묻기(request_notification_permission)·상태 읽기(notification_status)·OS 알림 설정 열기(open_notification_settings). macOS 는 UNUserNotificationCenter, Windows 는 ToastNotificationManager
   updater.rs         업데이트 확인(check_update), 트레이 「업데이트」 항목 글자, 받기·설치·진행 표시, 저장 후 다시 켜기
   lib.rs             트레이(「설정」 포함), 펫·메뉴바 모드 전환, 창 크기, 알림을 누르면 창 열기, 창 안에서 숨기기(hide_main_window), 프론트에 여는 명령
 ```

@@ -28,7 +28,16 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # 앱 아이콘을 바꾸는 AppKit 호출. tauri(tao·muda)가 이미 쓰는 버전이다
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString"] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSBundle",
+  "NSData",
+  "NSDictionary",
+  "NSError",
+  "NSString",
+  "NSURL",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std",
   "NSApplication",
@@ -36,7 +45,22 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSImage",
   "NSWorkspace",
 ] }
-# 알림 오른쪽 그림을 넣으려고 알림을 직접 보낸다. tauri-plugin-notification(notify-rust)이 이미 쓰는 그 크레이트다
+# 번들로 실행 중일 때 알림 권한·상태·보내기·누른 것 받기(notification_center.rs)
+objc2-user-notifications = { version = "0.3", default-features = false, features = [
+  "std",
+  "block2",
+  "UNNotification",
+  "UNNotificationAttachment",
+  "UNNotificationContent",
+  "UNNotificationRequest",
+  "UNNotificationResponse",
+  "UNNotificationSettings",
+  "UNNotificationSound",
+  "UNNotificationTrigger",
+  "UNUserNotificationCenter",
+] }
+block2 = "0.6"
+# 번들 밖 개발 실행에서 알림을 보낸다. tauri-plugin-notification(notify-rust)이 이미 쓰는 그 크레이트다
 mac-notification-sys = "0.6"
 
 [target.'cfg(windows)'.dependencies]
@@ -45,6 +69,8 @@ windows-sys = { version = "0.59", features = [
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_System_SystemInformation",
 ] }
+# 알림이 꺼졌는지 읽는다. tauri-plugin-notification(tauri-winrt-notification)이 이미 쓰는 그 크레이트다
+windows = { version = "0.62", features = ["UI_Notifications"] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

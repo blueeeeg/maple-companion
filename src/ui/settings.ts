@@ -33,6 +33,8 @@ export interface SettingsHandlers {
   onSave(settings: Settings, muted: boolean): void;
   /** 「취소」·Esc·창 밖 클릭. 고친 것은 버린다 */
   onCancel(): void;
+  /** 레벨업 줄 「테스트」. OS 알림 하나를 바로 보낸다. 없으면 버튼을 두지 않는다(온라인 특수판은 채팅 알림 줄에 둔다) */
+  onTestNotification?(): void;
 }
 
 export interface SettingsScreen {
@@ -50,6 +52,10 @@ export interface SettingsRowKit {
   row(label: string, rowHint: string | (() => string)): HTMLElement;
   segments<T>(control: HTMLElement, choices: Choice<T>[], read: () => T, write: (value: T) => void): void;
   checkbox(control: HTMLElement, label: string, read: () => boolean, write: (value: boolean) => void): void;
+  /** 값을 고르지 않고 바로 하는 일. 「확인」과 상관없다 */
+  button(control: HTMLElement, label: string, onClick: () => void): HTMLButtonElement;
+  /** 창을 열거나 값을 고를 때마다 부른다 */
+  onRender(each: () => void): void;
   current(): Settings;
   edit(change: Partial<Settings>): void;
 }
@@ -96,6 +102,7 @@ const HINTS = {
   damage: '타격할 때 뜨는 대미지 숫자',
   bgm: '음소거는 HUD ⚙️ 메뉴의 「소리 끄기」와 같아요',
   levelUp: `작게는 ${LEVEL_UP_SMALL_SCALE}배예요. 전직 이펙트는 원본 크기 그대로예요`,
+  testNotification: '테스트: OS 알림 하나를 바로 보내요',
   idle: '키보드·마우스를 쓰는 동안만 성장해요. 입력 없이 이만큼 지나면 자리 비움으로 보고 멈춰요 · 읽기·회의가 많으면 늘려요',
 };
 
@@ -233,6 +240,17 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     renders.push(() => (input.checked = read()));
   }
 
+  function button(control: HTMLElement, label: string, onClick: () => void): HTMLButtonElement {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.className = 'settings-segment settings-action';
+    element.textContent = label;
+    element.addEventListener('click', onClick);
+    control.appendChild(element);
+    return element;
+  }
+  const onRender = (each: () => void) => renders.push(each);
+
   const edit = (change: Partial<Settings>) => {
     if (draft) draft = { ...draft, ...change };
   };
@@ -362,7 +380,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
   checkbox(bgmControl, '음소거', () => muted, (next) => (muted = next));
 
   // 설정 창 높이에 줄이 더 안 들어가서 전직 알림은 레벨업 줄에 붙인다
-  const levelUpControl = row('레벨업', HINTS.levelUp);
+  const levelUpControl = row('레벨업', handlers.onTestNotification ? `${HINTS.levelUp} · ${HINTS.testNotification}` : HINTS.levelUp);
   segments(
     levelUpControl,
     [
@@ -373,6 +391,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
     (levelUpEffect) => edit({ levelUpEffect }),
   );
   checkbox(levelUpControl, '전직 알림', () => current().jobAlerts, (jobAlerts) => edit({ jobAlerts }));
+  if (handlers.onTestNotification) button(levelUpControl, '테스트', handlers.onTestNotification);
   segments(
     row('자리 비움', HINTS.idle),
     minutes(IDLE_MINUTE_OPTIONS),
@@ -427,7 +446,7 @@ export function createSettingsScreen(root: HTMLElement, handlers: SettingsHandle
       draft = null;
     },
     addRows(build) {
-      build({ row, segments, checkbox, current, edit });
+      build({ row, segments, checkbox, button, onRender, current, edit });
     },
   };
 }

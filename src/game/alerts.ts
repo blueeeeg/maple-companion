@@ -69,6 +69,17 @@ export function shouldAlert(settings: Pick<Settings, 'jobAlerts'>, view: AlertVi
   return settings.jobAlerts && !(view.shown && view.focused);
 }
 
+type AlertSettings = Pick<Settings, 'jobAlerts' | 'chatAlerts' | 'friendAlerts'>;
+
+/** 설정에서 꺼져 있던 OS 알림을 하나라도 켰는지. 켠 그때 알림 권한을 묻는다 */
+export function alertsTurnedOn(before: AlertSettings, after: AlertSettings): boolean {
+  return (
+    (!before.jobAlerts && after.jobAlerts) ||
+    (before.chatAlerts === 'off' && after.chatAlerts !== 'off') ||
+    (!before.friendAlerts && after.friendAlerts)
+  );
+}
+
 /** 처음 보는 key 면 기록하고 true. 이미 알린 일이면 false */
 export function firstAlert(sent: Set<string>, key: string): boolean {
   if (sent.has(key)) return false;

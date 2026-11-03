@@ -364,11 +364,53 @@
   cursor: pointer;
 }
 
-/* 설정 창(원작 SysOpt 틀, 높이 230)에 채팅 알림 줄이 하나 더 들어가게 줄 높이만 2px 줄인다. 버튼(13px)·체크 상자(11px)는 원본 크기 그대로다 */
+/* 설정 창(원작 SysOpt 틀, 높이 230)에 채팅 알림 줄과 알림 상태 줄이 더 들어가게 줄 높이만 3px 줄인다. 버튼(13px)·체크 상자(11px)는 원본 크기 그대로다 */
 .settings-rows.has-online-row .settings-row {
-  height: 15px;
+  height: 14px;
 }
 
 .settings-rows.has-online-row .settings-label {
+  line-height: 14px;
+}
+
+/* 채팅 알림 줄 아래, 이름 칸 없이 잇는 알림 상태 줄. 이름 칸 폭은 남겨 위 줄과 칸을 맞춘다 */
+.online-alert-row .settings-label {
+  visibility: hidden;
+}
+
+.online-alert-off {
+  color: #b3261e;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.online-alert-off[hidden] {
+  display: none;
+}
+
+/* 입력창 위, OS 설정에서 알림이 꺼져 있을 때만 */
+.online-chat-alert {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0 6px;
+  background: rgba(60, 16, 12, 0.72);
+  color: #ffd6cc;
+  font-size: 10px;
   line-height: 15px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.online-chat-alert[hidden] {
+  display: none;
+}
+
+.online-chat-alert button {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font: inherit;
+  cursor: pointer;
 }

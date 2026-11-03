@@ -4,8 +4,9 @@ use tauri::AppHandle;
 ///
 /// macOS 알림 센터는 왼쪽 아이콘을 번들의 icon.icns 로만 그린다. Finder 사용자 아이콘·실행 중 앱 아이콘·
 /// 비공개 `_identityImage` 는 모두 무시돼서(macOS 26.5.1 에서 확인) 실행 중에는 왼쪽을 바꿀 수 없다. 번들 아이콘이
-/// 기본 그림인 빌드는 대신 오른쪽 그림(contentImage)에 앱 아이콘과 같은 그림을 넣는다. 플러그인은 이 값을 넘길 길이
-/// 없어 직접 보낸다. 릴리스처럼 번들 아이콘이 버섯집이면 왼쪽이 이미 맞아 오른쪽 그림은 넣지 않는다
+/// 기본 그림인 빌드는 대신 오른쪽 그림에 앱 아이콘과 같은 그림을 넣는다. 플러그인은 이 값을 넘길 길이
+/// 없어 직접 보낸다. 릴리스처럼 번들 아이콘이 버섯집이면 왼쪽이 이미 맞아 오른쪽 그림은 넣지 않는다.
+/// 번들로 실행 중이면 UNUserNotificationCenter 로 보낸다(notification_center.rs). 예전 길은 번들 밖 개발 실행만 쓴다
 #[tauri::command]
 pub fn show_notification(app: AppHandle, title: String, body: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -51,17 +52,26 @@ fn opens_window(response: &mac_notification_sys::NotificationResponse) -> bool {
 #[cfg(target_os = "macos")]
 mod mac {
     use std::fs;
+    use std::path::Path;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use mac_notification_sys::Notification;
     use tauri::{AppHandle, Manager};
 
     use super::{image_png, opens_window, sender_bundle_id};
-    use crate::tray_icon;
+    use crate::{notification_center, tray_icon};
 
     /// 넥슨 그림이라 저장소에 넣지 않고 사용자 app data 에 만든다
     const IMAGE_FILE: &str = "notification-image.png";
 
     pub fn show(app: &AppHandle, title: String, body: String) -> Result<(), String> {
+        if notification_center::center().is_ok() {
+            static SENT: AtomicU64 = AtomicU64::new(0);
+            // 같은 id 면 앞 알림을 바꿔 버려서 실행 시각을 붙인다
+            let id = format!("{}-{}", std::process::id(), SENT.fetch_add(1, Ordering::Relaxed));
+            let image = if crate::app_icon::BUNDLED_ICON { None } else { save_image(app) };
+            return notification_center::send(&id, &title, &body, image.as_deref().map(Path::new));
+        }
         let sender = sender_bundle_id(tauri::is_dev(), &app.config().identifier).to_owned();
         let handle = app.clone();
         // 누를 때까지 기다리므로 알림마다 스레드 하나. 알림 센터에서 지우거나 누르면 끝난다

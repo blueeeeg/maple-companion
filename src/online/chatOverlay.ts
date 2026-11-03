@@ -34,6 +34,8 @@ export interface ChatOverlayHandlers {
   canOpen(): boolean;
   /** 입력창이 열리고 닫힐 때. 여는 동안 직접 조작 키를 막는다 */
   onTyping(open: boolean): void;
+  /** 「알림이 꺼져 있어요」 줄의 「알림 설정 열기」 */
+  onOpenAlertSettings(): void;
 }
 
 export interface ChatOverlay {
@@ -48,6 +50,8 @@ export interface ChatOverlay {
   setWho(line: string): void;
   /** 처음 들어왔을 때 한 번 띄우는 안내 */
   hint(text: string): void;
+  /** OS 설정에서 알림이 꺼져 있으면 입력창 위에 알린다 */
+  setAlertsOff(off: boolean): void;
   readonly isOpen: boolean;
 }
 
@@ -90,6 +94,7 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
     `
     <ol class="online-chat-feed" aria-live="polite" hidden></ol>
     <section class="online-chat" aria-label="채팅" hidden>
+      <p class="online-chat-alert" hidden>알림이 꺼져 있어요 · <button class="online-chat-alert-open" type="button">알림 설정 열기</button></p>
       <p class="online-chat-who" hidden></p>
       <ol class="online-chat-log"></ol>
       <p class="online-chat-error" role="status" hidden></p>
@@ -107,6 +112,8 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
   const input = panel.querySelector<HTMLInputElement>('.online-chat-input')!;
   const error = panel.querySelector<HTMLElement>('.online-chat-error')!;
   const who = panel.querySelector<HTMLElement>('.online-chat-who')!;
+  const alertsOff = panel.querySelector<HTMLElement>('.online-chat-alert')!;
+  panel.querySelector('.online-chat-alert-open')!.addEventListener('click', handlers.onOpenAlertSettings);
   const chatLog = createChatLog(LOG_LIMIT);
   const feed = createChatFeed();
   let hintText: string | null = null;
@@ -282,6 +289,9 @@ export function createChatOverlay(root: HTMLElement, handlers: ChatOverlayHandle
     hint(text) {
       hintText = text;
       pokeFeed();
+    },
+    setAlertsOff(off) {
+      alertsOff.hidden = !off;
     },
     get isOpen() {
       return !panel.hidden;

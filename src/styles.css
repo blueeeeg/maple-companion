@@ -2322,6 +2322,15 @@ body {
   cursor: pointer;
 }
 
+.settings-action {
+  flex: none;
+  white-space: nowrap;
+}
+
+.settings-action[hidden] {
+  display: none;
+}
+
 .settings-segment {
   height: 13px;
   padding: 0 4px;

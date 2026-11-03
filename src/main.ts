@@ -32,7 +32,7 @@ import {
   settleHunt,
 } from './game/bosses';
 import { bossTurn, settleBossFight, settleBossKill } from './game/bossChallenge';
-import { type AlertEvent, describeAlert, firstAlert, shouldAlert } from './game/alerts';
+import { type AlertEvent, alertsTurnedOn, describeAlert, firstAlert, shouldAlert } from './game/alerts';
 import { buyCashItem, equipCash, unequipCash } from './game/cashShop';
 import { selectChair } from './game/chairs';
 import { buyMount, grantMountGifts, selectMount } from './game/mounts';
@@ -72,10 +72,10 @@ import { canDrawSkill, loadSkill, prefetchSkillData } from './maple/skills';
 import { SKILL_STORE_CAP_BYTES } from './maple/skillStore';
 import { createActivitySource } from './platform/activity';
 import { loadGameData, writeRoster, writeSettings } from './platform/gameState';
-import { createNotifier } from './platform/notification';
+import { TEST_NOTICE, createNotifier } from './platform/notification';
 import { desktop } from './platform/tauri';
 import { startUpdateChecks } from './platform/updater';
-import { loadOnline } from './onlineGate';
+import { isOnlineEdition, loadOnline } from './onlineGate';
 import { type CoopBossLink, createScene } from './scene/scene';
 import { frameOffset, viewportFor } from './scene/viewport';
 import { type BossWindowState, createBossWindow, prefetchBossWindow } from './ui/bossWindow';
@@ -320,12 +320,14 @@ const cashShop = createCashShop(root, {
 
 const settingsScreen = createSettingsScreen(root, {
   onSave(next, muted) {
+    if (alertsTurnedOn(settings, next)) void notifier.prepare();
     applySettings(next);
     roster.muted = muted;
     writeRoster(roster);
     closeSettings();
   },
   onCancel: closeSettings,
+  onTestNotification: isOnlineEdition() ? undefined : () => notifier.notify(TEST_NOTICE.title, TEST_NOTICE.body),
 });
 
 const statWindow = createStatWindow(root, { onClose: closeInfoWindow, onChangeJob: openJobChange, onOpenEquip: openEquip });
@@ -1351,6 +1353,12 @@ loadOnline()
         notifier.onOpen((tag) => {
           if (tag === ONLINE_NOTICE_TAG) handler();
         });
+      },
+      notifications: {
+        prepare: notifier.prepare,
+        notice: notifier.notice,
+        openSettings: notifier.openSettings,
+        test: () => notifier.notify(TEST_NOTICE.title, TEST_NOTICE.body, ONLINE_NOTICE_TAG),
       },
       setTrayBadge(badge) {
         trayBadge = badge;
