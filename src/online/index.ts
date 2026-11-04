@@ -65,10 +65,11 @@ const CHAT_ALERT_HINTS: Record<ChatAlerts, string> = {
   off: '채팅 OS 알림을 띄우지 않아요 · 안 읽은 수는 트레이 글자에 남아요',
 };
 const FRIEND_ALERT_HINT = '친구 접속: 다른 앱을 보는 동안 방에 누가 들어오면 OS 알림으로 알려요';
+const TEST_ALERT_HINT = '테스트: OS 알림 하나를 바로 보내요';
 
 const NOTICE_OFF_TEXT = '알림이 꺼져 있어요';
 const NOTICE_HINT: Record<NotificationNotice, string> = {
-  ok: '테스트: OS 알림 하나를 바로 보내요',
+  ok: FRIEND_ALERT_HINT,
   off: 'OS 설정에서 이 앱 알림이 꺼져 있어요. 「알림 설정 열기」로 켜요',
   unknown: '알림이 안 뜨면 「알림 설정 열기」에서 이 앱 알림을 켜요',
 };
@@ -80,19 +81,20 @@ const NOTICE_HINT: Record<NotificationNotice, string> = {
 function addAlertRow(kit: SettingsRowKit, notifications: OnlineAppHost['notifications']): void {
   const { row, segments, checkbox, button, onRender, current, edit } = kit;
   let notice: NotificationNotice = 'ok';
-  const control = row('채팅 알림', () => `${CHAT_ALERT_HINTS[current().chatAlerts]} · ${FRIEND_ALERT_HINT}`);
+  const control = row('채팅 알림', () => `${CHAT_ALERT_HINTS[current().chatAlerts]} · ${TEST_ALERT_HINT}`);
   control.closest('.settings-rows')?.classList.add('has-online-row');
   segments(control, CHAT_ALERT_CHOICES, () => current().chatAlerts, (chatAlerts) => edit({ chatAlerts }));
-  checkbox(control, '친구 접속', () => current().friendAlerts, (friendAlerts) => edit({ friendAlerts }));
+  // 테스트는 알림 상태와 상관없이 늘 보여야 해서 윗줄에 둔다. 친구 접속 체크는 아랫줄로 내렸다
+  button(control, '테스트', notifications.test);
 
   const state = row('', () => NOTICE_HINT[notice]);
   state.closest('.settings-row')?.classList.add('online-alert-row');
+  checkbox(state, '친구 접속', () => current().friendAlerts, (friendAlerts) => edit({ friendAlerts }));
   const offText = document.createElement('span');
   offText.className = 'online-alert-off';
   offText.textContent = NOTICE_OFF_TEXT;
   state.append(offText);
   const open = button(state, '알림 설정 열기', notifications.openSettings);
-  button(state, '테스트', notifications.test);
   const show = (next: NotificationNotice) => {
     notice = next;
     offText.hidden = next !== 'off';

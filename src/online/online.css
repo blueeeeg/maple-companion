@@ -373,9 +373,14 @@
   line-height: 14px;
 }
 
-/* 채팅 알림 줄 아래, 이름 칸 없이 잇는 알림 상태 줄. 이름 칸 폭은 남겨 위 줄과 칸을 맞춘다 */
+/* 채팅 알림 줄 아래, 이름 칸 없이 잇는 줄(친구 접속·알림 상태). 이름 칸 폭은 남겨 위 줄과 칸을 맞춘다 */
 .online-alert-row .settings-label {
   visibility: hidden;
+}
+
+.online-alert-row .settings-check {
+  flex: none;
+  white-space: nowrap;
 }
 
 .online-alert-off {
